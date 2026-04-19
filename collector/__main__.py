@@ -6,6 +6,7 @@ import sys
 
 SUBCOMMANDS = {
     "app": "collector.cli.app",
+    "run": "collector.cli.run",
     "dashboard": "collector.cli.dashboard",
     "review": "collector.cli.review",
     "quota": "collector.cli.quota",
@@ -16,6 +17,7 @@ collector — YouTube data collector (v10)
 
 Usage:
   collector app         원클릭 런처 (대시보드 빌드 + 로컬 서버 + 브라우저 오픈)
+  collector run         검색어로 파이프라인 실행 (--query "단타매매전략")
   collector dashboard   SQLite 인덱스 + HTML 리포트 생성만
   collector review      review_queue/* 대화형 리뷰
   collector quota       runner-minute / 쿼터 / LLM 비용 점검

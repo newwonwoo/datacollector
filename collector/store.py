@@ -56,8 +56,8 @@ class JSONStore:
     def _flush(self, payload: dict[str, Any]) -> None:
         if not self.root:
             return
-        yyyymm = payload.get("collected_at", "")[:7].replace("-", "")
-        p = self.root / "data_store" / yyyymm
+        yyyymm = payload.get("collected_at", "")[:7].replace("-", "") or "unknown"
+        p = self.root / yyyymm
         p.mkdir(parents=True, exist_ok=True)
         (p / f"{payload['source_key'].replace(':', '__')}.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

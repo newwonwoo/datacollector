@@ -155,9 +155,9 @@ def stage_promote(payload: dict, services: Services, logger: EventLogger, store:
     if payload.get("record_status") != "reviewed_confirmed":
         _set_stage(payload, "promote", "skipped", logger, reason="not_confirmed")
         raise StageFail("SYS_PROMOTE_BLOCKED", "not confirmed")
-    store.upsert(payload)
-    _set_stage(payload, "promote", "completed", logger)
     _set_record(payload, "promoted", logger)
+    _set_stage(payload, "promote", "completed", logger)
+    store.upsert(payload)
     return payload
 
 

@@ -93,9 +93,11 @@ def run_pipeline(
         stage_package(payload, services, logger)
     except StageFail:
         store.send_to_dlq(payload, payload.get("failure_reason_code") or "GIT_CONFLICT")
+        store.upsert(payload)  # persist SYNC_FAILED / invalid state
         logger.log(entity_type="run", entity_id=run_id, from_status="running", to_status="partially_completed", run_id=run_id)
         return payload
 
+    store.upsert(payload)  # persist final state including stage_status.package=completed
     logger.log(entity_type="run", entity_id=run_id, from_status="running", to_status="completed", run_id=run_id)
     return payload
 
