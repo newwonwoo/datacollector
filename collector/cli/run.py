@@ -22,27 +22,46 @@ from ..services import MockError, Services, build_mock_services
 from ..store import JSONStore
 
 
-def _real_services_or_none() -> Services | None:
+def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
+    """Build real adapters honoring the free-tier default (Gemini Flash).
+
+    - Gemini 1.5 Flash: 무료 티어 (15 RPM / 1500 RPD). 기본값.
+    - YouTube Data API v3: 무료 티어 (10,000 quota units/day).
+    - Anthropic Claude: 유료. `--llm anthropic` 또는 COLLECTOR_LLM=anthropic로만 선택.
+    """
     yt_key = os.environ.get("YOUTUBE_API_KEY")
-    anth_key = os.environ.get("ANTHROPIC_API_KEY")
     goog_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    if not yt_key or not (anth_key or goog_key):
+    anth_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if not yt_key:
         return None
+
     from ..adapters.youtube import YouTubeAdapter
     yt = YouTubeAdapter(yt_key)
-    if anth_key:
+
+    want = (llm_choice or os.environ.get("COLLECTOR_LLM", "gemini")).lower()
+    llm = None
+    if want == "gemini" and goog_key:
+        from ..adapters.llm_gemini import GeminiAdapter
+        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
+    elif want == "anthropic" and anth_key:
+        from ..adapters.llm_anthropic import AnthropicAdapter
+        llm = AnthropicAdapter(anth_key)
+    elif goog_key:  # safe fallback to free-tier
+        from ..adapters.llm_gemini import GeminiAdapter
+        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
+    elif anth_key:
         from ..adapters.llm_anthropic import AnthropicAdapter
         llm = AnthropicAdapter(anth_key)
     else:
-        from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key)
+        return None
+
     return Services(
         youtube_search=yt.search,
         youtube_captions=yt.captions,
         youtube_video_alive=yt.video_alive,
         llm_extract=llm.extract,
         semantic_similarity=lambda s, t: 0.75,
-        # Git sync intentionally a no-op unless GH_* set (out of scope here).
         git_sync=lambda p: None,
     )
 
@@ -157,6 +176,7 @@ def run_query(
     count: int = 5,
     data_store_root: Path = Path("data_store"),
     logs_root: Path = Path("logs"),
+    llm_choice: str | None = None,
 ) -> dict:
     """Run the pipeline for `query`. Returns a summary dict."""
     logs_root.mkdir(parents=True, exist_ok=True)
@@ -164,11 +184,11 @@ def run_query(
     logger = EventLogger(events_path)
     store = JSONStore(root=data_store_root)
 
-    real = _real_services_or_none()
+    real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
         candidates = services.youtube_search({"topic": query, "exclude_terms": []})[:count]
-        mode = "real"
+        mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
     else:
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)
@@ -214,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--count", type=int, default=5, help="후보 영상 수")
     ap.add_argument("--data-store", default="data_store")
     ap.add_argument("--logs", default="logs")
+    ap.add_argument("--llm", choices=["gemini", "anthropic"], default=None,
+                    help="LLM 선택 (기본: gemini 무료 티어)")
     ap.add_argument("--json", action="store_true", help="결과를 JSON으로 출력")
     args = ap.parse_args(argv)
 
@@ -221,13 +243,20 @@ def main(argv: list[str] | None = None) -> int:
         args.query, count=args.count,
         data_store_root=Path(args.data_store),
         logs_root=Path(args.logs),
+        llm_choice=args.llm,
     )
 
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
-    print(f"\n=== collector run: {summary['query']} ({summary['mode']} mode) ===")
+    banner = {
+        "mock": "mock (API 키 미설정 — 시뮬레이션)",
+        "real:gemini": "real · Gemini 1.5 Flash (무료 티어)",
+        "real:anthropic": "real · Claude (유료)",
+    }.get(summary["mode"], summary["mode"])
+
+    print(f"\n=== collector run: {summary['query']} [{banner}] ===")
     print(f"run_id:     {summary['run_id']}")
     print(f"candidates: {summary['candidates']}")
     print(f"promoted:   {summary['promoted']}")

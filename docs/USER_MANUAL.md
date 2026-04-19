@@ -67,6 +67,21 @@ pyinstaller packaging/collector.spec
 
 ## 4.1 신규 도구 사용법
 
+### 무료 티어 실제 실행 (Gemini 1.5 Flash + YouTube Data API)
+```bash
+export YOUTUBE_API_KEY=...      # Google Cloud Console → 사용자 인증 정보 → API 키 (무료 할당량 10,000 units/day)
+export GOOGLE_API_KEY=...       # aistudio.google.com/app/apikey (Gemini 무료: 15 RPM / 1500 RPD)
+collector run --query "단테 단타매매" --count 5
+```
+설계서 Master_02의 `model_name="gemini-1.5-flash"`를 그대로 따릅니다. Anthropic Claude를 쓰고 싶으면 `--llm anthropic` 플래그 (유료).
+
+### 무료 티어 한도 요약
+| 서비스 | 무료 한도 | 초과 시 |
+|---|---|---|
+| YouTube Data API v3 | 10,000 units/day (검색 1회 ≈ 100 units) | HTTP 429 → `RETRY_WAIT` |
+| Gemini 1.5 Flash | 15 RPM / 1,500 RPD | HTTP 429 → `RETRY_WAIT` |
+| GitHub Actions | 2,000 runner minutes/month | Quota monitor가 경보 |
+
 ### Human Review CLI
 ```bash
 python -m collector.cli.review --queue review_queue --data-store data_store
