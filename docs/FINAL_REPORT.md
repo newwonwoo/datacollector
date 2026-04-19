@@ -108,12 +108,38 @@ tests/test_e2e_100.py         92 tests   (91 generated + 1 meta count check)
 
 ---
 
-## F. 향후 과제 (Out of Scope지만 추천)
-1. **실제 Service 연결**: `collector/services.py`의 callable을 YouTube Data API v3, Gemini/Claude 클라이언트, GitHub App token으로 교체하는 실서비스 어댑터 레이어 추가.
-2. **v2 플랫폼 편입**: Appendix A Reviewer Trace의 마이그레이션 체크리스트에 따라 `migrate/v9_to_v10.py`, `migrate/youtube_to_v2.py` 작성.
-3. **Human Review UI**: `review_queue/` 폴더를 순회하며 승격/반려를 결정하는 간단한 CLI. 기본 구조는 이미 설계에 포함됨.
-4. **대시보드**: Appendix C의 SQLite sidecar 쿼리를 Grafana 또는 단일 HTML 리포트로.
-5. **가시성 확장**: runner-minute 월간 사용량 실측 연동.
+## F. 실서비스 / 마이그레이션 / 운영 도구 (모두 구현 완료)
+전회 보고서에서 "향후 과제"로 남긴 5개 항목을 전부 구현했다.
+
+### F.1 실제 Service 어댑터 (`collector/adapters/`)
+- `YouTubeAdapter`: Data API v3 search + timedtext captions(수동→ASR fallback) + video alive check. 429/5xx/410 → MockError 계층화 매핑.
+- `AnthropicAdapter`: Claude Messages API. system 프롬프트 고정, 재프롬프트 시 메시지에 에러 설명 포함, 스키마 위반 시 `SEMANTIC_JSON_SCHEMA_FAIL` 발생.
+- `GeminiAdapter`: Google generativelanguage v1beta. `responseMimeType=application/json` 강제.
+- `GitSyncAdapter`: GitHub App JWT → installation access token → clone/commit/push 체인. 충돌 시 `GIT_CONFLICT`.
+- 모두 HTTP callable을 DI로 받아 테스트 가능. 실환경에서는 stdlib urllib이 기본.
+
+### F.2 마이그레이션 (`collector/migrations/`)
+- `migrate_v9_to_v10(v9) -> v10`: V9 status 7종 → v10 record_status + stage_status 매핑. `SYNC_FAILED`는 promoted + package=failed 형태로 정확히 보존. 원본 비파괴.
+- `decompose_to_v2(payload) -> {7-schema}`: SourceRecord/SegmentRecord/ClaimRecord/NormalizedClaim/ReviewRecord/PromotedArtifact 생성. 모든 레코드에 `schema_version="2.0.0"` + `run_id` + provenance 체인 포함.
+
+### F.3 Human Review CLI (`collector/cli/review.py`)
+- `review_queue/*.json` 순회 → 대화형 a/r/s 선택 → approve 시 data_store로 이동 + confidence=confirmed, reject 시 dlq/human_rejected로 이동.
+- 감사용 `manual_action` 이벤트 자동 기록.
+- 헤드리스 호출용 `apply_review_decision()` 함수 분리.
+
+### F.4 Dashboard (`collector/cli/dashboard.py`)
+- `data_store/**/*.json` 재귀 스캔 → `index/collector.sqlite` sidecar 빌드.
+- 단일 HTML 파일 출력: KPI(총 레코드/LLM 비용), record_status/archive_state/failure_code별 집계, 최근 20건.
+- 의존성 stdlib만 사용.
+
+### F.5 Quota Monitor (`collector/cli/quota.py`)
+- `metrics/quota.jsonl` 누적 합산: runner-minutes / YouTube units / LLM cost_usd.
+- 경보 플래그(80% 초과), kill-switch 권고(95%/예산 초과).
+- `snapshot_quota()` 프로그래밍 API + CLI 모두 제공.
+
+### 검증
+- 추가 테스트 30개 (tests/test_adapters.py, test_migrations.py, test_cli.py).
+- **최종 결과: 130/130 통과 (0.35s)**.
 
 ---
 

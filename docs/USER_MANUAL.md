@@ -23,11 +23,73 @@
 | `Master_01~03.md` | 설계서 본문 (v10) |
 | `docs/Appendix_*.md` | 부록 (매핑/상태/관측성/보안) |
 | `archive/V9/` | 이전 설계(V9) 원본 보존 |
-| `collector/` | 테스트용 최소 참고 구현 (실제 API 호출은 하지 않음) |
-| `tests/` | 100개 E2E 테스트 |
+| `collector/` | 참고 구현 (파이프라인 코어) |
+| `collector/adapters/` | 실제 YouTube / Anthropic / Gemini / GitHub App 어댑터 |
+| `collector/migrations/` | V9→v10, v10→v2 7-schema 마이그레이션 |
+| `collector/cli/` | Human Review / Dashboard / Quota 모니터 CLI |
+| `tests/` | 130개 테스트 (E2E 100 + 어댑터/마이그/CLI 30) |
 | `CHANGELOG_v10.md` | v10 변경 내역 |
 | `docs/USER_MANUAL.md` | 이 파일 |
 | `docs/FINAL_REPORT.md` | 최종 보고서 |
+
+## 4.1 신규 도구 사용법
+
+### Human Review CLI
+```bash
+python -m collector.cli.review --queue review_queue --data-store data_store
+```
+대기열의 각 파일에 대해 `a` (approve) / `r` (reject) / `s` (skip) 선택. approve 시 데이터 스토어로 이동하고 confidence=confirmed.
+
+### Dashboard
+```bash
+python -m collector.cli.dashboard --data-store data_store --html index/dashboard.html
+```
+`data_store/*.json`을 SQLite 인덱스로 만든 뒤 단일 HTML 리포트 생성. 상태별/실패코드별 카운트 + 최근 20건.
+
+### Quota Monitor
+```bash
+python -m collector.cli.quota --usage metrics/quota.jsonl
+```
+GitHub Actions runner-minute / YouTube 쿼터 / LLM 비용 누적치와 경보 플래그, kill-switch 권고 여부를 JSON으로 출력.
+
+### V9 → v10 마이그레이션
+```python
+from collector.migrations import migrate_v9_to_v10
+import json
+v9 = json.load(open("legacy.json"))
+v10 = migrate_v9_to_v10(v9)
+```
+
+### v10 → v2 7-schema 분해
+```python
+from collector.migrations import decompose_to_v2
+records = decompose_to_v2(payload)
+# {"SourceRecord": [...], "ClaimRecord": [...], ...}
+```
+
+### 실제 서비스 어댑터 연결
+```python
+from collector.adapters import YouTubeAdapter, AnthropicAdapter, GitSyncAdapter
+from collector.services import Services
+
+yt = YouTubeAdapter(api_key=os.environ["YOUTUBE_API_KEY"])
+llm = AnthropicAdapter(api_key=os.environ["ANTHROPIC_API_KEY"])
+git = GitSyncAdapter(
+    app_id=os.environ["GH_APP_ID"],
+    installation_id=os.environ["GH_INSTALL_ID"],
+    private_key_pem=open(os.environ["GH_PRIVATE_KEY_PATH"]).read(),
+    repo="newwonwoo/datacollector",
+)
+
+services = Services(
+    youtube_search=yt.search,
+    youtube_captions=yt.captions,
+    youtube_video_alive=yt.video_alive,
+    llm_extract=llm.extract,
+    git_sync=git.sync,
+)
+```
+이후 `run_pipeline(payload, services, store, logger)`가 실제 API를 호출합니다.
 
 ## 5. 테스트가 하는 일 (비개발자용 설명)
 1. 가상의 YouTube 영상 정보를 만들어 둡니다.
