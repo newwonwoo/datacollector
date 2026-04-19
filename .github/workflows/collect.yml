@@ -78,16 +78,8 @@ jobs:
           <p>Redirecting to <a href="dashboard.html">dashboard</a>…</p>
           HTML
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: index
-
-      - id: deploy
-        uses: actions/deploy-pages@v4
-
-      - name: Upload raw artifacts (backup)
+      - name: Upload raw artifacts (backup, always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: collector-dashboard
@@ -96,7 +88,33 @@ jobs:
             index/collector.sqlite
             logs/events.jsonl
 
+      - uses: actions/configure-pages@v5
+        id: pages
+        continue-on-error: true
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outcome == 'success'
+        with:
+          path: index
+
+      - id: deploy
+        if: steps.pages.outcome == 'success'
+        uses: actions/deploy-pages@v4
+
+      - name: Pages status
+        run: |
+          if [ "${{ steps.pages.outcome }}" = "success" ]; then
+            echo "✅ Pages URL: ${{ steps.deploy.outputs.page_url }}"
+          else
+            echo "⚠️  Pages 배포 실패 또는 비활성 상태."
+            echo "    해결: Settings → Pages → Source 를 'GitHub Actions' 로 설정."
+            echo "    그래도 data_store/ 커밋과 artifact 업로드는 성공했습니다."
+          fi
+
       - name: Commit data_store
+        if: always()
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
