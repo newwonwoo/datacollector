@@ -8,3 +8,7 @@ dlq/
 logs/
 metrics/
 index/
+build/
+dist/
+*.egg-info/
+.venv/

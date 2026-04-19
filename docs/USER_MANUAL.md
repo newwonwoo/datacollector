@@ -15,7 +15,40 @@
   pip install -r requirements-dev.txt
   python -m pytest
   ```
-- 성공 시 콘솔에 `101 passed` 라고 나오면 끝입니다.
+- 성공 시 콘솔에 `135 passed` 라고 나오면 끝입니다.
+
+## 3.1 앱으로 설치해서 쓰기 (권장)
+```bash
+# 저장소 루트에서
+pip install -e .
+```
+이 한 줄이면 다음 4개의 **터미널 앱 명령어**가 PATH에 등록됩니다.
+| 명령어 | 역할 |
+|---|---|
+| `collector app` | 원클릭 런처 (대시보드 빌드 + 로컬 서버 + 브라우저 자동 오픈) |
+| `collector dashboard` | SQLite 인덱스 + HTML 리포트만 생성 |
+| `collector review` | review_queue 대화형 검토 |
+| `collector quota` | 쿼터/비용/경보 점검 |
+
+### 원클릭 실행 (macOS/Linux)
+```bash
+./run.sh                 # 기본 포트 8765
+./run.sh --watch 5       # data_store 변경 시 5초마다 자동 재빌드
+```
+### 원클릭 실행 (Windows)
+```bat
+run.bat
+```
+또는 Finder/Explorer에서 `run.sh` / `run.bat` **더블클릭**.
+
+### 단일 바이너리 앱으로 빌드 (선택)
+```bash
+pip install .[bundle]
+pyinstaller packaging/collector.spec
+# 산출물: dist/collector (또는 dist/collector.exe)
+./dist/collector app
+```
+별도 Python 없이도 배포 가능한 단일 실행 파일이 `dist/` 에 생성됩니다.
 
 ## 4. 디렉터리가 무엇인지 한 눈에
 | 경로 | 역할 |
