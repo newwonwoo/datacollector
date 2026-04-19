@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.sqlite
+data_store/
+dlq/
+logs/
+metrics/
+index/
