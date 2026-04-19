@@ -1,0 +1,74 @@
+name: build binaries
+
+# 태그 push 시 Windows/Linux/macOS 단일 바이너리를 빌드하여 Release에 첨부.
+# 사용자는 Releases 페이지에서 OS 맞는 파일 다운로드 → 더블클릭.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            out: collector-linux
+          - os: windows-latest
+            out: collector-windows.exe
+          - os: macos-latest
+            out: collector-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build
+        run: pyinstaller packaging/collector.spec
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          if [ -f "dist/collector.exe" ]; then
+            mv dist/collector.exe dist/${{ matrix.out }}
+          else
+            mv dist/collector dist/${{ matrix.out }}
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.out }}
+          path: dist/${{ matrix.out }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List
+        run: ls -la dist/
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

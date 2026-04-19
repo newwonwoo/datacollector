@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "collector"
+version = "10.0.0"
+description = "YouTube data collector — v10 pipeline, adapters, Human Review, dashboard, quota monitor"
+readme = "docs/USER_MANUAL.md"
+requires-python = ">=3.10"
+authors = [{ name = "newwonwoo" }]
+license = { text = "UNLICENSED" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+gh = ["cryptography>=41"]  # only needed for GitSyncAdapter (GitHub App JWT)
+bundle = ["pyinstaller>=6"]
+
+[project.scripts]
+collector = "collector.__main__:main"
+collector-app = "collector.cli.app:main"
+collector-dashboard = "collector.cli.dashboard:main"
+collector-review = "collector.cli.review:main"
+collector-quota = "collector.cli.quota:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["collector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
