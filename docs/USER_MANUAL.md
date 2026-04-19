@@ -68,12 +68,86 @@ pyinstaller packaging/collector.spec
 ## 4.1 신규 도구 사용법
 
 ### 무료 티어 실제 실행 (Gemini 1.5 Flash + YouTube Data API)
+
+#### 1단계. API 키 2개 발급 (각 3분)
+| 키 | 발급 주소 | 참고 |
+|---|---|---|
+| `YOUTUBE_API_KEY` | https://console.cloud.google.com/apis/credentials | "API 키 만들기" → 복사. YouTube Data API v3를 "라이브러리"에서 활성화. |
+| `GOOGLE_API_KEY`  | https://aistudio.google.com/app/apikey | "Create API key" → 복사. |
+
+#### 2단계. 입력 — **.env 파일 한 번만 만들기 (권장)**
+저장소 루트(`datacollector/` 폴더)에서:
 ```bash
-export YOUTUBE_API_KEY=...      # Google Cloud Console → 사용자 인증 정보 → API 키 (무료 할당량 10,000 units/day)
-export GOOGLE_API_KEY=...       # aistudio.google.com/app/apikey (Gemini 무료: 15 RPM / 1500 RPD)
+cp .env.example .env
+```
+메모장/VS Code로 `.env` 열고 두 줄을 실제 값으로 교체:
+```
+YOUTUBE_API_KEY=AIzaSy...실제키
+GOOGLE_API_KEY=AIzaSy...실제키
+```
+저장만 하면 끝. `collector` 명령이 자동으로 `.env`를 읽습니다.
+`.env`는 `.gitignore`에 포함되어 Git에 올라가지 않습니다.
+
+#### 3단계. 실행
+```bash
 collector run --query "단테 단타매매" --count 5
 ```
-설계서 Master_02의 `model_name="gemini-1.5-flash"`를 그대로 따릅니다. Anthropic Claude를 쓰고 싶으면 `--llm anthropic` 플래그 (유료).
+출력 배너에 `real · Gemini 1.5 Flash (무료 티어)` 로 나오면 성공.
+
+#### (대안) 터미널 session에만 임시 설정
+- macOS/Linux:
+  ```bash
+  export YOUTUBE_API_KEY=AIza...
+  export GOOGLE_API_KEY=AIza...
+  collector run --query "단테 단타매매"
+  ```
+- Windows PowerShell:
+  ```powershell
+  $env:YOUTUBE_API_KEY="AIza..."
+  $env:GOOGLE_API_KEY="AIza..."
+  collector run --query "단테 단타매매"
+  ```
+- Windows 명령 프롬프트:
+  ```bat
+  set YOUTUBE_API_KEY=AIza...
+  set GOOGLE_API_KEY=AIza...
+  collector run --query "단테 단타매매"
+  ```
+
+> Anthropic Claude로 돌리려면 `ANTHROPIC_API_KEY` 를 `.env`에 추가 후 `collector run --llm anthropic` (유료).
+
+### 무료 티어 자동 실행 (GitHub Secrets + Actions)
+로컬 `.env` 대신 클라우드에서 무료로 매일 돌리는 방법. Master_01 §8 0-Cost 전략.
+
+#### 1단계. GitHub Secrets 등록
+GitHub 리포지토리 페이지에서:
+1. **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+2. 아래 2개(필수) + 1개(선택) 추가:
+
+| Name | Value |
+|---|---|
+| `YOUTUBE_API_KEY` | Google Cloud에서 받은 키 |
+| `GOOGLE_API_KEY`  | AI Studio에서 받은 Gemini 키 |
+| `ANTHROPIC_API_KEY` | (선택) Claude 쓸 때만 |
+
+> Secrets는 한 번 저장하면 다시 볼 수 없습니다. 값이 바뀌면 **Update** 또는 새로 만듭니다. 로그/PR에 노출되지 않도록 GitHub가 자동 마스킹합니다.
+
+#### 2단계. 워크플로우 파일
+이미 `.github/workflows/collect.yml` 에 포함되어 있습니다. 이 파일이 하는 일:
+- **스케줄**: 매일 UTC 21:00 (KST 06:00) 자동 실행
+- **수동**: Actions 탭 → "collector run" → **Run workflow** → 검색어 입력
+- Secrets를 env로 주입 → `collector run` 실행 → `data_store/` 커밋 → dashboard.html 아티팩트 업로드
+
+#### 3단계. 실행 확인
+1. GitHub 리포지토리 → **Actions** 탭
+2. "collector run" 워크플로우 선택
+3. 최신 run 클릭 → **Artifacts** 에서 `collector-dashboard` 다운로드
+4. 압축 풀어 `dashboard.html` 더블클릭하면 브라우저에서 결과 확인
+
+#### 비용 0원 확인
+- Gemini 1.5 Flash: 1,500 요청/일 무료, 파이프라인은 영상당 1~2회 호출 → 하루 5~20개 돌려도 무료
+- YouTube Data API: 10,000 units/일 무료, 검색 1회 = 100 units → 하루 100회 검색 가능
+- GitHub Actions: 2,000 runner-min/월 무료, 워크플로우 1회 ≈ 1분 → 월 2,000회까지 무료
 
 ### 무료 티어 한도 요약
 | 서비스 | 무료 한도 | 초과 시 |

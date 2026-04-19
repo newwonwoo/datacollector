@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
+from pathlib import Path
 
 SUBCOMMANDS = {
     "app": "collector.cli.app",
@@ -11,6 +13,31 @@ SUBCOMMANDS = {
     "review": "collector.cli.review",
     "quota": "collector.cli.quota",
 }
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from .env (cwd or repo root) into os.environ.
+
+    Existing env vars take precedence. Lines starting with `#` are ignored.
+    No external dependency.
+    """
+    candidates = [Path.cwd() / ".env", Path(__file__).resolve().parent.parent / ".env"]
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            for raw in p.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+        except OSError:
+            continue
+        break
 
 USAGE = """\
 collector — YouTube data collector (v10)
@@ -27,6 +54,7 @@ Usage:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_dotenv()
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
         print(USAGE)

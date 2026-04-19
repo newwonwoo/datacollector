@@ -1,0 +1,82 @@
+name: collector run
+
+# 스케줄 + 수동 실행. GitHub Secrets에서 키를 주입해 0-Cost로 돌린다.
+# Master_01 §6 + §8 정책.
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "검색어 (예: 단테 주식유튜버 가장 유명한 단타매매전략)"
+        required: true
+        default: "단타매매전략"
+      count:
+        description: "후보 영상 수"
+        required: false
+        default: "5"
+  schedule:
+    # UTC 21:00 = KST 06:00 매일. 무료 runner-minute 관리 차원에서 1회만.
+    - cron: "0 21 * * *"
+
+permissions:
+  contents: write        # data_store 커밋용
+  actions: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
+      # ANTHROPIC_API_KEY 는 선택. 설정해도 기본은 Gemini(무료).
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COLLECTOR_LLM: gemini
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Sanity (no keys → mock, otherwise real)
+        run: |
+          python - <<'PY'
+          import os
+          have_yt = bool(os.environ.get("YOUTUBE_API_KEY"))
+          have_llm = bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"))
+          print(f"YOUTUBE_API_KEY set: {have_yt}")
+          print(f"LLM key set: {have_llm}")
+          PY
+
+      - name: Run pipeline
+        run: |
+          collector run \
+            --query "${{ github.event.inputs.query || '단타매매전략' }}" \
+            --count "${{ github.event.inputs.count || '5' }}"
+
+      - name: Build dashboard (no server)
+        run: collector dashboard --data-store data_store --html index/dashboard.html
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-dashboard
+          path: |
+            index/dashboard.html
+            index/collector.sqlite
+            logs/events.jsonl
+
+      - name: Commit data_store
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data_store/ || true
+          if git diff --staged --quiet; then
+            echo "no changes"
+          else
+            git commit -m "data: automated collector run ${{ github.run_id }}"
+            git push
+          fi
