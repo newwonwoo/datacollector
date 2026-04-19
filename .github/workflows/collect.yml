@@ -21,14 +21,22 @@ on:
 permissions:
   contents: write        # data_store 커밋용
   actions: read
+  pages: write           # GitHub Pages 배포용
+  id-token: write        # Pages OIDC
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     env:
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
-      # ANTHROPIC_API_KEY 는 선택. 설정해도 기본은 Gemini(무료).
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       COLLECTOR_LLM: gemini
     steps:
@@ -57,10 +65,29 @@ jobs:
             --query "${{ github.event.inputs.query || '단타매매전략' }}" \
             --count "${{ github.event.inputs.count || '5' }}"
 
-      - name: Build dashboard (no server)
+      - name: Build dashboard
         run: collector dashboard --data-store data_store --html index/dashboard.html
 
-      - name: Upload dashboard artifact
+      - name: Add index.html redirect
+        run: |
+          cat > index/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=dashboard.html">
+          <title>Collector</title>
+          <p>Redirecting to <a href="dashboard.html">dashboard</a>…</p>
+          HTML
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: index
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Upload raw artifacts (backup)
         uses: actions/upload-artifact@v4
         with:
           name: collector-dashboard

@@ -1,5 +1,37 @@
 # 사용자 매뉴얼 — YouTube Data Collector v10 E2E Tester
 
+## 0. 터미널 없이 쓰는 방법 (모바일/PC 공통)
+
+### 0.1 초간단 — 웹 브라우저만 (모바일 최적)
+> 아무것도 설치 안 함. 핸드폰에서도 가능.
+
+1. **Secrets 등록 (최초 1회)** — https://github.com/newwonwoo/datacollector/settings/secrets/actions
+   - New repository secret → `YOUTUBE_API_KEY` / `GOOGLE_API_KEY` 추가
+2. **Pages 활성화 (최초 1회)** — https://github.com/newwonwoo/datacollector/settings/pages
+   - Source 를 **GitHub Actions** 로 선택 → Save
+3. **실행** — https://github.com/newwonwoo/datacollector/actions/workflows/collect.yml
+   - 오른쪽 **Run workflow** → 검색어 입력 → 초록 **Run workflow**
+   - 1~2분 기다림
+4. **대시보드 열기** — https://newwonwoo.github.io/datacollector/
+   - 매 실행마다 이 URL이 최신 결과로 자동 갱신됨
+   - 북마크 하나면 끝
+
+> 매일 KST 06:00 자동 실행도 같이 돕니다. Pages URL만 북마크해두면 매일 알아서 갱신된 대시보드를 봄.
+
+### 0.2 PC용 exe/바이너리 (Python 없이 더블클릭)
+1. https://github.com/newwonwoo/datacollector/releases → 최신 릴리스
+2. OS별 파일 다운로드:
+   - Windows: `collector-windows.exe`
+   - macOS: `collector-macos`
+   - Linux: `collector-linux`
+3. 같은 폴더에 `.env` 파일 만들기 (키 2개 입력)
+4. 파일 더블클릭 → 브라우저 자동 오픈
+
+> 릴리스가 아직 없으면 한 번만 태그 푸시하면 자동 빌드됩니다:
+> https://github.com/newwonwoo/datacollector/actions/workflows/build-binaries.yml → Run workflow
+
+---
+
 ## 1. 이 문서가 필요한 경우
 - 설계서(Master_01~03, Appendix A~D)대로 파이프라인이 정말 동작하는지 확인하고 싶을 때
 - 코드를 건드리지 않고도 100개 시나리오가 전부 통과하는지 빠르게 점검하고 싶을 때
