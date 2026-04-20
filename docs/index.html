@@ -330,12 +330,24 @@
       display: block; font-family: var(--mono); font-size: 16px;
       font-weight: 700; color: var(--text); margin-top: 2px;
     }
-    .stage.active { background: var(--info-bg); border-color: var(--accent); color: var(--accent); }
-    .stage.hot   { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
-    .stage.err   { background: var(--err-bg);  border-color: var(--err); color: var(--err); }
+    .stage.active  { background: var(--info-bg); border-color: var(--accent); color: var(--accent);
+                     animation: stagePulse 1.4s ease-in-out infinite; }
+    .stage.hot     { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
+    .stage.err     { background: var(--err-bg);  border-color: var(--err); color: var(--err); }
+    .stage.skipped { background: var(--subtle);  border-style: dashed; color: var(--text-dim); }
     .stage-arrow {
       flex: 0 0 auto; color: var(--text-dim); font-size: 14px;
     }
+    .stage-arrow.done { color: var(--ok); }
+    @keyframes stagePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.65; transform: scale(0.97); }
+    }
+    .run-label {
+      font-size: 11px; color: var(--text-dim); font-family: var(--mono);
+      margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    }
+    .run-label .pill { padding: 2px 8px; }
 
     /* Charts */
     .charts-row {
@@ -407,21 +419,24 @@
 
   <!-- 파이프라인 흐름 다이어그램 -->
   <div class="card">
-    <div class="section-title">파이프라인 단계 <span class="muted" style="font-weight:400;font-size:11px">녹색 = 최근 통과 수</span></div>
+    <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
     <div class="pipeline-stages" id="pipeline-stages">
       <div class="stage" data-stage="discover">DISCOVER<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="discover">›</div>
       <div class="stage" data-stage="collect">COLLECT<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="collect">›</div>
       <div class="stage" data-stage="extract">EXTRACT<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="extract">›</div>
       <div class="stage" data-stage="normalize">NORMALIZE<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="normalize">›</div>
       <div class="stage" data-stage="review">REVIEW<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="review">›</div>
       <div class="stage" data-stage="promote">PROMOTE<span class="stage-count">—</span></div>
-      <div class="stage-arrow">›</div>
+      <div class="stage-arrow" data-arrow="promote">›</div>
       <div class="stage" data-stage="package">PACKAGE<span class="stage-count">—</span></div>
+    </div>
+    <div class="run-label" id="run-label">
+      <span>최근 run: —</span>
     </div>
   </div>
 
@@ -618,18 +633,21 @@ async function loadRuns(){
   const b = await r.json();
   if (!b.workflow_runs?.length){ host.innerHTML='<div class="empty">실행 기록 없음</div>'; return; }
 
-  // Announce newly-completed runs
+  // Announce newly-completed runs + track active GA run
+  __lastActiveGARun = b.workflow_runs.find(r => r.status !== 'completed') || null;
   for (const run of b.workflow_runs){
     const key = `${run.id}:${run.status}:${run.conclusion||''}`;
     const wasRunning = lastKnownRunIds.has(`${run.id}:in_progress:`) || lastKnownRunIds.has(`${run.id}:queued:`);
     if (run.status === 'completed' && wasRunning && run.id !== lastAnnouncedRun){
       announceCompletion(run);
       lastAnnouncedRun = run.id;
-      // Refresh records immediately
-      setTimeout(loadLatest, 1500);
+      // Refresh records immediately + refresh status (which updates pipeline diagram)
+      setTimeout(() => { loadLatest(); loadOpStrip(); }, 1500);
     }
     lastKnownRunIds.add(key);
   }
+  // If an active run exists, also poke op-strip refresh soon to re-apply pulse
+  if (__lastActiveGARun) setTimeout(loadOpStrip, 2000);
 
   host.innerHTML = b.workflow_runs.map(r => `
     <div class="run-item">
@@ -925,7 +943,7 @@ function renderStackBar(svgId, legendId, counts, colors){
 }
 
 function updatePipelineDiagram(valid){
-  // Heuristic: show count of records whose stage_status[stage] === 'completed'
+  // Fallback (no status.json): show historical aggregate
   const stages = ['discover','collect','extract','normalize','review','promote','package'];
   for (const st of stages){
     const n = valid.filter(p => p.stage_status?.[st] === 'completed').length;
@@ -934,6 +952,73 @@ function updatePipelineDiagram(valid){
     node.querySelector('.stage-count').textContent = n;
     node.className = 'stage' + (n > 0 ? ' hot' : '');
   }
+}
+
+const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
+
+function updatePipelineFromStatus(detail, activeGARun){
+  // detail = status.latest_run_detail
+  // activeGARun = GitHub Actions workflow run object if in_progress
+  if (!detail || !detail.per_stage) return;
+  const runLabel = document.getElementById('run-label');
+  const ps = detail.per_stage;
+
+  for (let i = 0; i < STAGE_ORDER.length; i++){
+    const st = STAGE_ORDER[i];
+    const info = ps[st] || { status: 'not_started', count: 0 };
+    const node = document.querySelector(`.stage[data-stage="${st}"]`);
+    if (!node) continue;
+    node.querySelector('.stage-count').textContent = info.count || (info.status === 'skipped' ? '—' : '0');
+
+    let cls = 'stage';
+    switch (info.status) {
+      case 'completed': cls += ' hot'; break;
+      case 'failed':    cls += ' err'; break;
+      case 'started':   cls += ' active'; break;
+      case 'skipped':   cls += ' skipped'; break;
+      default: /* not_started */ break;
+    }
+    node.className = cls;
+
+    // Arrow coloring: green if previous stage completed
+    const arrow = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
+    if (arrow) {
+      arrow.className = 'stage-arrow' + (info.status === 'completed' ? ' done' : '');
+    }
+  }
+
+  // If GA shows a workflow in progress, pulse the "next" stage as active
+  // (best effort; refines detail's view with real-time GA signal)
+  if (activeGARun) {
+    // Find the first stage that is not yet completed/failed → mark active
+    let markedLive = false;
+    for (const st of STAGE_ORDER){
+      const info = ps[st] || { status: 'not_started' };
+      if (info.status === 'started' || info.status === 'not_started'){
+        if (!markedLive){
+          const node = document.querySelector(`.stage[data-stage="${st}"]`);
+          if (node && !node.classList.contains('hot') && !node.classList.contains('err')){
+            node.classList.add('active');
+            markedLive = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Run label
+  const pill = activeGARun
+    ? `<span class="pill run"><span class="dot"></span>실행 중 (GA)</span>`
+    : (detail.run_status === 'completed'
+        ? `<span class="pill ok">✓ 완료</span>`
+        : (detail.run_status === 'failed'
+            ? `<span class="pill err">✗ 실패</span>`
+            : `<span class="pill warn">${detail.run_status || '?'}</span>`));
+  const rid = detail.run_id ? detail.run_id : '—';
+  const started = detail.started_at ? fmtTime(detail.started_at) : '';
+  const ended = detail.ended_at ? fmtTime(detail.ended_at) : '';
+  const timeInfo = started && ended ? `${started} → ${ended}` : (started || '—');
+  runLabel.innerHTML = `${pill} <span>run_id: ${rid}</span> <span>${timeInfo}</span>`;
 }
 
 function openModal(encodedSk){
@@ -969,6 +1054,7 @@ function openModal(encodedSk){
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
+let __lastActiveGARun = null;  // cached from loadRuns
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
   const host = document.getElementById('op-strip');
@@ -976,6 +1062,10 @@ async function loadOpStrip(){
     const resp = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
     if (!resp.ok) { host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
     const s = await resp.json();
+    // Pipeline live view from events-derived detail
+    if (s.latest_run_detail){
+      updatePipelineFromStatus(s.latest_run_detail, __lastActiveGARun);
+    }
     const chips = [];
     // Kill switch
     if (s.kill_switch){

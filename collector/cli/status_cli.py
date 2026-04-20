@@ -87,6 +87,105 @@ def _latest_run(events: Path) -> dict | None:
     return last
 
 
+_STAGE_NAMES = ("discover", "collect", "extract", "normalize", "review", "promote", "package")
+
+
+def _latest_run_detail(events: Path) -> dict:
+    """Per-stage outcome for the most recent run_id in events.jsonl.
+
+    Returns:
+      {
+        "run_id": str | None,
+        "started_at": iso | None,
+        "ended_at": iso | None,
+        "run_status": running | completed | partially_completed | failed | unknown,
+        "per_stage": {
+           stage: { "status": not_started|started|completed|failed|skipped,
+                    "count": int,          # # completed records in this stage
+                    "started_at": iso, "ended_at": iso, "reason": str }
+        }
+      }
+    """
+    empty = {
+        "run_id": None,
+        "started_at": None,
+        "ended_at": None,
+        "run_status": "unknown",
+        "per_stage": {s: {"status": "not_started", "count": 0} for s in _STAGE_NAMES},
+    }
+    if not events.exists():
+        return empty
+
+    # Scan: find most recent run_id by recorded_at, then per-stage events
+    latest_run_id: str | None = None
+    latest_ts: str = ""
+    all_events: list[dict] = []
+    for line in events.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        all_events.append(e)
+        if e.get("entity_type") == "run" and e.get("to_status") == "running":
+            ts = e.get("recorded_at", "")
+            if ts >= latest_ts:
+                latest_ts = ts
+                latest_run_id = e.get("run_id") or e.get("entity_id")
+    if latest_run_id is None:
+        return empty
+
+    run_events = [e for e in all_events if e.get("run_id") == latest_run_id]
+    per_stage: dict[str, dict] = {
+        s: {"status": "not_started", "count": 0} for s in _STAGE_NAMES
+    }
+    run_status = "running"
+    started_at = None
+    ended_at = None
+    for e in run_events:
+        et = e.get("entity_type")
+        ts = e.get("recorded_at", "")
+        if et == "run":
+            to = e.get("to_status")
+            if to == "running":
+                started_at = started_at or ts
+            elif to in ("completed", "partially_completed", "failed"):
+                run_status = to
+                ended_at = ts
+        elif et == "stage":
+            stage = (e.get("entity_id") or "").split(":")[-1]
+            if stage not in per_stage:
+                continue
+            to = e.get("to_status")
+            slot = per_stage[stage]
+            if to == "started":
+                slot["started_at"] = slot.get("started_at") or ts
+                # mark started only if not yet advanced
+                if slot["status"] in ("not_started",):
+                    slot["status"] = "started"
+            elif to == "completed":
+                slot["status"] = "completed"
+                slot["count"] = int(slot.get("count", 0)) + 1
+                slot["ended_at"] = ts
+            elif to == "failed":
+                slot["status"] = "failed"
+                slot["ended_at"] = ts
+                slot["reason"] = e.get("reason", "")
+            elif to == "skipped" and slot["status"] == "not_started":
+                slot["status"] = "skipped"
+                slot["ended_at"] = ts
+
+    return {
+        "run_id": latest_run_id,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "run_status": run_status,
+        "per_stage": per_stage,
+    }
+
+
 def build_status(
     *,
     dlq_root: Path = Path("dlq"),
@@ -110,6 +209,7 @@ def build_status(
         "budget": snapshot_quota(quota_usage),
         "records": _record_counts(data_store),
         "latest_run": _latest_run(events),
+        "latest_run_detail": _latest_run_detail(events),
         "top_channels": top,
         "bottom_channels": bottom,
     }
