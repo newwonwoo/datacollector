@@ -199,15 +199,20 @@ def run_query(
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
+        # Ask the adapter for as many as `count` (adapter paginates internally).
+        q_dict = q_obj.to_dict()
+        q_dict["max_results"] = count
         try:
-            candidates = services.youtube_search(q_obj.to_dict())[:count]
+            candidates = services.youtube_search(q_dict)[:count]
         except Exception:
             candidates = []
         # P4-5: fallback query on empty result (Master_02 §1)
         if not candidates:
             fb = fallback_query(query)
+            fb_dict = fb.to_dict()
+            fb_dict["max_results"] = count
             try:
-                candidates = services.youtube_search(fb.to_dict())[:count]
+                candidates = services.youtube_search(fb_dict)[:count]
             except Exception:
                 candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
@@ -277,7 +282,7 @@ def run_query(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="collector run", description="Run the v10 pipeline on a query.")
     ap.add_argument("--query", required=True, help="검색어 (예: 단타매매전략)")
-    ap.add_argument("--count", type=int, default=5, help="후보 영상 수")
+    ap.add_argument("--count", type=int, default=10, help="후보 영상 수 (기본 10, 상한 없음 — YouTube 쿼터 주의)")
     ap.add_argument("--data-store", default="data_store")
     ap.add_argument("--logs", default="logs")
     ap.add_argument("--llm", choices=["gemini", "anthropic"], default=None,

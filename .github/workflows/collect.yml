@@ -11,9 +11,9 @@ on:
         required: true
         default: "단타매매전략"
       count:
-        description: "후보 영상 수"
+        description: "후보 영상 수 (1~500, 페이지네이션 자동)"
         required: false
-        default: "5"
+        default: "10"
   schedule:
     # UTC 21:00 = KST 06:00 매일. 무료 runner-minute 관리 차원에서 1회만.
     - cron: "0 21 * * *"

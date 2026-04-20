@@ -31,30 +31,43 @@ class YouTubeAdapter:
     # ---------- Services interface ----------
 
     def search(self, query: dict[str, Any]) -> list[dict[str, Any]]:
+        """Search with pagination. query['max_results'] caps the result count
+        (default 25). Fetches up to ceil(max_results/50) pages."""
         q = query.get("topic", "")
         excludes = " ".join(f"-{w}" for w in query.get("exclude_terms", []))
-        params = {
-            "key": self.api_key,
-            "part": "snippet",
-            "type": "video",
-            "maxResults": "25",
-            "q": f"{q} {excludes}".strip(),
-            "relevanceLanguage": "ko",
-        }
-        url = f"{self.SEARCH_URL}?{urllib.parse.urlencode(params)}"
-        resp = self.http("GET", url)
-        self._raise_for(resp)
-        body = json.loads(resp["body"])
-        return [
-            {
-                "video_id": it["id"]["videoId"],
-                "channel_id": it["snippet"].get("channelId", ""),
-                "title": it["snippet"].get("title", ""),
-                "published_at": it["snippet"].get("publishedAt", ""),
+        max_results = int(query.get("max_results", 25))
+        results: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(results) < max_results:
+            batch = min(50, max_results - len(results))
+            params = {
+                "key": self.api_key,
+                "part": "snippet",
+                "type": "video",
+                "maxResults": str(batch),
+                "q": f"{q} {excludes}".strip(),
+                "relevanceLanguage": "ko",
             }
-            for it in body.get("items", [])
-            if it.get("id", {}).get("videoId")
-        ]
+            if page_token:
+                params["pageToken"] = page_token
+            url = f"{self.SEARCH_URL}?{urllib.parse.urlencode(params)}"
+            resp = self.http("GET", url)
+            self._raise_for(resp)
+            body = json.loads(resp["body"])
+            items = body.get("items", [])
+            for it in items:
+                if not it.get("id", {}).get("videoId"):
+                    continue
+                results.append({
+                    "video_id": it["id"]["videoId"],
+                    "channel_id": it["snippet"].get("channelId", ""),
+                    "title": it["snippet"].get("title", ""),
+                    "published_at": it["snippet"].get("publishedAt", ""),
+                })
+            page_token = body.get("nextPageToken")
+            if not page_token or not items:
+                break
+        return results[:max_results]
 
     def captions(self, video_id: str) -> dict[str, Any]:
         # Primary: youtube-transcript-api (pure-Python, no subprocess).

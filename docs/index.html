@@ -443,7 +443,7 @@
     <div class="section-title">새 파이프라인 실행</div>
     <div class="form-row">
       <input id="query" type="text" placeholder="검색어 입력 (예: 단타매매전략)" />
-      <input id="count" type="number" value="5" min="1" max="20" title="수집 후보 영상 수" />
+      <input id="count" type="number" value="10" min="1" max="200" title="수집 후보 영상 수 (최대 200)" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
     </div>
     <div id="run-busy" class="run-busy">
@@ -1080,6 +1080,8 @@ function updatePipelineFromStatus(detail, activeGARun){
     const failed    = info.failed     || 0;
     const skipped   = info.skipped    || 0;
     const inProgress= info.in_progress|| 0;
+    // Defensive: if old status.json didn't populate attempts, infer from terminals.
+    const effAttempts = Math.max(attempts, completed + failed + inProgress);
     const status    = info.status     || 'not_started';
 
     // Main count: "completed / attempts"
@@ -1099,8 +1101,8 @@ function updatePipelineFromStatus(detail, activeGARun){
       subText = `skipped ×${skipped}`;
       pct = 0;
     } else {
-      mainText = `${completed}/${attempts}`;
-      pct = attempts > 0 ? (completed / attempts) * 100 : 0;
+      mainText = `${completed}/${effAttempts}`;
+      pct = effAttempts > 0 ? (completed / effAttempts) * 100 : 0;
       const parts = [];
       if (inProgress > 0) parts.push(`⋯${inProgress}`);
       if (failed > 0)     parts.push(`✗${failed}`);
@@ -1133,22 +1135,32 @@ function updatePipelineFromStatus(detail, activeGARun){
     }
   }
 
-  // GA in-progress: mark the first 대기 stage as in_progress w/ shimmering bar
+  // GA in-progress: mark the NEXT reachable stage as in_progress.
+  // Only reachable if the previous stage had any completed records.
+  // If previous stage is fully failed, don't mark downstream — pipeline is stuck.
   if (activeGARun) {
+    let prevCompleted = Infinity;  // before DISCOVER there's no prev, treat as "flows"
     for (const st of STAGE_ORDER){
       const info = ps[st] || {};
+      const completed = info.completed || info.count || 0;
       const node = document.querySelector(`.stage[data-stage="${st}"]`);
       if (!node) continue;
-      const hasClass = node.className;
-      if (/ (hot|err|partial|skipped|in_progress)/.test(hasClass)) continue;
-      node.classList.add('in_progress');
-      node.querySelector('.stage-sub').textContent = '실행 중…';
-      const bar = node.querySelector('.stage-bar i');
-      if (bar) bar.classList.add('shimmer');
+      const cls = node.className;
+      const decided = / (hot|err|partial|skipped|in_progress)/.test(cls);
+      if (decided){
+        prevCompleted = completed;
+        continue;
+      }
+      // First undecided stage — only animate if previous stage yielded records
+      if (prevCompleted > 0){
+        node.classList.add('in_progress');
+        node.querySelector('.stage-sub').textContent = '실행 중…';
+        const bar = node.querySelector('.stage-bar i');
+        if (bar) bar.classList.add('shimmer');
+      }
       break;
     }
   } else {
-    // Clear any shimmer from a previous in-progress state
     document.querySelectorAll('.stage-bar i.shimmer').forEach(el => el.classList.remove('shimmer'));
   }
 
