@@ -852,33 +852,65 @@ function renderKnowledge(valid){
     host.innerHTML = '<div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div>';
     return;
   }
-  host.innerHTML = pool.slice(0, 3).map(p => {
+  // If nothing is promoted yet, explain to the user instead of showing only failure cards.
+  let bannerHtml = '';
+  if (!promoted.length){
+    const failSummary = {};
+    for (const p of valid){
+      const c = p.failure_reason_code || '(미확정)';
+      failSummary[c] = (failSummary[c] || 0) + 1;
+    }
+    const chips = Object.entries(failSummary).map(([c, n]) =>
+      `<span class="pill err" style="margin-right:6px">${escapeHtml(c)} × ${n}</span>`
+    ).join('');
+    bannerHtml = `
+      <div class="banner err" style="margin-bottom:14px">
+        <div class="msg">
+          ⚠ ${valid.length}개 영상 처리됐으나 아직 <b>promoted</b> 없음.
+          아래 카드에 실패 사유가 보입니다. ${chips}
+        </div>
+      </div>`;
+  }
+  host.innerHTML = bannerHtml + pool.slice(0, 3).map(p => {
     const vid = p.video_id || '';
     const sk  = p.source_key || '';
     const vaultName = sk.replace(':', '__') + '.md';
     const conf = p.confidence || 'unverified';
     const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
     const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+    const isPromoted = p.record_status === 'promoted';
+    const failRow = p.failure_reason_code
+      ? `<div class="ksection">실패 사유</div>
+         <div class="ksummary" style="background:var(--err-bg);color:var(--err)">
+           <b>${escapeHtml(p.failure_reason_code)}</b>
+           ${p.failure_reason_detail ? '<br>'+escapeHtml(String(p.failure_reason_detail).slice(0,200)) : ''}
+         </div>`
+      : '';
+    // Obsidian / JSON links only make sense for promoted records
+    const promotedLinks = isPromoted
+      ? `<a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
+         <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>`
+      : '';
     return `
       <div class="know-card">
         <div class="kh">
           <div class="ktitle">${escapeHtml(p.title || sk || '(제목 없음)')}</div>
-          <div class="kbadge ${conf}">${conf}</div>
+          <div class="kbadge ${conf}">${p.record_status || conf}</div>
         </div>
         <div class="kmeta">
           <span>📺 ${sk}</span>
           <span>📅 ${fmtTime(p.collected_at || '')}</span>
           ${p.channel_id ? `<span>📡 ${p.channel_id}</span>` : ''}
         </div>
+        ${failRow}
         <div class="ksection">요약</div>
-        <div class="ksummary">${escapeHtml(p.summary || '(요약 없음)')}</div>
+        <div class="ksummary">${escapeHtml(p.summary || '(아직 요약 없음 — 이 영상은 ' + (p.failure_reason_code ? p.failure_reason_code + ' 단계에서 중단됨' : '처리 중') + ')')}</div>
         <div class="ksection">규칙 (${(p.rules||[]).length})</div>
-        <ol class="krules">${rules || '<li style="color:var(--text-dim)">규칙 없음</li>'}</ol>
+        <ol class="krules">${rules || '<li style="color:var(--text-dim)">아직 추출 안 됨</li>'}</ol>
         ${tags ? `<div class="ksection">태그</div><div class="ktags">${tags}</div>` : ''}
         <div class="kactions">
           <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube 원본</a>
-          <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
-          <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>
+          ${promotedLinks}
         </div>
       </div>
     `;

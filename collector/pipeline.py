@@ -121,6 +121,9 @@ def run_pipeline(
             stage_collect(payload, services, logger)
             _check_kill_switch(payload, logger, "after_collect")
         except (StageFail, KillSwitchTriggered):
+            # Persist the failed attempt so it shows up in the dashboard
+            # (previously we returned silently — user saw "empty" dashboard).
+            store.upsert(payload)
             _fail_run(payload, logger, run_id)
             return payload
 
@@ -163,6 +166,7 @@ def run_pipeline(
             stage_review(payload, services, logger)
             _check_kill_switch(payload, logger, "after_review")
         except (StageFail, KillSwitchTriggered):
+            store.upsert(payload)  # persist mid-pipeline failures too
             _fail_run(payload, logger, run_id)
             return payload
 
@@ -177,6 +181,7 @@ def run_pipeline(
         try:
             stage_promote(payload, services, logger, store)
         except StageFail:
+            store.upsert(payload)
             _fail_run(payload, logger, run_id)
             return payload
 

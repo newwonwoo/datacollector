@@ -44,6 +44,9 @@ jobs:
       GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       COLLECTOR_LLM: gemini
+      # yt-dlp fallback when YouTube timedtext returns 404.
+      # Installed below via pip so the workflow can use it.
+      COLLECTOR_YT_DLP: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +55,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install
-        run: pip install -e .
+        run: |
+          pip install -e .
+          # yt-dlp enables robust captions extraction when timedtext 404s
+          pip install yt-dlp
 
       - name: Sanity (no keys → mock, otherwise real)
         run: |
