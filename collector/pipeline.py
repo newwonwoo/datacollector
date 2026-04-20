@@ -10,6 +10,7 @@ from .events import EventLogger
 from .killswitch import KillSwitchTriggered, is_paused
 from .locks import acquire, heartbeat, release
 from .payload import snapshot_for_history
+from .runs import save_run_snapshot
 from .services import Services
 from .stages import (
     StageFail,

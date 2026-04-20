@@ -20,6 +20,7 @@ from ..payload import new_payload
 from ..pipeline import run_pipeline
 from ..priority import compute_priority, sort_queue
 from ..query import build_query, fallback_query
+from ..runs import save_run_snapshot
 from ..services import MockError, Services, build_mock_services
 from ..store import JSONStore
 
@@ -234,11 +235,13 @@ def run_query(
     )
 
     per_video_status = []
+    processed_payloads: list = []
     for payload in payloads:
         run_pipeline(
             payload, services, store, logger,
             fast_track=bool(q_obj.target_channel_id and payload.get("channel_id") == q_obj.target_channel_id),
         )
+        processed_payloads.append(payload)
         per_video_status.append({
             "video_id": payload["video_id"],
             "title": payload["title"],
@@ -248,6 +251,12 @@ def run_query(
             "rules_n": len(payload.get("rules") or []),
             "priority_score": payload.get("priority_score"),
         })
+
+    # Per-run snapshot (Master_01 §2.1)
+    try:
+        save_run_snapshot(run_id, processed_payloads, query=query, logger=logger)
+    except Exception:
+        pass
 
     summary = {
         "query": query,

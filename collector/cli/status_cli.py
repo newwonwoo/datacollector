@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..channel_quality import compute_channel_scores, top_channels
 from ..killswitch import is_paused
 from .quota import snapshot_quota
 
@@ -94,16 +95,23 @@ def build_status(
     quota_usage: Path = Path("metrics/quota.jsonl"),
     data_store: Path = Path("data_store"),
     events: Path = Path("logs/events.jsonl"),
+    runs_root: Path = Path("runs"),
 ) -> dict:
+    scores = compute_channel_scores(data_store)
+    top = [s.to_dict() for s in top_channels(scores, n=5, reverse=True)]
+    bottom = [s.to_dict() for s in top_channels(scores, n=3, reverse=False)]
     return {
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "kill_switch": is_paused(),
         "dlq_count": _count_glob(dlq_root),
         "review_queue_count": _count_glob(review_queue_root),
+        "runs_count": _count_glob(runs_root),
         "breakers": _read_breakers(breakers_path),
         "budget": snapshot_quota(quota_usage),
         "records": _record_counts(data_store),
         "latest_run": _latest_run(events),
+        "top_channels": top,
+        "bottom_channels": bottom,
     }
 
 

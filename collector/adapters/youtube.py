@@ -57,6 +57,7 @@ class YouTubeAdapter:
         ]
 
     def captions(self, video_id: str) -> dict[str, Any]:
+        # 1st path: timedtext (no auth, no quota cost).
         for lang in ("ko", "en"):
             for kind in ("", "asr"):
                 params = {"v": video_id, "lang": lang, "fmt": "srv3"}
@@ -69,6 +70,39 @@ class YouTubeAdapter:
                         "source": "asr" if kind == "asr" else "manual",
                         "text": resp["body"],
                     }
+        # 2nd path (fallback): yt-dlp subprocess if binary is on PATH.
+        # Opt-in via COLLECTOR_YT_DLP=1 so CI doesn't spend time on it.
+        import os, shutil
+        if os.environ.get("COLLECTOR_YT_DLP") == "1" and shutil.which("yt-dlp"):
+            try:
+                return self._captions_via_ytdlp(video_id)
+            except Exception:
+                pass
+        return {"source": "none", "text": ""}
+
+    def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:
+        """Last-resort caption extraction via yt-dlp. Requires binary on PATH."""
+        import subprocess, tempfile, os
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as td:
+            cmd = [
+                "yt-dlp", "--skip-download",
+                "--write-subs", "--write-auto-subs",
+                "--sub-langs", "ko,en",
+                "--sub-format", "srv3",
+                "-o", str(Path(td) / "%(id)s.%(ext)s"),
+                f"https://www.youtube.com/watch?v={video_id}",
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                return {"source": "none", "text": ""}
+            # Prefer manual over ASR
+            for kind, suffix in (("manual", ".ko.srv3"), ("manual", ".en.srv3"),
+                                 ("asr", ".ko.srv3"), ("asr", ".en.srv3")):
+                for p in Path(td).glob(f"{video_id}*{suffix}"):
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                    if text.strip():
+                        return {"source": kind, "text": text}
         return {"source": "none", "text": ""}
 
     def video_alive(self, video_id: str) -> bool:

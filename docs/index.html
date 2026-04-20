@@ -399,6 +399,9 @@
     <div class="section-title">📚 최종 산출물 — 가공된 지식
       <span class="muted" style="font-weight:400;font-size:11px">YouTube 자막 → 요약 + 규칙 + 태그</span>
     </div>
+    <div style="margin-bottom:12px">
+      <input id="search" type="text" placeholder="🔍 제목·요약·규칙·태그 검색" style="width:100%" />
+    </div>
     <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
   </div>
 
@@ -523,6 +526,8 @@ let lastAnnouncedRun = null;
 let lastKnownRunIds  = new Set();
 let knownSourceKeys  = new Set();  // to detect NEW records
 let firstLoad = true;
+let allValidRecords = [];           // full in-memory cache for client search
+let currentSearch = "";
 
 function token(){ return localStorage.getItem('gh_pat') || ''; }
 function setToken(v){ localStorage.setItem('gh_pat', v); }
@@ -730,6 +735,8 @@ async function loadLatest(){
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
   document.getElementById('updated').textContent = '마지막 로드 '+new Date().toLocaleTimeString('ko');
 
+  allValidRecords = valid;
+
   // Visualizations
   updatePipelineDiagram(valid);
   renderStackBar('chart-status', 'legend-status', countBy(valid, 'record_status'), STATUS_COLORS);
@@ -738,8 +745,51 @@ async function loadLatest(){
                  countBy(valid.filter(p=>p.failure_reason_code), 'failure_reason_code'),
                  FAIL_COLORS);
 
-  // Knowledge cards (final product)
-  renderKnowledge(valid);
+  // Knowledge cards (final product) — respects current search
+  applySearchAndRender();
+}
+
+function applySearchAndRender(){
+  const q = currentSearch.trim().toLowerCase();
+  let filtered = allValidRecords;
+  if (q){
+    filtered = allValidRecords.filter(p => {
+      const hay = [
+        p.title || '',
+        p.summary || '',
+        (p.rules || []).join(' '),
+        (p.tags || []).join(' '),
+        p.source_key || '',
+        p.channel_id || '',
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  renderKnowledge(filtered);
+  renderRecordsList(filtered);
+}
+
+function renderRecordsList(valid){
+  const host = document.getElementById('records');
+  if (!valid.length){
+    host.innerHTML = currentSearch
+      ? `<div class="empty">"${escapeHtml(currentSearch)}" 검색 결과 없음</div>`
+      : '<div class="empty">아직 데이터가 없습니다</div>';
+    return;
+  }
+  // Maintain NEW badges + modal open behaviour from earlier render
+  host.innerHTML = valid.slice(0, 10).map(p => {
+    return `
+      <div class="rec-item" onclick="openModal('${encodeURIComponent(p.source_key)}')">
+        <div class="head">
+          <span>${p.source_key || '?'}</span>
+          <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+        </div>
+        <div class="title-line">${escapeHtml((p.title||'').slice(0,80) || '(제목 없음)')}</div>
+        <div class="summary">${escapeHtml((p.summary||'').slice(0,140))}${(p.summary||'').length>140?'…':''}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 const FAIL_COLORS = {
@@ -986,6 +1036,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('query').addEventListener('keydown', e=>{
     if(e.key==='Enter') runQuery();
   });
+  // Client-side search over cached knowledge records
+  const se = document.getElementById('search');
+  if (se){
+    let t;
+    se.addEventListener('input', e => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        currentSearch = e.target.value || "";
+        applySearchAndRender();
+      }, 120);
+    });
+  }
 });
 </script>
 </body>
