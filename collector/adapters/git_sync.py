@@ -127,24 +127,26 @@ class GitSyncAdapter:
 
     @staticmethod
     def _render_markdown(payload: dict[str, Any]) -> str:
+        from ..pii import mask_payload
+        masked = mask_payload(payload)
         lines = [
             "---",
-            f"source_key: {payload.get('source_key')}",
-            f"video_id: {payload.get('video_id')}",
-            f"title: {payload.get('title', '')}",
-            f"published_at: {payload.get('published_at', '')}",
-            f"collected_at: {payload.get('collected_at', '')}",
-            f"confidence: {payload.get('confidence', '')}",
-            f"schema_version: {payload.get('schema_version', '')}",
-            "tags: [" + ", ".join(payload.get("tags", [])) + "]",
+            f"source_key: {masked.get('source_key')}",
+            f"video_id: {masked.get('video_id')}",
+            f"title: {masked.get('title', '')}",
+            f"published_at: {masked.get('published_at', '')}",
+            f"collected_at: {masked.get('collected_at', '')}",
+            f"confidence: {masked.get('confidence', '')}",
+            f"schema_version: {masked.get('schema_version', '')}",
+            "tags: [" + ", ".join(masked.get("tags", [])) + "]",
             "---",
             "",
             "## Summary",
-            payload.get("summary", ""),
+            masked.get("summary", ""),
             "",
             "## Rules",
         ]
-        for r in payload.get("rules", []):
+        for r in masked.get("rules", []):
             lines.append(f"- {r}")
-        lines += ["", f"원본: https://www.youtube.com/watch?v={payload.get('video_id','')}", ""]
+        lines += ["", f"원본: https://www.youtube.com/watch?v={masked.get('video_id','')}", ""]
         return "\n".join(lines)

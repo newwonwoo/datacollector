@@ -6,12 +6,15 @@ import os
 import sys
 from pathlib import Path
 
-SUBCOMMANDS = {
-    "app": "collector.cli.app",
-    "run": "collector.cli.run",
-    "dashboard": "collector.cli.dashboard",
-    "review": "collector.cli.review",
-    "quota": "collector.cli.quota",
+SUBCOMMANDS: dict[str, tuple[str, str]] = {
+    "app": ("collector.cli.app", "main"),
+    "run": ("collector.cli.run", "main"),
+    "dashboard": ("collector.cli.dashboard", "main"),
+    "review": ("collector.cli.review", "main"),
+    "quota": ("collector.cli.quota", "main"),
+    "metrics": ("collector.cli.metrics_cli", "main_metrics"),
+    "traces": ("collector.cli.metrics_cli", "main_traces"),
+    "alerts": ("collector.cli.alerts_cli", "main"),
 }
 
 
@@ -48,6 +51,9 @@ Usage:
   collector dashboard   SQLite 인덱스 + HTML 리포트 생성만
   collector review      review_queue/* 대화형 리뷰
   collector quota       runner-minute / 쿼터 / LLM 비용 점검
+  collector metrics     events.jsonl + data_store → metrics/daily.jsonl 집계
+  collector traces      events.jsonl → logs/traces.jsonl per-run 타임라인
+  collector alerts      daily metrics 평가 + GitHub Issue 발행 (옵션)
 
 각 서브커맨드에 --help 를 붙이면 세부 옵션을 볼 수 있다.
 """
@@ -63,8 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd not in SUBCOMMANDS:
         print(f"unknown subcommand: {cmd}\n\n{USAGE}", file=sys.stderr)
         return 2
-    mod = importlib.import_module(SUBCOMMANDS[cmd])
-    return int(mod.main(rest) or 0)
+    modpath, fnname = SUBCOMMANDS[cmd]
+    mod = importlib.import_module(modpath)
+    fn = getattr(mod, fnname)
+    return int(fn(rest) or 0)
 
 
 if __name__ == "__main__":

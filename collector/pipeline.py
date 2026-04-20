@@ -201,3 +201,36 @@ def detect_removed(
         reason="yt_video_removed",
     )
     return payload
+
+
+def mark_dmca_takedown(
+    source_key: str,
+    *,
+    store: JSONStore,
+    logger: EventLogger,
+    reason: str,
+    actor: str = "user:legal",
+) -> dict[str, Any]:
+    """Legal takedown path (Appendix D).
+
+    Immediately moves the record to REMOVED + DMCA_TAKEDOWN, preserving JSON
+    for audit but ensuring downstream Package step skips it forever.
+    """
+    current = store.get(source_key)
+    if current is None:
+        raise ValueError(f"{source_key}: not in store")
+    store.mark_removed(source_key)
+    current["archive_state"] = "REMOVED"
+    current["failure_reason_code"] = "DMCA_TAKEDOWN"
+    current["failure_reason_detail"] = reason
+    store.upsert(current)
+    logger.log(
+        entity_type="manual_action",
+        entity_id=source_key,
+        from_status=current.get("record_status"),
+        to_status=current.get("record_status"),
+        run_id=current.get("run_id", ""),
+        reason=f"dmca_takedown:{reason}",
+        actor=actor,
+    )
+    return current
