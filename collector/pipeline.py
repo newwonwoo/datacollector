@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import json
 from pathlib import Path
 
 from .events import EventLogger
@@ -22,6 +23,27 @@ from .stages import (
 )
 from .store import JSONStore
 from .vault import regenerate_moc, write_note
+
+
+def _route_to_review_queue(payload: dict[str, Any], review_queue_root: Path, logger: EventLogger) -> None:
+    """Auto-route reviewed_inferred / reviewed_unverified to review_queue/.
+
+    Master_02 §3.3 — human review workflow.
+    """
+    rs = payload.get("record_status", "")
+    if rs not in ("reviewed_inferred", "reviewed_unverified"):
+        return
+    review_queue_root.mkdir(parents=True, exist_ok=True)
+    name = payload["source_key"].replace(":", "__") + ".json"
+    target = review_queue_root / name
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.log(
+        entity_type="record",
+        entity_id=payload["source_key"],
+        from_status=rs, to_status=rs,
+        run_id=payload.get("run_id", ""),
+        reason=f"routed_to_review_queue:{rs}",
+    )
 
 
 def _check_kill_switch(payload: dict[str, Any], logger: EventLogger, where: str) -> None:
@@ -55,6 +77,7 @@ def run_pipeline(
     fast_track: bool = False,
     use_lock: bool = True,
     vault_root: Path | None = Path("vault"),
+    review_queue_root: Path | None = Path("review_queue"),
 ) -> dict[str, Any]:
     """Run all seven stages on a single payload.
 
@@ -141,6 +164,10 @@ def run_pipeline(
         except (StageFail, KillSwitchTriggered):
             _fail_run(payload, logger, run_id)
             return payload
+
+        # P1-β: auto-route inferred/unverified to human review queue
+        if review_queue_root is not None:
+            _route_to_review_queue(payload, review_queue_root, logger)
 
         # heartbeat before long-tail stages
         if lock is not None:

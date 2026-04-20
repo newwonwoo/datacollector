@@ -10,6 +10,8 @@ logs/
 metrics/
 index/
 vault/
+review_queue/
+state/
 build/
 dist/
 *.egg-info/

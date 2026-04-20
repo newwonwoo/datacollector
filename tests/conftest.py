@@ -40,17 +40,30 @@ def _isolated_locks(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _isolated_vault(monkeypatch, tmp_path):
-    """Route run_pipeline's default vault_root into tmp_path so test runs
-    don't litter the repo root with vault/ artifacts (G-11 follow-up)."""
+    """Route run_pipeline's default vault_root and review_queue_root into
+    tmp_path so test runs don't litter the repo root."""
     import collector.pipeline
     vault_dir = tmp_path / "default_vault"
+    queue_dir = tmp_path / "default_queue"
     orig = collector.pipeline.run_pipeline
-    def _run(payload, services, store, logger, *, fast_track=False, use_lock=True, vault_root=None):
+    def _run(payload, services, store, logger, *, fast_track=False, use_lock=True,
+             vault_root=None, review_queue_root=None):
         if vault_root is None:
             vault_root = vault_dir
+        if review_queue_root is None:
+            review_queue_root = queue_dir
         return orig(payload, services, store, logger,
-                    fast_track=fast_track, use_lock=use_lock, vault_root=vault_root)
+                    fast_track=fast_track, use_lock=use_lock,
+                    vault_root=vault_root, review_queue_root=review_queue_root)
     monkeypatch.setattr(collector.pipeline, "run_pipeline", _run)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_circuit(monkeypatch, tmp_path):
+    """Route circuit breaker state file into tmp_path."""
+    import collector.circuit_breaker as cb
+    state_dir = tmp_path / "state"
+    monkeypatch.setattr(cb, "_DEFAULT_ROOT", state_dir, raising=False)
 
 
 @pytest.fixture
