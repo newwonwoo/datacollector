@@ -158,6 +158,77 @@
                              color: var(--text); }
     .rec-item .summary { color: var(--text-2); font-size: 13px; }
 
+    /* Banner */
+    .banner {
+      background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+      border: 1px solid #86efac; color: #166534;
+      padding: 14px 18px; border-radius: 12px; margin-bottom: 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; animation: slideDown .3s;
+    }
+    @keyframes slideDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+    .banner.err { background: linear-gradient(135deg, #fee2e2, #fecaca); border-color:#fca5a5; color:#991b1b; }
+    .banner .msg { font-weight: 600; font-size: 14px; }
+    .banner .x { cursor: pointer; color: inherit; opacity: .6; background:transparent; border:0; padding:4px 8px; }
+    .banner .x:hover { opacity: 1; background: rgba(0,0,0,.05); }
+    .banner .actions { display: flex; gap: 8px; }
+    .banner .actions a {
+      padding: 6px 12px; border-radius: 6px;
+      background: rgba(255,255,255,.5); color: inherit;
+      text-decoration: none; font-size: 13px; font-weight: 600;
+    }
+    .banner .actions a:hover { background: rgba(255,255,255,.8); }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15,23,42,.5);
+      display: none; align-items: center; justify-content: center; z-index: 200;
+      padding: 20px;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: var(--card); border-radius: 14px; max-width: 640px; width: 100%;
+      max-height: 90vh; overflow-y: auto; padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    }
+    .modal h3 { margin: 0 0 6px; font-size: 18px; }
+    .modal .meta {
+      font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+      display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px;
+    }
+    .modal .sec-title {
+      font-size: 11px; color: var(--text-2); text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 600; margin: 16px 0 6px;
+    }
+    .modal .summary { background: var(--subtle); padding: 12px; border-radius: 8px; font-size: 14px; }
+    .modal ol { margin: 0; padding-left: 20px; }
+    .modal ol li { margin: 4px 0; font-size: 14px; }
+    .modal .tag-list { display: flex; gap: 6px; flex-wrap: wrap; }
+    .modal .tag {
+      background: var(--info-bg); color: var(--accent); padding: 2px 10px;
+      border-radius: 100px; font-size: 12px; font-weight: 600;
+    }
+    .modal .close-row { display: flex; justify-content: space-between; align-items: center;
+                         gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .rec-item { cursor: pointer; }
+    .rec-item.new { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); position: relative; }
+    .rec-item.new::after {
+      content: "NEW"; position: absolute; top: -8px; right: 10px;
+      background: var(--accent); color: #fff; font-size: 10px; font-weight: 700;
+      padding: 2px 8px; border-radius: 100px; letter-spacing: 0.05em;
+    }
+
+    /* Output quick links */
+    .links-row {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;
+    }
+    .link-btn {
+      padding: 8px 14px; border-radius: 8px; background: var(--subtle);
+      color: var(--text); text-decoration: none; font-size: 13px;
+      border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 6px;
+    }
+    .link-btn:hover { background: var(--card); border-color: var(--accent); color: var(--accent); }
+
     details { margin-top: 4px; }
     summary { cursor: pointer; color: var(--text-2); font-size: 14px;
               user-select: none; padding: 6px 0; font-weight: 600;
@@ -208,6 +279,9 @@
     <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
   </header>
 
+  <!-- 완료 배너 (동적) -->
+  <div id="banner-host"></div>
+
   <!-- 실행 카드 -->
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
@@ -242,10 +316,19 @@
 
     <!-- 최신 결과 -->
     <div class="card">
-      <div class="section-title">최신 결과</div>
+      <div class="section-title">최신 결과 <span class="muted" style="font-weight:400;font-size:11px">클릭 시 상세</span></div>
       <div id="records"><div class="empty">아직 데이터가 없습니다</div></div>
-      <p style="margin:14px 0 0"><a class="subtle" href="dashboard.html">전체 리포트 보기 →</a></p>
+      <div class="links-row" style="margin-top:14px">
+        <a class="link-btn" href="dashboard.html">📊 전체 리포트</a>
+        <a class="link-btn" href="https://github.com/newwonwoo/datacollector/tree/main/vault/strategies" target="_blank">📝 Obsidian 노트</a>
+        <a class="link-btn" href="https://github.com/newwonwoo/datacollector/tree/main/data_store" target="_blank">📦 원본 JSON</a>
+      </div>
     </div>
+  </div>
+
+  <!-- 상세 모달 -->
+  <div class="modal-backdrop" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modal-body"></div>
   </div>
 
   <!-- 설정 -->
@@ -284,6 +367,12 @@ const OWNER = 'newwonwoo';
 const REPO  = 'datacollector';
 const WF    = 'collect.yml';
 const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+// State: track which runs we've already announced so the banner doesn't spam
+let lastAnnouncedRun = null;
+let lastKnownRunIds  = new Set();
+let knownSourceKeys  = new Set();  // to detect NEW records
+let firstLoad = true;
 
 function token(){ return localStorage.getItem('gh_pat') || ''; }
 function setToken(v){ localStorage.setItem('gh_pat', v); }
@@ -373,6 +462,20 @@ async function loadRuns(){
   if (!r.ok){ host.innerHTML = '<div class="empty">상태 조회 실패</div>'; return; }
   const b = await r.json();
   if (!b.workflow_runs?.length){ host.innerHTML='<div class="empty">실행 기록 없음</div>'; return; }
+
+  // Announce newly-completed runs
+  for (const run of b.workflow_runs){
+    const key = `${run.id}:${run.status}:${run.conclusion||''}`;
+    const wasRunning = lastKnownRunIds.has(`${run.id}:in_progress:`) || lastKnownRunIds.has(`${run.id}:queued:`);
+    if (run.status === 'completed' && wasRunning && run.id !== lastAnnouncedRun){
+      announceCompletion(run);
+      lastAnnouncedRun = run.id;
+      // Refresh records immediately
+      setTimeout(loadLatest, 1500);
+    }
+    lastKnownRunIds.add(key);
+  }
+
   host.innerHTML = b.workflow_runs.map(r => `
     <div class="run-item">
       <div class="title">${r.display_title || r.name || 'run'}</div>
@@ -381,6 +484,29 @@ async function loadRuns(){
       <a href="${r.html_url}" target="_blank">로그</a>
     </div>
   `).join('');
+}
+
+function announceCompletion(run){
+  const host = document.getElementById('banner-host');
+  const ok = run.conclusion === 'success';
+  const bannerId = `bn-${run.id}`;
+  if (document.getElementById(bannerId)) return;  // de-dup
+  const el = document.createElement('div');
+  el.id = bannerId;
+  el.className = 'banner' + (ok ? '' : ' err');
+  el.innerHTML = `
+    <div class="msg">
+      ${ok ? '✅ 파이프라인 완료' : '❌ 파이프라인 실패'} —
+      <span style="font-family:var(--mono);font-size:13px">${run.display_title || run.name}</span>
+    </div>
+    <div class="actions">
+      <a href="${run.html_url}" target="_blank">${ok ? '실행 로그' : '에러 로그'}</a>
+      ${ok ? '<a onclick="document.getElementById(\'records\').scrollIntoView({behavior:\'smooth\'})" style="cursor:pointer">결과 보기 ↓</a>' : ''}
+      <button class="x" onclick="this.closest('.banner').remove()">✕</button>
+    </div>`;
+  host.prepend(el);
+  // Auto-dismiss success after 20s
+  if (ok) setTimeout(()=>el.remove(), 20000);
 }
 
 async function loadLatest(){
@@ -417,16 +543,34 @@ async function loadLatest(){
   }));
 
   const valid = records.filter(Boolean);
-  host.innerHTML = valid.length ? valid.map(p => `
-    <div class="rec-item">
-      <div class="head">
-        <span>${p.source_key || '?'}</span>
-        <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+
+  // detect newly-seen source_keys (NEW badge)
+  const freshKeys = new Set();
+  if (!firstLoad) {
+    for (const p of valid) {
+      if (!knownSourceKeys.has(p.source_key)) freshKeys.add(p.source_key);
+    }
+  }
+  for (const p of valid) knownSourceKeys.add(p.source_key);
+  firstLoad = false;
+
+  // stash payloads by source_key for modal access
+  window.__recordsBySk = window.__recordsBySk || {};
+  for (const p of valid) window.__recordsBySk[p.source_key] = p;
+
+  host.innerHTML = valid.length ? valid.map(p => {
+    const isNew = freshKeys.has(p.source_key);
+    return `
+      <div class="rec-item ${isNew?'new':''}" onclick="openModal('${encodeURIComponent(p.source_key)}')">
+        <div class="head">
+          <span>${p.source_key || '?'}</span>
+          <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+        </div>
+        <div class="title-line">${(p.title||'').slice(0,80) || '(제목 없음)'}</div>
+        <div class="summary">${(p.summary||'').slice(0,140)}${(p.summary||'').length>140?'…':''}</div>
       </div>
-      <div class="title-line">${(p.title||'').slice(0,80) || '(제목 없음)'}</div>
-      <div class="summary">${(p.summary||'').slice(0,140)}${(p.summary||'').length>140?'…':''}</div>
-    </div>
-  `).join('') : '<div class="empty">레코드 파싱 실패</div>';
+    `;
+  }).join('') : '<div class="empty">레코드 파싱 실패</div>';
 
   const promoted = valid.filter(p=>p.record_status==='promoted').length;
   const cost = valid.reduce((s,p)=>s + (p.llm_context?.cost_usd||0), 0);
@@ -436,6 +580,39 @@ async function loadLatest(){
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
   document.getElementById('updated').textContent = '마지막 로드 '+new Date().toLocaleTimeString('ko');
 }
+
+function openModal(encodedSk){
+  const sk = decodeURIComponent(encodedSk);
+  const p = window.__recordsBySk?.[sk];
+  if (!p) return;
+  const vid = p.video_id || '';
+  const vaultName = sk.replace(':', '__') + '.md';
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <h3>${p.title || '(제목 없음)'}</h3>
+    <div class="meta">
+      <span>${sk}</span>
+      <span>${p.record_status} · ${p.confidence}</span>
+      <span>${fmtTime(p.collected_at||'')}</span>
+    </div>
+    <div class="sec-title">요약</div>
+    <div class="summary">${p.summary || '(없음)'}</div>
+    <div class="sec-title">규칙 (${(p.rules||[]).length})</div>
+    <ol>${(p.rules||[]).map(r=>`<li>${r}</li>`).join('') || '<li>(없음)</li>'}</ol>
+    <div class="sec-title">태그</div>
+    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
+    <div class="close-row">
+      <div class="links-row" style="margin:0">
+        <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube</a>
+        <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Markdown</a>
+      </div>
+      <button class="ghost" onclick="closeModal()">닫기</button>
+    </div>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
 document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('pat').value = token();
