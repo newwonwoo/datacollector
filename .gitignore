@@ -11,6 +11,7 @@ metrics/
 index/
 vault/
 review_queue/
+runs/
 state/
 build/
 dist/

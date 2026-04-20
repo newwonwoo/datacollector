@@ -66,6 +66,22 @@ def _isolated_circuit(monkeypatch, tmp_path):
     monkeypatch.setattr(cb, "_DEFAULT_ROOT", state_dir, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_runs(monkeypatch, tmp_path):
+    """Ensure save_run_snapshot writes into tmp_path instead of repo runs/."""
+    import collector.runs as runs_mod
+    runs_dir = tmp_path / "default_runs"
+    orig = runs_mod.save_run_snapshot
+    def _save(run_id, payloads, *, query="", root=None, logger=None):
+        if root is None:
+            root = runs_dir
+        return orig(run_id, payloads, query=query, root=root, logger=logger)
+    monkeypatch.setattr(runs_mod, "save_run_snapshot", _save)
+    # cli/run imports save_run_snapshot by name — patch that binding too
+    import collector.cli.run as cli_run
+    monkeypatch.setattr(cli_run, "save_run_snapshot", _save)
+
+
 @pytest.fixture
 def logger():
     return EventLogger()
