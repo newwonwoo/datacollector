@@ -425,23 +425,14 @@
       <span class="title">Collector</span>
       <span class="tag">YouTube 지식 파이프라인 · v10</span>
     </div>
+    <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="mini-health" class="pill" style="display:none"></span>
     <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
+  </span>
   </header>
 
-  <!-- 완료 배너 (동적) -->
+  <!-- 완료 배너 (동적 — 실행 성공/실패 알림, 새 이벤트만) -->
   <div id="banner-host"></div>
-
-  <!-- 🎯 수집 상태 요약 — 한 눈에 알 수 있는 건강도 -->
-  <div id="health" class="health unk">
-    <div class="icon" id="health-icon">⏳</div>
-    <div class="body">
-      <div class="title" id="health-title">상태 확인 중…</div>
-      <div class="sub" id="health-sub">status.json 로드 중</div>
-      <div class="hint" id="health-hint"></div>
-    </div>
-    <span class="age" id="health-age"></span>
-    <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
-  </div>
 
   <!-- 운영 상태 스트립 (docs/status.json 기반, 공개 URL이라 PAT 불필요) -->
   <div class="card" style="padding: 14px 18px;">
@@ -479,9 +470,22 @@
     <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
   </div>
 
-  <!-- 파이프라인 흐름 다이어그램 -->
+  <!-- 파이프라인 흐름 다이어그램 + 수집 상태 요약 -->
   <div class="card">
     <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
+
+    <!-- 🎯 수집 상태 요약 — 파이프라인 카드 내부 (맥락 일관성) -->
+    <div id="health" class="health unk" style="margin: 0 0 14px;">
+      <div class="icon" id="health-icon">⏳</div>
+      <div class="body">
+        <div class="title" id="health-title">상태 확인 중…</div>
+        <div class="sub" id="health-sub">status.json 로드 중</div>
+        <div class="hint" id="health-hint"></div>
+      </div>
+      <span class="age" id="health-age"></span>
+      <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
+    </div>
+
     <div class="pipeline-stages" id="pipeline-stages">
       <div class="stage" data-stage="discover">DISCOVER
         <span class="stage-count">—</span><span class="stage-sub">대기</span>
@@ -1350,6 +1354,31 @@ function updateHealth(s){
   hint.textContent = hintTxt;
   hint.style.display = hintTxt ? 'block' : 'none';
   age.textContent = ageLabel ? (ageMin < 1 ? '방금' : ageMin < 60 ? `${Math.round(ageMin)}분 전` : ageLabel) : '';
+
+  // Header mini-pill — compact at-a-glance indicator next to connection pill
+  const mini = document.getElementById('mini-health');
+  if (mini){
+    if (cls === 'unk'){
+      mini.style.display = 'none';
+    } else {
+      const pillCls = toneDown ? 'warn' : (cls === 'ok' ? 'ok' : cls === 'warn' ? 'warn' : 'err');
+      mini.className = 'pill ' + pillCls;
+      const shortLabel =
+          cls === 'ok'   ? '✓ 수집 정상'
+        : cls === 'warn' ? '△ 부분 수집'
+        : cls === 'err'  ? '✗ 수집 실패'
+        :                  '? 상태';
+      mini.innerHTML = toneDown
+        ? `ⓘ 이전: ${shortLabel}`
+        : shortLabel;
+      mini.style.display = 'inline-flex';
+      mini.title = `${titleTxt} — 파이프라인 카드에서 상세 확인`;
+      mini.style.cursor = 'pointer';
+      mini.onclick = () => {
+        document.getElementById('health').scrollIntoView({behavior: 'smooth', block: 'center'});
+      };
+    }
+  }
 }
 
 function updateRunBusyBanner(activeRun){
