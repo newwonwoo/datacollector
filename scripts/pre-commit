@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# pre-commit: 실제 API 키처럼 보이는 문자열이 .env* 또는 추적 파일에 커밋되는 것을 차단.
+# 설치: ln -s ../../scripts/pre-commit .git/hooks/pre-commit
+
+set -e
+
+# Check staged files for Google API key pattern (AIzaSy + 35 chars)
+PATTERN='AIzaSy[A-Za-z0-9_-]{33}'
+
+BAD=$(git diff --cached -U0 | grep -E "^\+" | grep -vE "^\+\+\+ " | grep -oE "$PATTERN" || true)
+if [ -n "$BAD" ]; then
+  echo "❌ pre-commit: Google API key 패턴이 스테이지된 변경에 들어있습니다:"
+  echo "$BAD" | head -3
+  echo ""
+  echo "→ .env 파일에만 넣고 .env.example 등에 넣지 마세요."
+  echo "→ git reset HEAD <파일> 로 언스테이지 후 재시도."
+  exit 1
+fi
+
+# GitHub PAT pattern
+PAT='gh[pousr]_[A-Za-z0-9]{36,}'
+BAD2=$(git diff --cached -U0 | grep -E "^\+" | grep -vE "^\+\+\+ " | grep -oE "$PAT" || true)
+if [ -n "$BAD2" ]; then
+  echo "❌ pre-commit: GitHub Personal Access Token 패턴 발견:"
+  echo "$BAD2" | head -3
+  exit 1
+fi
+
+# Anthropic API key
+ANTH='sk-ant-[A-Za-z0-9_-]{20,}'
+BAD3=$(git diff --cached -U0 | grep -E "^\+" | grep -vE "^\+\+\+ " | grep -oE "$ANTH" || true)
+if [ -n "$BAD3" ]; then
+  echo "❌ pre-commit: Anthropic API 키 패턴 발견."
+  exit 1
+fi
+
+exit 0
