@@ -4,6 +4,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from .chunking import MAX_CHARS_SINGLE, chunk, reduce_outputs, should_chunk
+from .clickbait import is_clickbait
 from .events import EventLogger
 from .hashing import transcript_hash
 from .payload import snapshot_for_history, utcnow_iso
@@ -99,29 +101,52 @@ def stage_collect(payload: dict, services: Services, logger: EventLogger) -> dic
     payload["caption_source"] = source
     payload["transcript"] = text
     payload["transcript_hash"] = transcript_hash(text)
+
+    # P4-2: flag clickbait candidates (title vs transcript noun overlap)
+    if is_clickbait(payload.get("title", ""), text):
+        payload["_flag_clickbait"] = True
+
     _set_stage(payload, "collect", "completed", logger)
     _set_record(payload, "collected", logger)
     return payload
 
 
+def _call_llm_once(payload: dict, services: Services, text: str, attempt: int) -> dict:
+    out = services.llm_extract(text, attempt)
+    if not isinstance(out, dict) or "summary" not in out or "rules" not in out:
+        raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", "missing keys")
+    return out
+
+
 def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "extract", "started", logger)
+    transcript = payload["transcript"]
+
+    # P4-1: long-transcript map-reduce
+    chunks = chunk(transcript) if should_chunk(transcript) else [transcript]
+    reason_suffix = f"chunks_{len(chunks)}" if len(chunks) > 1 else "single"
+
     attempt = 0
     last_err: Exception | None = None
-    while attempt < 2:  # at most one reprompt
+    while attempt < 2:  # at most one reprompt per attempt level
         try:
-            out = services.llm_extract(payload["transcript"], attempt)
-            if not isinstance(out, dict) or "summary" not in out or "rules" not in out:
-                raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", "missing keys")
+            if len(chunks) == 1:
+                out = _call_llm_once(payload, services, chunks[0], attempt)
+            else:
+                chunk_outs = [_call_llm_once(payload, services, c, attempt) for c in chunks]
+                out = reduce_outputs(chunk_outs)
             payload["summary"] = out.get("summary", "")
             payload["rules"] = list(out.get("rules", []))
             payload["tags"] = list(out.get("tags", []))[:5]
-            payload["llm_context"]["input_tokens"] = len(payload["transcript"])
+            payload["llm_context"]["input_tokens"] = len(transcript)
             payload["llm_context"]["output_tokens"] = len(payload["summary"]) + sum(
                 len(r) for r in payload["rules"]
             )
             payload["llm_context"]["cost_usd"] = 0.0001 * payload["llm_context"]["input_tokens"]
-            _set_stage(payload, "extract", "completed", logger, reason=f"attempt_{attempt}")
+            _set_stage(
+                payload, "extract", "completed", logger,
+                reason=f"attempt_{attempt}:{reason_suffix}",
+            )
             _set_record(payload, "extracted", logger)
             return payload
         except MockError as e:

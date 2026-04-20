@@ -15,6 +15,8 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "metrics": ("collector.cli.metrics_cli", "main_metrics"),
     "traces": ("collector.cli.metrics_cli", "main_traces"),
     "alerts": ("collector.cli.alerts_cli", "main"),
+    "aggregate": ("collector.cli.extras_cli", "main_aggregate"),
+    "archive": ("collector.cli.extras_cli", "main_archive"),
 }
 
 
@@ -54,6 +56,8 @@ Usage:
   collector metrics     events.jsonl + data_store → metrics/daily.jsonl 집계
   collector traces      events.jsonl → logs/traces.jsonl per-run 타임라인
   collector alerts      daily metrics 평가 + GitHub Issue 발행 (옵션)
+  collector aggregate   다영상 집계 (--tags 단타,돌파) → aggregates/*.json
+  collector archive     지난 분기 기록을 archive/YYYY_QN/ 으로 이동
 
 각 서브커맨드에 --help 를 붙이면 세부 옵션을 볼 수 있다.
 """

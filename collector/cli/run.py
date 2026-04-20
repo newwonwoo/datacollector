@@ -198,7 +198,17 @@ def run_query(
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
-        candidates = services.youtube_search(q_obj.to_dict())[:count]
+        try:
+            candidates = services.youtube_search(q_obj.to_dict())[:count]
+        except Exception:
+            candidates = []
+        # P4-5: fallback query on empty result (Master_02 §1)
+        if not candidates:
+            fb = fallback_query(query)
+            try:
+                candidates = services.youtube_search(fb.to_dict())[:count]
+            except Exception:
+                candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
     else:
         candidates = _scripted_candidates(query, count)
