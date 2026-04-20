@@ -143,7 +143,7 @@
     .run-item a { color: var(--accent); text-decoration: none; font-size: 12px; }
     .run-item a:hover { text-decoration: underline; }
 
-    /* Record list */
+    /* Record list (small preview, right column) */
     .rec-item {
       padding: 14px; background: var(--subtle); border-radius: 10px;
       margin-bottom: 10px; border: 1px solid transparent;
@@ -157,6 +157,53 @@
     .rec-item .title-line { font-weight: 600; margin: 8px 0 5px; font-size: 14.5px;
                              color: var(--text); }
     .rec-item .summary { color: var(--text-2); font-size: 13px; }
+
+    /* Knowledge cards (final output — summary+rules visible) */
+    .know-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 22px; margin-bottom: 14px; box-shadow: var(--shadow-sm);
+    }
+    .know-card .kh {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .know-card .kh .ktitle {
+      flex: 1; min-width: 200px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
+    }
+    .know-card .kh .kbadge {
+      padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600;
+      font-family: var(--mono);
+    }
+    .know-card .kh .kbadge.confirmed { background: var(--ok-bg); color: var(--ok); }
+    .know-card .kh .kbadge.inferred  { background: var(--warn-bg); color: var(--warn); }
+    .know-card .kh .kbadge.unverified{ background: #eef2ff; color: #6366f1; }
+    .know-card .kh .kbadge.rejected  { background: var(--err-bg); color: var(--err); }
+    .know-card .kmeta {
+      font-size: 12px; color: var(--text-2); font-family: var(--mono);
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .know-card .ksection {
+      font-size: 11px; color: var(--text-2); text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 600; margin: 14px 0 6px;
+    }
+    .know-card .ksummary {
+      background: var(--subtle); padding: 14px 16px; border-radius: 10px;
+      font-size: 14.5px; line-height: 1.6; color: var(--text);
+    }
+    .know-card ol.krules {
+      margin: 0; padding-left: 24px; counter-reset: rule;
+    }
+    .know-card ol.krules li {
+      margin: 6px 0; font-size: 14px; line-height: 1.5; padding-left: 6px;
+    }
+    .know-card .ktags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .know-card .ktag {
+      background: var(--info-bg); color: var(--accent);
+      padding: 3px 12px; border-radius: 100px; font-size: 12px; font-weight: 600;
+    }
+    .know-card .kactions {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px;
+      padding-top: 12px; border-top: 1px solid var(--border);
+    }
 
     /* Banner */
     .banner {
@@ -267,6 +314,50 @@
     }
 
     footer { text-align: center; color: var(--text-dim); font-size: 12.5px; margin-top: 26px; }
+
+    /* Pipeline diagram */
+    .pipeline-stages {
+      display: flex; align-items: center; gap: 4px; margin-top: 8px;
+      overflow-x: auto; padding: 6px 2px 10px;
+    }
+    .stage {
+      flex: 1; min-width: 86px; padding: 10px 8px; border-radius: 8px;
+      background: var(--subtle); border: 1px solid var(--border);
+      text-align: center; font-size: 12px; font-weight: 600;
+      color: var(--text-2); position: relative;
+    }
+    .stage .stage-count {
+      display: block; font-family: var(--mono); font-size: 16px;
+      font-weight: 700; color: var(--text); margin-top: 2px;
+    }
+    .stage.active { background: var(--info-bg); border-color: var(--accent); color: var(--accent); }
+    .stage.hot   { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
+    .stage.err   { background: var(--err-bg);  border-color: var(--err); color: var(--err); }
+    .stage-arrow {
+      flex: 0 0 auto; color: var(--text-dim); font-size: 14px;
+    }
+
+    /* Charts */
+    .charts-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px;
+    }
+    .chart-card {
+      background: var(--subtle); padding: 14px; border-radius: 10px;
+    }
+    .chart-card .ctitle {
+      font-size: 11px; color: var(--text-2); text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 600; margin-bottom: 8px;
+    }
+    .chart-card svg { width: 100%; height: 140px; display: block; }
+    @media (max-width: 640px) {
+      .charts-row { grid-template-columns: 1fr; }
+    }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px;
+      color: var(--text-2); margin-top: 6px;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .legend .sw { width: 10px; height: 10px; border-radius: 2px; }
   </style>
 </head>
 <body>
@@ -296,6 +387,34 @@
     </p>
   </div>
 
+  <!-- 최종 산출물: 가공된 지식 내용물 -->
+  <div class="card">
+    <div class="section-title">📚 최종 산출물 — 가공된 지식
+      <span class="muted" style="font-weight:400;font-size:11px">YouTube 자막 → 요약 + 규칙 + 태그</span>
+    </div>
+    <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
+  </div>
+
+  <!-- 파이프라인 흐름 다이어그램 -->
+  <div class="card">
+    <div class="section-title">파이프라인 단계 <span class="muted" style="font-weight:400;font-size:11px">녹색 = 최근 통과 수</span></div>
+    <div class="pipeline-stages" id="pipeline-stages">
+      <div class="stage" data-stage="discover">DISCOVER<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="collect">COLLECT<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="extract">EXTRACT<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="normalize">NORMALIZE<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="review">REVIEW<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="promote">PROMOTE<span class="stage-count">—</span></div>
+      <div class="stage-arrow">›</div>
+      <div class="stage" data-stage="package">PACKAGE<span class="stage-count">—</span></div>
+    </div>
+  </div>
+
   <!-- 요약 KPI -->
   <div class="card">
     <div class="section-title">현재 데이터</div>
@@ -304,6 +423,20 @@
       <div class="kpi"><div class="label">Promoted</div><div class="value">—</div></div>
       <div class="kpi"><div class="label">LLM 비용</div><div class="value sm">—</div></div>
       <div class="kpi"><div class="label">최근 수집</div><div class="value sm">—</div></div>
+    </div>
+
+    <!-- 시각화 -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="ctitle">상태 분포</div>
+        <svg id="chart-status" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-status"></div>
+      </div>
+      <div class="chart-card">
+        <div class="ctitle">Confidence 분포</div>
+        <svg id="chart-conf" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-conf"></div>
+      </div>
     </div>
   </div>
 
@@ -314,9 +447,9 @@
       <div id="runs"><div class="empty">토큰 설정 후 로드됩니다</div></div>
     </div>
 
-    <!-- 최신 결과 -->
+    <!-- 요약 리스트 -->
     <div class="card">
-      <div class="section-title">최신 결과 <span class="muted" style="font-weight:400;font-size:11px">클릭 시 상세</span></div>
+      <div class="section-title">요약 리스트 <span class="muted" style="font-weight:400;font-size:11px">클릭 시 상세</span></div>
       <div id="records"><div class="empty">아직 데이터가 없습니다</div></div>
       <div class="links-row" style="margin-top:14px">
         <a class="link-btn" href="dashboard.html">📊 전체 리포트</a>
@@ -579,6 +712,124 @@ async function loadLatest(){
   kpi.children[2].querySelector('.value').textContent = '$'+cost.toFixed(4);
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
   document.getElementById('updated').textContent = '마지막 로드 '+new Date().toLocaleTimeString('ko');
+
+  // Visualizations
+  updatePipelineDiagram(valid);
+  renderStackBar('chart-status', 'legend-status', countBy(valid, 'record_status'), STATUS_COLORS);
+  renderStackBar('chart-conf',   'legend-conf',   countBy(valid, 'confidence'),    CONF_COLORS);
+
+  // Knowledge cards (final product)
+  renderKnowledge(valid);
+}
+
+function renderKnowledge(valid){
+  const host = document.getElementById('knowledge');
+  const promoted = valid.filter(p => p.record_status === 'promoted' || p.confidence === 'confirmed');
+  const pool = promoted.length ? promoted : valid;  // show any content if none are promoted yet
+  if (!pool.length){
+    host.innerHTML = '<div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div>';
+    return;
+  }
+  host.innerHTML = pool.slice(0, 3).map(p => {
+    const vid = p.video_id || '';
+    const sk  = p.source_key || '';
+    const vaultName = sk.replace(':', '__') + '.md';
+    const conf = p.confidence || 'unverified';
+    const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
+    const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+    return `
+      <div class="know-card">
+        <div class="kh">
+          <div class="ktitle">${escapeHtml(p.title || sk || '(제목 없음)')}</div>
+          <div class="kbadge ${conf}">${conf}</div>
+        </div>
+        <div class="kmeta">
+          <span>📺 ${sk}</span>
+          <span>📅 ${fmtTime(p.collected_at || '')}</span>
+          ${p.channel_id ? `<span>📡 ${p.channel_id}</span>` : ''}
+        </div>
+        <div class="ksection">요약</div>
+        <div class="ksummary">${escapeHtml(p.summary || '(요약 없음)')}</div>
+        <div class="ksection">규칙 (${(p.rules||[]).length})</div>
+        <ol class="krules">${rules || '<li style="color:var(--text-dim)">규칙 없음</li>'}</ol>
+        ${tags ? `<div class="ksection">태그</div><div class="ktags">${tags}</div>` : ''}
+        <div class="kactions">
+          <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube 원본</a>
+          <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
+          <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const STATUS_COLORS = {
+  'promoted': '#16a34a', 'reviewed_confirmed': '#22c55e',
+  'reviewed_inferred': '#eab308', 'reviewed_unverified': '#d97706',
+  'reviewed_rejected': '#a855f7', 'invalid': '#dc2626',
+  'normalized': '#94a3b8', 'extracted': '#94a3b8', 'collected': '#cbd5e1',
+};
+const CONF_COLORS = {
+  'confirmed': '#16a34a', 'inferred': '#eab308',
+  'unverified': '#94a3b8', 'rejected': '#dc2626',
+};
+
+function countBy(items, key){
+  const out = {};
+  for (const it of items){
+    const v = it[key] || '(none)';
+    out[v] = (out[v]||0) + 1;
+  }
+  return out;
+}
+
+function renderStackBar(svgId, legendId, counts, colors){
+  const svg = document.getElementById(svgId);
+  const legend = document.getElementById(legendId);
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,[,n])=>s+n, 0);
+  if (!total){
+    svg.innerHTML = '<text x="150" y="75" text-anchor="middle" fill="#94a3b8" font-size="12">데이터 없음</text>';
+    legend.innerHTML = '';
+    return;
+  }
+  // Horizontal stacked bar, 300x40 area centered in 140h
+  const W = 300, H = 40, Y = 50;
+  let x = 0;
+  const segs = entries.map(([k, n]) => {
+    const w = (n/total) * W;
+    const col = colors[k] || '#cbd5e1';
+    const rect = `<rect x="${x}" y="${Y}" width="${w}" height="${H}" fill="${col}"><title>${k}: ${n}</title></rect>`;
+    const label = n/total > 0.12
+      ? `<text x="${x + w/2}" y="${Y + H/2 + 4}" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">${n}</text>`
+      : '';
+    x += w;
+    return rect + label;
+  }).join('');
+  svg.innerHTML = `
+    <text x="0" y="16" fill="#475569" font-size="11">총 ${total}건</text>
+    ${segs}
+    <text x="0" y="120" fill="#94a3b8" font-size="10">가로 = 비율, 숫자 = 건수</text>
+  `;
+  legend.innerHTML = entries.map(([k, n]) => `
+    <span><span class="sw" style="background:${colors[k]||'#cbd5e1'}"></span>${k} <b style="color:var(--text)">${n}</b></span>
+  `).join('');
+}
+
+function updatePipelineDiagram(valid){
+  // Heuristic: show count of records whose stage_status[stage] === 'completed'
+  const stages = ['discover','collect','extract','normalize','review','promote','package'];
+  for (const st of stages){
+    const n = valid.filter(p => p.stage_status?.[st] === 'completed').length;
+    const node = document.querySelector(`.stage[data-stage="${st}"]`);
+    if (!node) continue;
+    node.querySelector('.stage-count').textContent = n;
+    node.className = 'stage' + (n > 0 ? ' hot' : '');
+  }
 }
 
 function openModal(encodedSk){
