@@ -431,6 +431,16 @@
   <!-- 완료 배너 (동적) -->
   <div id="banner-host"></div>
 
+  <!-- 🎯 수집 상태 요약 — 한 눈에 알 수 있는 건강도 -->
+  <div id="health" class="health unk">
+    <div class="icon">⏳</div>
+    <div class="body">
+      <div class="title" id="health-title">상태 확인 중…</div>
+      <div class="sub" id="health-sub">status.json 로드 중</div>
+      <div class="hint" id="health-hint"></div>
+    </div>
+  </div>
+
   <!-- 운영 상태 스트립 (docs/status.json 기반, 공개 URL이라 PAT 불필요) -->
   <div class="card" style="padding: 14px 18px;">
     <div id="op-strip" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px;">
@@ -1230,6 +1240,85 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); }
 let __lastActiveGARun = null;  // cached from loadRuns
 let __busyTicker = null;
 
+function updateHealth(s){
+  const el   = document.getElementById('health');
+  const icon = el.querySelector('.icon');
+  const title= document.getElementById('health-title');
+  const sub  = document.getElementById('health-sub');
+  const hint = document.getElementById('health-hint');
+  if (!el) return;
+
+  const detail = s.latest_run_detail || {};
+  const ps = detail.per_stage || {};
+  const c = ps.collect || {};
+  const e = ps.extract || {};
+  const pr= ps.promote || {};
+  const discovered = ps.discover?.completed || ps.discover?.count || 0;
+  const colOk  = c.completed || c.count || 0;
+  const colBad = c.failed || 0;
+  const colAtt = Math.max(c.attempts || 0, colOk + colBad);
+  const extOk  = e.completed || e.count || 0;
+  const prOk   = pr.completed || pr.count || 0;
+
+  let cls, iconCh, titleTxt, titleCls, subTxt, hintTxt = '';
+
+  if (discovered === 0 && !detail.run_id){
+    cls = 'unk'; iconCh = '⏳';
+    titleTxt = '아직 실행 기록 없음';
+    titleCls = '';
+    subTxt = '위의 실행 ▶ 버튼으로 시작하세요';
+  } else if (colAtt === 0){
+    cls = 'unk'; iconCh = '⏳';
+    titleTxt = '실행 초기화 중';
+    titleCls = '';
+    subTxt = `DISCOVER ${discovered}/${discovered}, COLLECT 대기`;
+  } else if (colOk > 0 && colBad === 0){
+    if (prOk > 0){
+      cls = 'ok'; iconCh = '✅';
+      titleTxt = '수집 정상 — 지식이 축적되는 중';
+      titleCls = 'ok';
+      subTxt = `자막 ${colOk}/${colAtt} · LLM 호출 ${extOk} · Promoted ${prOk}건`;
+    } else {
+      cls = 'warn'; iconCh = '⚙️';
+      titleTxt = '자막은 수집됐으나 아직 Promoted 없음';
+      titleCls = 'warn';
+      subTxt = `자막 ${colOk}/${colAtt} · LLM ${extOk} · Promoted 0`;
+      hintTxt = 'Confidence < 0.60 이거나 summary 길이 조건 미달 가능 — review_queue 확인';
+    }
+  } else if (colOk > 0 && colBad > 0){
+    cls = 'warn'; iconCh = '⚠️';
+    titleTxt = `자막 부분 수집 (${colOk}/${colAtt}) — 일부 영상은 실패`;
+    titleCls = 'warn';
+    const code = c.reason || Object.keys(c.failure_reasons||{})[0] || '?';
+    subTxt = `성공 ${colOk} · 실패 ${colBad} (${code})`;
+    hintTxt = '일부 영상이 자막을 제공하지 않는 정상 상황일 수 있음';
+  } else {
+    cls = 'err'; iconCh = '❌';
+    titleTxt = `자막 수집 실패 (0/${colAtt})`;
+    titleCls = 'err';
+    const fr = c.failure_reasons || {};
+    const codes = Object.entries(fr).map(([k,v]) => `${k}×${v}`).join(', ') || c.reason || '?';
+    subTxt = `실패 코드: ${codes}`;
+    if (codes.includes('YT_NO_TRANSCRIPT')){
+      hintTxt = 'timedtext 404 — 워크플로우 로그에서 \'youtube-transcript-api OK\' 확인';
+    } else if (codes.includes('HTTP_429')){
+      hintTxt = 'YouTube 쿼터 초과 — 내일 재시도 또는 새 API 키';
+    } else if (codes.includes('HTTP_400')){
+      hintTxt = 'API 키 만료/무효 — Secrets 에서 YOUTUBE_API_KEY 갱신';
+    } else {
+      hintTxt = '실패 코드를 GOTCHAS.md 에 대조하거나 actions 로그 확인';
+    }
+  }
+
+  el.className = 'health ' + cls;
+  icon.textContent = iconCh;
+  title.className = 'title ' + titleCls;
+  title.textContent = titleTxt;
+  sub.textContent = subTxt;
+  hint.textContent = hintTxt;
+  hint.style.display = hintTxt ? 'block' : 'none';
+}
+
 function updateRunBusyBanner(activeRun){
   const busy = document.getElementById('run-busy');
   const txt  = document.getElementById('run-busy-text');
@@ -1267,6 +1356,8 @@ async function loadOpStrip(){
     const resp = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
     if (!resp.ok) { host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
     const s = await resp.json();
+    // Top-of-page health summary (수집 됨? 안됨?)
+    updateHealth(s);
     // Pipeline live view from events-derived detail
     if (s.latest_run_detail){
       updatePipelineFromStatus(s.latest_run_detail, __lastActiveGARun);
