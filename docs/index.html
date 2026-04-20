@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light only" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="build" content="v2-live-pipeline" />
   <title>Collector — YouTube 지식 파이프라인</title>
   <style>
     :root {
@@ -321,20 +325,37 @@
       overflow-x: auto; padding: 6px 2px 10px;
     }
     .stage {
-      flex: 1; min-width: 86px; padding: 10px 8px; border-radius: 8px;
+      flex: 1; min-width: 100px; padding: 10px 8px 8px; border-radius: 8px;
       background: var(--subtle); border: 1px solid var(--border);
-      text-align: center; font-size: 12px; font-weight: 600;
+      text-align: center; font-size: 11.5px; font-weight: 700;
       color: var(--text-2); position: relative;
     }
     .stage .stage-count {
       display: block; font-family: var(--mono); font-size: 16px;
-      font-weight: 700; color: var(--text); margin-top: 2px;
+      font-weight: 700; color: var(--text); margin-top: 4px; letter-spacing: -0.02em;
     }
-    .stage.active  { background: var(--info-bg); border-color: var(--accent); color: var(--accent);
-                     animation: stagePulse 1.4s ease-in-out infinite; }
-    .stage.hot     { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
-    .stage.err     { background: var(--err-bg);  border-color: var(--err); color: var(--err); }
-    .stage.skipped { background: var(--subtle);  border-style: dashed; color: var(--text-dim); }
+    .stage .stage-sub {
+      display: block; font-size: 10.5px; font-weight: 500; color: var(--text-2);
+      margin-top: 2px; font-family: var(--mono);
+    }
+    .stage .stage-bar {
+      display: block; height: 3px; background: var(--border); border-radius: 2px;
+      margin-top: 6px; overflow: hidden; position: relative;
+    }
+    .stage .stage-bar i {
+      display: block; height: 100%; width: 0%; background: var(--text-dim);
+      transition: width .3s;
+    }
+    .stage.in_progress { background: var(--info-bg); border-color: var(--accent); color: var(--accent);
+                          animation: stagePulse 1.4s ease-in-out infinite; }
+    .stage.in_progress .stage-bar i { background: var(--accent); }
+    .stage.hot         { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
+    .stage.hot .stage-bar i { background: var(--ok); }
+    .stage.err         { background: var(--err-bg);  border-color: var(--err); color: var(--err); }
+    .stage.err .stage-bar i { background: var(--err); }
+    .stage.partial     { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+    .stage.partial .stage-bar i { background: var(--warn); }
+    .stage.skipped     { background: var(--subtle);  border-style: dashed; color: var(--text-dim); }
     .stage-arrow {
       flex: 0 0 auto; color: var(--text-dim); font-size: 14px;
     }
@@ -342,6 +363,31 @@
     @keyframes stagePulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%      { opacity: 0.65; transform: scale(0.97); }
+    }
+    @keyframes barShimmer {
+      0%   { width: 5%; }
+      50%  { width: 75%; }
+      100% { width: 5%; }
+    }
+    .stage.in_progress .stage-bar i.shimmer {
+      animation: barShimmer 2.2s ease-in-out infinite;
+    }
+    .run-busy {
+      margin: 10px 0 0; padding: 10px 14px; border-radius: 10px;
+      background: var(--info-bg); color: var(--accent); font-size: 13px;
+      display: none; align-items: center; gap: 10px;
+    }
+    .run-busy.show { display: flex; }
+    .run-busy .dots { display: inline-flex; gap: 3px; }
+    .run-busy .dots span {
+      width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+      animation: dotBlink 1.2s ease-in-out infinite;
+    }
+    .run-busy .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .run-busy .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBlink {
+      0%, 100% { opacity: 0.25; transform: scale(0.9); }
+      50%      { opacity: 1;    transform: scale(1.1); }
     }
     .run-label {
       font-size: 11px; color: var(--text-dim); font-family: var(--mono);
@@ -400,6 +446,10 @@
       <input id="count" type="number" value="5" min="1" max="20" title="수집 후보 영상 수" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
     </div>
+    <div id="run-busy" class="run-busy">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span id="run-busy-text">실행 중…</span>
+    </div>
     <p class="desc">
       GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요.
       최초 1회만 <a href="#" onclick="document.getElementById('settings').open=true;return false;">토큰 설정</a>이 필요합니다.
@@ -421,19 +471,33 @@
   <div class="card">
     <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
     <div class="pipeline-stages" id="pipeline-stages">
-      <div class="stage" data-stage="discover">DISCOVER<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="discover">DISCOVER
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="discover">›</div>
-      <div class="stage" data-stage="collect">COLLECT<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="collect">COLLECT
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="collect">›</div>
-      <div class="stage" data-stage="extract">EXTRACT<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="extract">EXTRACT
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="extract">›</div>
-      <div class="stage" data-stage="normalize">NORMALIZE<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="normalize">NORMALIZE
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="normalize">›</div>
-      <div class="stage" data-stage="review">REVIEW<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="review">REVIEW
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="review">›</div>
-      <div class="stage" data-stage="promote">PROMOTE<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="promote">PROMOTE
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
       <div class="stage-arrow" data-arrow="promote">›</div>
-      <div class="stage" data-stage="package">PACKAGE<span class="stage-count">—</span></div>
+      <div class="stage" data-stage="package">PACKAGE
+        <span class="stage-count">—</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
     </div>
     <div class="run-label" id="run-label">
       <span>최근 run: —</span>
@@ -593,6 +657,12 @@ async function runQuery(){
   const btn = document.getElementById('run-btn');
   if (!q) return toast('검색어를 입력하세요');
   if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
+  if (__lastActiveGARun){
+    if (!confirm(`이미 실행 중인 run이 있습니다 (${__lastActiveGARun.display_title || ''}).\n`+
+                 `그래도 병렬로 새 run을 큐에 올릴까요?`)) {
+      return;
+    }
+  }
   btn.disabled = true; btn.textContent = '요청 중…';
   try {
     const resp = await gh(`/actions/workflows/${WF}/dispatches`, {
@@ -609,7 +679,12 @@ async function runQuery(){
       toast(`실패 ${resp.status}: ${txt.slice(0,140)}`);
     }
   } catch(e){ toast('오류: '+e.message); }
-  finally { btn.disabled = false; btn.textContent = '실행 ▶'; }
+  finally {
+    // Don't reset label here; updateRunBusyBanner will relabel based on GA state.
+    btn.disabled = false;
+    // Nudge runs refresh so the busy banner appears fast
+    setTimeout(loadRuns, 1500);
+  }
 }
 
 function fmtTime(iso){
@@ -635,6 +710,7 @@ async function loadRuns(){
 
   // Announce newly-completed runs + track active GA run
   __lastActiveGARun = b.workflow_runs.find(r => r.status !== 'completed') || null;
+  updateRunBusyBanner(__lastActiveGARun);
   for (const run of b.workflow_runs){
     const key = `${run.id}:${run.status}:${run.conclusion||''}`;
     const wasRunning = lastKnownRunIds.has(`${run.id}:in_progress:`) || lastKnownRunIds.has(`${run.id}:queued:`);
@@ -989,53 +1065,91 @@ function updatePipelineDiagram(valid){
 const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
 
 function updatePipelineFromStatus(detail, activeGARun){
-  // detail = status.latest_run_detail
-  // activeGARun = GitHub Actions workflow run object if in_progress
   if (!detail || !detail.per_stage) return;
   const runLabel = document.getElementById('run-label');
   const ps = detail.per_stage;
 
   for (let i = 0; i < STAGE_ORDER.length; i++){
     const st = STAGE_ORDER[i];
-    const info = ps[st] || { status: 'not_started', count: 0 };
+    const info = ps[st] || {};
     const node = document.querySelector(`.stage[data-stage="${st}"]`);
     if (!node) continue;
-    node.querySelector('.stage-count').textContent = info.count || (info.status === 'skipped' ? '—' : '0');
 
+    const attempts  = info.attempts   || 0;
+    const completed = info.completed  || info.count || 0;
+    const failed    = info.failed     || 0;
+    const skipped   = info.skipped    || 0;
+    const inProgress= info.in_progress|| 0;
+    const status    = info.status     || 'not_started';
+
+    // Main count: "completed / attempts"
+    const countEl = node.querySelector('.stage-count');
+    const subEl   = node.querySelector('.stage-sub');
+    const barEl   = node.querySelector('.stage-bar i');
+
+    let mainText;
+    let subText;
+    let pct = 0;
+    if (status === 'not_started') {
+      mainText = '—';
+      subText = '대기';
+      pct = 0;
+    } else if (status === 'skipped') {
+      mainText = '—';
+      subText = `skipped ×${skipped}`;
+      pct = 0;
+    } else {
+      mainText = `${completed}/${attempts}`;
+      pct = attempts > 0 ? (completed / attempts) * 100 : 0;
+      const parts = [];
+      if (inProgress > 0) parts.push(`⋯${inProgress}`);
+      if (failed > 0)     parts.push(`✗${failed}`);
+      if (completed > 0 && failed === 0 && inProgress === 0) parts.push('✓');
+      subText = parts.length ? parts.join(' · ') : (completed > 0 ? '✓' : '—');
+      if (info.reason && failed > 0) {
+        subText += ` · ${info.reason}`;
+      }
+    }
+
+    countEl.textContent = mainText;
+    subEl.textContent = subText;
+    if (barEl) barEl.style.width = pct + '%';
+
+    // Class
     let cls = 'stage';
-    switch (info.status) {
-      case 'completed': cls += ' hot'; break;
-      case 'failed':    cls += ' err'; break;
-      case 'started':   cls += ' active'; break;
-      case 'skipped':   cls += ' skipped'; break;
-      default: /* not_started */ break;
+    switch (status) {
+      case 'completed':   cls += ' hot'; break;
+      case 'failed':      cls += ' err'; break;
+      case 'partial':     cls += ' partial'; break;
+      case 'in_progress': cls += ' in_progress'; break;
+      case 'skipped':     cls += ' skipped'; break;
+      default: break;
     }
     node.className = cls;
 
-    // Arrow coloring: green if previous stage completed
     const arrow = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
     if (arrow) {
-      arrow.className = 'stage-arrow' + (info.status === 'completed' ? ' done' : '');
+      arrow.className = 'stage-arrow' + (completed > 0 ? ' done' : '');
     }
   }
 
-  // If GA shows a workflow in progress, pulse the "next" stage as active
-  // (best effort; refines detail's view with real-time GA signal)
+  // GA in-progress: mark the first 대기 stage as in_progress w/ shimmering bar
   if (activeGARun) {
-    // Find the first stage that is not yet completed/failed → mark active
-    let markedLive = false;
     for (const st of STAGE_ORDER){
-      const info = ps[st] || { status: 'not_started' };
-      if (info.status === 'started' || info.status === 'not_started'){
-        if (!markedLive){
-          const node = document.querySelector(`.stage[data-stage="${st}"]`);
-          if (node && !node.classList.contains('hot') && !node.classList.contains('err')){
-            node.classList.add('active');
-            markedLive = true;
-          }
-        }
-      }
+      const info = ps[st] || {};
+      const node = document.querySelector(`.stage[data-stage="${st}"]`);
+      if (!node) continue;
+      const hasClass = node.className;
+      if (/ (hot|err|partial|skipped|in_progress)/.test(hasClass)) continue;
+      node.classList.add('in_progress');
+      node.querySelector('.stage-sub').textContent = '실행 중…';
+      const bar = node.querySelector('.stage-bar i');
+      if (bar) bar.classList.add('shimmer');
+      break;
     }
+  } else {
+    // Clear any shimmer from a previous in-progress state
+    document.querySelectorAll('.stage-bar i.shimmer').forEach(el => el.classList.remove('shimmer'));
   }
 
   // Run label
@@ -1050,7 +1164,22 @@ function updatePipelineFromStatus(detail, activeGARun){
   const started = detail.started_at ? fmtTime(detail.started_at) : '';
   const ended = detail.ended_at ? fmtTime(detail.ended_at) : '';
   const timeInfo = started && ended ? `${started} → ${ended}` : (started || '—');
-  runLabel.innerHTML = `${pill} <span>run_id: ${rid}</span> <span>${timeInfo}</span>`;
+
+  // Build headline failure digest if any stage failed
+  const failDigest = [];
+  for (const st of STAGE_ORDER){
+    const info = ps[st] || {};
+    if ((info.failed || 0) > 0 && info.failure_reasons){
+      for (const [code, n] of Object.entries(info.failure_reasons)){
+        failDigest.push(`${st}:${code}×${n}`);
+      }
+    }
+  }
+  const failLine = failDigest.length
+    ? ` <span class="pill err" title="${failDigest.join(' | ')}">실패 ${failDigest.slice(0,2).join(', ')}${failDigest.length>2?'…':''}</span>`
+    : '';
+
+  runLabel.innerHTML = `${pill} <span>run_id: ${rid}</span> <span>${timeInfo}</span>${failLine}`;
 }
 
 function openModal(encodedSk){
@@ -1087,6 +1216,38 @@ function closeModal(){ document.getElementById('modal').classList.remove('show')
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
 let __lastActiveGARun = null;  // cached from loadRuns
+let __busyTicker = null;
+
+function updateRunBusyBanner(activeRun){
+  const busy = document.getElementById('run-busy');
+  const txt  = document.getElementById('run-busy-text');
+  const btn  = document.getElementById('run-btn');
+  if (!busy || !btn) return;
+  if (!activeRun){
+    busy.classList.remove('show');
+    if (__busyTicker){ clearInterval(__busyTicker); __busyTicker = null; }
+    btn.disabled = false;
+    btn.textContent = '실행 ▶';
+    btn.title = '';
+    return;
+  }
+  busy.classList.add('show');
+  // Progress-safe UX: user CAN still click to queue another run (GA handles
+  // concurrency), but we relabel the button to make the intent explicit.
+  btn.disabled = false;
+  btn.textContent = '+ 추가 실행';
+  btn.title = '현재 다른 run이 진행 중입니다. 확인 후 병렬로 새 run을 큐에 올릴 수 있어요.';
+  const created = activeRun.created_at ? new Date(activeRun.created_at) : null;
+  const tick = () => {
+    const elapsed = created ? Math.max(0, Math.floor((Date.now() - created.getTime())/1000)) : 0;
+    const mm = String(Math.floor(elapsed/60)).padStart(2,'0');
+    const ss = String(elapsed%60).padStart(2,'0');
+    txt.textContent = `실행 중 · ${mm}:${ss} 경과 · ${activeRun.display_title || activeRun.name || 'run'}`;
+  };
+  tick();
+  if (__busyTicker) clearInterval(__busyTicker);
+  __busyTicker = setInterval(tick, 1000);
+}
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
   const host = document.getElementById('op-strip');

@@ -139,7 +139,17 @@ def _latest_run_detail(events: Path) -> dict:
 
     run_events = [e for e in all_events if e.get("run_id") == latest_run_id]
     per_stage: dict[str, dict] = {
-        s: {"status": "not_started", "count": 0} for s in _STAGE_NAMES
+        s: {
+            "status": "not_started",
+            "count": 0,               # completed count (backward compat)
+            "attempts": 0,             # total records that entered this stage
+            "completed": 0,
+            "failed": 0,
+            "skipped": 0,
+            "in_progress": 0,
+            "failure_reasons": {},     # { code: count }
+        }
+        for s in _STAGE_NAMES
     }
     run_status = "running"
     started_at = None
@@ -161,21 +171,53 @@ def _latest_run_detail(events: Path) -> dict:
             to = e.get("to_status")
             slot = per_stage[stage]
             if to == "started":
+                slot["attempts"] += 1
+                slot["in_progress"] += 1
                 slot["started_at"] = slot.get("started_at") or ts
-                # mark started only if not yet advanced
-                if slot["status"] in ("not_started",):
-                    slot["status"] = "started"
             elif to == "completed":
-                slot["status"] = "completed"
-                slot["count"] = int(slot.get("count", 0)) + 1
+                slot["completed"] += 1
+                slot["count"] += 1
+                slot["in_progress"] = max(0, slot["in_progress"] - 1)
                 slot["ended_at"] = ts
             elif to == "failed":
-                slot["status"] = "failed"
+                slot["failed"] += 1
+                slot["in_progress"] = max(0, slot["in_progress"] - 1)
                 slot["ended_at"] = ts
-                slot["reason"] = e.get("reason", "")
-            elif to == "skipped" and slot["status"] == "not_started":
-                slot["status"] = "skipped"
+                reason = e.get("reason", "") or "UNKNOWN"
+                slot["failure_reasons"][reason] = slot["failure_reasons"].get(reason, 0) + 1
+                # expose most recent failure reason at top level for convenience
+                slot["reason"] = reason
+            elif to == "skipped":
+                slot["skipped"] += 1
                 slot["ended_at"] = ts
+
+    # Derive aggregate status per stage.
+    # Defensive: some event streams lack explicit 'started' events, so infer
+    # attempts from terminal counters too.
+    for s in _STAGE_NAMES:
+        slot = per_stage[s]
+        done = slot["completed"]
+        bad = slot["failed"]
+        skip = slot["skipped"]
+        ip = slot["in_progress"]
+        att = max(slot["attempts"], done + bad + ip)
+        slot["attempts"] = att
+        if att == 0 and skip == 0:
+            slot["status"] = "not_started"
+        elif ip > 0:
+            slot["status"] = "in_progress"
+        elif att > 0 and done == att and bad == 0:
+            slot["status"] = "completed"
+        elif att > 0 and bad == att and done == 0:
+            slot["status"] = "failed"
+        elif att > 0 and done > 0 and bad > 0:
+            slot["status"] = "partial"
+        elif skip > 0 and att == 0:
+            slot["status"] = "skipped"
+        elif att > 0:
+            slot["status"] = "partial"
+        else:
+            slot["status"] = "not_started"
 
     return {
         "run_id": latest_run_id,

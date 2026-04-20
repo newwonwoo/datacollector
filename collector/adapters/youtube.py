@@ -57,7 +57,17 @@ class YouTubeAdapter:
         ]
 
     def captions(self, video_id: str) -> dict[str, Any]:
-        # 1st path: timedtext (no auth, no quota cost).
+        # Primary: youtube-transcript-api (pure-Python, no subprocess).
+        res = self._captions_via_yt_transcript(video_id)
+        if res["source"] != "none":
+            return res
+
+        # 2nd: yt-dlp Python library (also pure-Python once installed).
+        res = self._captions_via_ytdlp_lib(video_id)
+        if res["source"] != "none":
+            return res
+
+        # 3rd (last resort): timedtext (often 404 now).
         for lang in ("ko", "en"):
             for kind in ("", "asr"):
                 params = {"v": video_id, "lang": lang, "fmt": "srv3"}
@@ -70,14 +80,69 @@ class YouTubeAdapter:
                         "source": "asr" if kind == "asr" else "manual",
                         "text": resp["body"],
                     }
-        # 2nd path (fallback): yt-dlp subprocess if binary is on PATH.
-        # Opt-in via COLLECTOR_YT_DLP=1 so CI doesn't spend time on it.
-        import os, shutil
-        if os.environ.get("COLLECTOR_YT_DLP") == "1" and shutil.which("yt-dlp"):
-            try:
-                return self._captions_via_ytdlp(video_id)
-            except Exception:
-                pass
+        return {"source": "none", "text": ""}
+
+    def _captions_via_yt_transcript(self, video_id: str) -> dict[str, Any]:
+        """Primary captions fetcher via youtube-transcript-api (pip)."""
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+        except ImportError:
+            return {"source": "none", "text": ""}
+        try:
+            transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+        except Exception:
+            return {"source": "none", "text": ""}
+        # Priority: manual Korean > asr Korean > manual English > asr English
+        priority: list[tuple] = [
+            (lambda t: t.language_code == "ko" and not t.is_generated, "manual"),
+            (lambda t: t.language_code == "ko" and t.is_generated,     "asr"),
+            (lambda t: t.language_code == "en" and not t.is_generated, "manual"),
+            (lambda t: t.language_code == "en" and t.is_generated,     "asr"),
+        ]
+        for pred, kind in priority:
+            for tr in transcripts:
+                try:
+                    if pred(tr):
+                        segments = tr.fetch()
+                        text = " ".join(s.get("text", "") for s in segments)
+                        if text.strip():
+                            return {"source": kind, "text": text}
+                except Exception:
+                    continue
+        return {"source": "none", "text": ""}
+
+    def _captions_via_ytdlp_lib(self, video_id: str) -> dict[str, Any]:
+        """Secondary captions fetcher via yt_dlp Python library."""
+        try:
+            from yt_dlp import YoutubeDL  # type: ignore
+        except ImportError:
+            return {"source": "none", "text": ""}
+        opts = {
+            "skip_download": True,
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": ["ko", "en"],
+            "quiet": True,
+            "no_warnings": True,
+        }
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}", download=False
+                )
+        except Exception:
+            return {"source": "none", "text": ""}
+        for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
+            tracks_by_lang = info.get(key) or {}
+            for lang in ("ko", "en"):
+                tracks = tracks_by_lang.get(lang) or []
+                for t in tracks:
+                    url = t.get("url")
+                    if not url:
+                        continue
+                    resp = self.http("GET", url)
+                    if resp["status"] == 200 and resp["body"].strip():
+                        return {"source": source_name, "text": resp["body"]}
         return {"source": "none", "text": ""}
 
     def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:

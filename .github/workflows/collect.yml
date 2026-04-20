@@ -57,8 +57,11 @@ jobs:
       - name: Install
         run: |
           pip install -e .
-          # yt-dlp enables robust captions extraction when timedtext 404s
-          pip install yt-dlp
+          # Captions fetchers. Pure-Python so no PATH/subprocess issues.
+          pip install youtube-transcript-api yt-dlp
+          echo "--- captions libs sanity ---"
+          python -c "from youtube_transcript_api import YouTubeTranscriptApi; print('youtube-transcript-api OK')"
+          python -c "from yt_dlp import YoutubeDL; print('yt-dlp (python lib) OK')"
 
       - name: Sanity (no keys → mock, otherwise real)
         run: |

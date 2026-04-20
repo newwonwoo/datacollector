@@ -97,13 +97,79 @@ def test_latest_run_detail_counts_multiple_records(tmp_path):
     events = tmp_path / "events.jsonl"
     _write_events(events, [
         _run_event("r1", "running", "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "extract", "started",   "2026-04-19T00:00:00Z"),
         _stage_event("r1", "youtube:A", "extract", "completed", "2026-04-19T00:00:01Z"),
+        _stage_event("r1", "youtube:B", "extract", "started",   "2026-04-19T00:00:01Z"),
         _stage_event("r1", "youtube:B", "extract", "completed", "2026-04-19T00:00:02Z"),
+        _stage_event("r1", "youtube:C", "extract", "started",   "2026-04-19T00:00:02Z"),
         _stage_event("r1", "youtube:C", "extract", "completed", "2026-04-19T00:00:03Z"),
         _run_event("r1", "completed", "2026-04-19T00:00:04Z"),
     ])
     d = _latest_run_detail(events)
     assert d["per_stage"]["extract"]["count"] == 3
+    assert d["per_stage"]["extract"]["attempts"] == 3
+    assert d["per_stage"]["extract"]["completed"] == 3
+    assert d["per_stage"]["extract"]["status"] == "completed"
+
+
+def test_latest_run_detail_partial_stage(tmp_path):
+    events = tmp_path / "events.jsonl"
+    _write_events(events, [
+        _run_event("r1", "running", "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "collect", "started",   "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "collect", "completed", "2026-04-19T00:00:01Z"),
+        _stage_event("r1", "youtube:B", "collect", "started",   "2026-04-19T00:00:01Z"),
+        _stage_event("r1", "youtube:B", "collect", "failed",    "2026-04-19T00:00:02Z"),
+        _run_event("r1", "partially_completed", "2026-04-19T00:00:03Z"),
+    ])
+    d = _latest_run_detail(events)
+    slot = d["per_stage"]["collect"]
+    assert slot["attempts"] == 2
+    assert slot["completed"] == 1
+    assert slot["failed"] == 1
+    assert slot["status"] == "partial"
+
+
+def test_latest_run_detail_in_progress_stage(tmp_path):
+    events = tmp_path / "events.jsonl"
+    _write_events(events, [
+        _run_event("r1", "running", "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "extract", "started",   "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "extract", "completed", "2026-04-19T00:00:02Z"),
+        _stage_event("r1", "youtube:B", "extract", "started",   "2026-04-19T00:00:02Z"),
+        # B never completes — mid-run snapshot
+    ])
+    d = _latest_run_detail(events)
+    slot = d["per_stage"]["extract"]
+    assert slot["attempts"] == 2
+    assert slot["completed"] == 1
+    assert slot["in_progress"] == 1
+    assert slot["status"] == "in_progress"
+
+
+def test_latest_run_detail_tracks_failure_reasons(tmp_path):
+    events = tmp_path / "events.jsonl"
+    _write_events(events, [
+        _run_event("r1", "running", "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "collect", "started", "2026-04-19T00:00:00Z"),
+        _stage_event("r1", "youtube:A", "collect", "failed",  "2026-04-19T00:00:01Z"),
+        _stage_event("r1", "youtube:B", "collect", "started", "2026-04-19T00:00:01Z"),
+        _stage_event("r1", "youtube:B", "collect", "failed",  "2026-04-19T00:00:02Z"),
+    ])
+    # simulate fail events having reason="YT_NO_TRANSCRIPT"
+    lines = events.read_text(encoding="utf-8").splitlines()
+    patched = []
+    import json as _j
+    for line in lines:
+        e = _j.loads(line)
+        if e.get("to_status") == "failed":
+            e["reason"] = "YT_NO_TRANSCRIPT"
+        patched.append(_j.dumps(e))
+    events.write_text("\n".join(patched) + "\n", encoding="utf-8")
+
+    d = _latest_run_detail(events)
+    slot = d["per_stage"]["collect"]
+    assert slot["failure_reasons"].get("YT_NO_TRANSCRIPT") == 2
 
 
 def test_build_status_includes_latest_run_detail(tmp_path):
