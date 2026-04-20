@@ -1,0 +1,43 @@
+{
+  "updated_at": "2026-04-20T04:00:12Z",
+  "kill_switch": false,
+  "dlq_count": 0,
+  "review_queue_count": 0,
+  "runs_count": 1,
+  "breakers": {},
+  "budget": {
+    "actions_minutes_used": 0.0,
+    "actions_minutes_remaining": 2000.0,
+    "actions_minutes_pct": 0.0,
+    "actions_alert": false,
+    "youtube_units_used": 0.0,
+    "youtube_units_pct": 0.0,
+    "youtube_alert": false,
+    "llm_cost_usd": 0.0,
+    "llm_cost_pct": 0.0,
+    "llm_alert": false,
+    "kill_switch_recommended": false
+  },
+  "records": {
+    "total": 0,
+    "promoted": 0,
+    "invalid": 0
+  },
+  "latest_run": {
+    "event_id": "evt_8ac2a3c5c82d",
+    "run_id": "run_30849ab4",
+    "entity_type": "run",
+    "entity_id": "run_30849ab4",
+    "from_status": null,
+    "to_status": "snapshot_written",
+    "reason": "runs/run_30849ab4.json",
+    "metrics": {
+      "videos": 5,
+      "cost_usd": 0.0
+    },
+    "actor": "worker-test",
+    "recorded_at": "2026-04-20T04:00:12Z"
+  },
+  "top_channels": [],
+  "bottom_channels": []
+}
