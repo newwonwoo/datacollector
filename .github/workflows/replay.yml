@@ -1,0 +1,55 @@
+name: replay dlq
+
+# Manual DLQ replay trigger. Invoked from the dashboard's "DLQ 재처리" button
+# or from the Actions tab directly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "(선택) 재처리 사유"
+        required: false
+        default: "manual retry"
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    env:
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      GOOGLE_API_KEY:  ${{ secrets.GOOGLE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COLLECTOR_LLM: gemini
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -e .
+
+      - name: Replay DLQ
+        run: |
+          collector replay --dlq dlq --review-queue review_queue \
+            --data-store data_store --logs logs
+
+      - name: Refresh status snapshot
+        if: always()
+        run: collector status --out docs/status.json || true
+
+      - name: Commit changes
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data_store/ vault/ dlq/ review_queue/ docs/ || true
+          if git diff --staged --quiet; then
+            echo "no changes after replay (${{ github.event.inputs.note }})"
+          else
+            git commit -m "data: DLQ replay ${{ github.run_id }} (${{ github.event.inputs.note }})"
+            git push
+          fi

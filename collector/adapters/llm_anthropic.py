@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
+from ..prompt_loader import load_prompt
 from ..services import MockError
 
 
@@ -32,26 +33,25 @@ class AnthropicAdapter:
         self,
         api_key: str,
         model: str = "claude-sonnet-4-6",
-        prompt_version: str = "v1",
+        prompt_version: str = "extract_saju_v1",
         http: Callable = _default_http,
     ):
         self.api_key = api_key
         self.model = model
         self.prompt_version = prompt_version
         self.http = http
+        self._prompts = load_prompt(prompt_version)
 
     def extract(self, transcript: str, attempt: int) -> dict[str, Any]:
-        user = transcript
-        if attempt > 0:
-            user = (
-                "직전 응답이 JSON 스키마를 위반했다. "
-                "스키마에 엄격히 맞춰 다시 출력하라.\n\n" + transcript
-            )
+        if attempt == 0:
+            user = transcript
+        else:
+            user = self._prompts["reprompt"].replace("{original_transcript}", transcript)
         body = {
             "model": self.model,
             "max_tokens": 1024,
             "temperature": 0.2,
-            "system": SYSTEM_PROMPT,
+            "system": self._prompts["system"],
             "messages": [{"role": "user", "content": user}],
         }
         resp = self.http(

@@ -7,8 +7,11 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
+from ..prompt_loader import load_prompt
 from ..services import MockError
 
+# Built-in fallback (kept for backward compat). Adapters prefer external
+# prompts/extract_saju_v1.md when present.
 SYSTEM_PROMPT = (
     "너는 한국어 유튜브 자막에서 매매 전략의 summary, rules, tags를 JSON으로 추출한다. "
     "반드시 다음 스키마만 출력한다: {\"summary\": str, \"rules\": [str], \"tags\": [str]}. "
@@ -32,21 +35,23 @@ class GeminiAdapter:
         self,
         api_key: str,
         model: str = "gemini-1.5-flash",
-        prompt_version: str = "v1",
+        prompt_version: str = "extract_saju_v1",
         http: Callable = _default_http,
     ):
         self.api_key = api_key
         self.model = model
         self.prompt_version = prompt_version
         self.http = http
+        self._prompts = load_prompt(prompt_version)
 
     def extract(self, transcript: str, attempt: int) -> dict[str, Any]:
         url = f"{self.BASE}/{self.model}:generateContent?key={urllib.parse.quote(self.api_key)}"
-        user = transcript if attempt == 0 else (
-            "직전 응답이 JSON 스키마를 위반했다. 스키마에 엄격히 맞춰 다시 출력하라.\n\n" + transcript
-        )
+        if attempt == 0:
+            user = transcript
+        else:
+            user = self._prompts["reprompt"].replace("{original_transcript}", transcript)
         body = {
-            "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "system_instruction": {"parts": [{"text": self._prompts["system"]}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
             "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
         }

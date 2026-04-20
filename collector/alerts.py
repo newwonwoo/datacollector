@@ -35,6 +35,9 @@ def evaluate(
     failed_consecutive_days: int = 3,
     sync_failed_cumulative: int = 20,
     runtime_multiplier: float = 2.0,
+    actionable_ratio_floor: float = 0.50,
+    rotation_ages_days: dict[str, int] | None = None,
+    rotation_due_days: int = 90,
 ) -> list[Alert]:
     alerts: list[Alert] = []
     if not dailies:
@@ -76,6 +79,28 @@ def evaluate(
                 severity="warning",
                 title=f"평균 처리 시간 급증 ({today:.1f}s vs baseline {baseline:.1f}s)",
                 body="성능 점검 필요",
+            ))
+
+    # 4) Actionable Rule ratio 하락 (품질 저하)
+    last = dailies[-1]
+    ratio = float(last.get("actionable_rule_ratio", 1.0))
+    total = int(last.get("rules_total", 0))
+    if total >= 5 and ratio < actionable_ratio_floor:
+        alerts.append(Alert(
+            code="QUALITY_DROP",
+            severity="warning",
+            title=f"Actionable Rule 비율 저하 ({ratio:.0%} < {actionable_ratio_floor:.0%})",
+            body=f"최근 일의 규칙 {total}개 중 {int(ratio*total)}개만 실행형. LLM 프롬프트 점검 필요.",
+        ))
+
+    # 5) Secret rotation 90일 경과
+    for key_name, age in (rotation_ages_days or {}).items():
+        if age is not None and age >= rotation_due_days:
+            alerts.append(Alert(
+                code="ROTATION_DUE",
+                severity="warning",
+                title=f"{key_name} 로테이션 필요 ({age}일 경과)",
+                body=f"보안 정책 90일. 새 키 발급 → Secrets 업데이트 → secrets_rotation.log_rotation() 호출.",
             ))
 
     return alerts

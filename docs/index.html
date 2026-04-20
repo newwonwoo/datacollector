@@ -444,6 +444,16 @@
         <svg id="chart-conf" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
         <div class="legend" id="legend-conf"></div>
       </div>
+      <div class="chart-card">
+        <div class="ctitle">실패 원인 분포</div>
+        <svg id="chart-fail" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-fail"></div>
+      </div>
+    </div>
+    <!-- DLQ 재처리 버튼 -->
+    <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="ghost" onclick="triggerReplay()">🔁 DLQ 재처리</button>
+      <a class="link-btn" href="https://github.com/newwonwoo/datacollector/actions" target="_blank">Actions 탭</a>
     </div>
   </div>
 
@@ -724,9 +734,46 @@ async function loadLatest(){
   updatePipelineDiagram(valid);
   renderStackBar('chart-status', 'legend-status', countBy(valid, 'record_status'), STATUS_COLORS);
   renderStackBar('chart-conf',   'legend-conf',   countBy(valid, 'confidence'),    CONF_COLORS);
+  renderStackBar('chart-fail',   'legend-fail',
+                 countBy(valid.filter(p=>p.failure_reason_code), 'failure_reason_code'),
+                 FAIL_COLORS);
 
   // Knowledge cards (final product)
   renderKnowledge(valid);
+}
+
+const FAIL_COLORS = {
+  'HTTP_429': '#d97706', 'HTTP_5XX': '#dc2626',
+  'YT_NO_TRANSCRIPT': '#6b7280', 'YT_VIDEO_REMOVED': '#374151',
+  'YT_SHORTS_DROP': '#9ca3af', 'YT_STREAM_DROP': '#9ca3af',
+  'SEMANTIC_JSON_SCHEMA_FAIL': '#7c3aed', 'SEMANTIC_EMPTY_RULES': '#a855f7',
+  'SEMANTIC_SUMMARY_LENGTH': '#c084fc', 'SEMANTIC_FORBIDDEN_WORD': '#d8b4fe',
+  'GIT_CONFLICT': '#dc2626', 'GIT_AUTH_FAIL': '#b91c1c',
+  'SYS_KILL_SWITCH': '#0f172a', 'SYS_LOCK_HELD': '#1f2937',
+  'DMCA_TAKEDOWN': '#7f1d1d',
+};
+
+async function triggerReplay(){
+  if (!token()) {
+    document.getElementById('settings').open = true;
+    return toast('토큰부터 설정');
+  }
+  if (!confirm('DLQ의 모든 실패 건을 재처리하시겠습니까?')) return;
+  try {
+    const r = await gh('/actions/workflows/replay.yml/dispatches', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ref: 'main', inputs: { note: 'from dashboard' } }),
+    });
+    if (r.status === 204) {
+      toast('🔁 DLQ 재처리 요청됨');
+      setTimeout(loadRuns, 2000);
+    } else {
+      toast(`실패 ${r.status}`);
+    }
+  } catch (e) {
+    toast('오류: '+e.message);
+  }
 }
 
 function renderKnowledge(valid){

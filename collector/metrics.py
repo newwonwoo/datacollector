@@ -81,6 +81,9 @@ def aggregate_daily(
     by_date_cost: dict[str, float] = defaultdict(float)
     by_date_in_tok: dict[str, int] = defaultdict(int)
     by_date_out_tok: dict[str, int] = defaultdict(int)
+    by_date_rules_total: dict[str, int] = defaultdict(int)
+    by_date_rules_actionable: dict[str, int] = defaultdict(int)
+    by_date_fail_codes: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for p in _iter_payloads(data_store_root):
         d = _date_of(p.get("collected_at", ""))
         if not d:
@@ -89,6 +92,15 @@ def aggregate_daily(
         by_date_cost[d] += float(llm.get("cost_usd", 0) or 0)
         by_date_in_tok[d] += int(llm.get("input_tokens", 0) or 0)
         by_date_out_tok[d] += int(llm.get("output_tokens", 0) or 0)
+        # Actionable Rule 비율 (QA 지표 — 간단 휴리스틱)
+        for r in (p.get("rules") or []):
+            by_date_rules_total[d] += 1
+            if _is_actionable_rule(r):
+                by_date_rules_actionable[d] += 1
+        # failure code distribution
+        code = p.get("failure_reason_code")
+        if code:
+            by_date_fail_codes[d][code] += 1
 
     all_dates = set(by_date_run_status) | set(by_date_runtime) | set(by_date_record_status) | set(by_date_cost)
     if dates is not None:
@@ -99,6 +111,9 @@ def aggregate_daily(
         runs = by_date_run_status[d]
         records = by_date_record_status[d]
         rt = by_date_runtime[d]
+        rules_total = by_date_rules_total[d]
+        rules_actionable = by_date_rules_actionable[d]
+        actionable_ratio = (rules_actionable / rules_total) if rules_total else 0.0
         out.append({
             "date": d,
             "processed": records.get("promoted", 0),
@@ -115,8 +130,30 @@ def aggregate_daily(
             "llm_input_tokens": by_date_in_tok[d],
             "llm_output_tokens": by_date_out_tok[d],
             "youtube_quota_used": 0,  # not tracked yet; filled by quota.jsonl if integrated
+            "rules_total": rules_total,
+            "rules_actionable": rules_actionable,
+            "actionable_rule_ratio": round(actionable_ratio, 4),
+            "failure_codes": dict(by_date_fail_codes[d]),
         })
     return out
+
+
+_ACTIONABLE_HINTS = (
+    # Korean verb endings / actionable keywords in trading domain
+    "매수", "매도", "진입", "익절", "손절", "청산", "분할",
+    "컷", "돌파", "추격", "관망", "설정", "확인",
+    "한다", "하라", "시킨다", "둔다", "잡는다",
+)
+
+
+def _is_actionable_rule(text: str) -> bool:
+    """Simple heuristic: rule contains any of the actionable keywords.
+
+    False positives OK; used as trend indicator, not gating.
+    """
+    if not text:
+        return False
+    return any(h in text for h in _ACTIONABLE_HINTS)
 
 
 def write_daily(records: list[dict[str, Any]], out_path: Path) -> Path:
