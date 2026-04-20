@@ -18,6 +18,8 @@ from pathlib import Path
 from ..events import EventLogger
 from ..payload import new_payload
 from ..pipeline import run_pipeline
+from ..priority import compute_priority, sort_queue
+from ..query import build_query, fallback_query
 from ..services import MockError, Services, build_mock_services
 from ..store import JSONStore
 
@@ -177,17 +179,26 @@ def run_query(
     data_store_root: Path = Path("data_store"),
     logs_root: Path = Path("logs"),
     llm_choice: str | None = None,
+    target_channel_id: str | None = None,
 ) -> dict:
-    """Run the pipeline for `query`. Returns a summary dict."""
+    """Run the pipeline for `query`. Returns a summary dict.
+
+    - Uses `query.build_query()` to normalize raw NL → QueryObject (Master_02 §1).
+    - Ranks candidate payloads via `priority.sort_queue` before execution
+      (Master_01 §5 processing order).
+    """
     logs_root.mkdir(parents=True, exist_ok=True)
     events_path = logs_root / "events.jsonl"
     logger = EventLogger(events_path)
     store = JSONStore(root=data_store_root)
 
+    # Build structured query (P1-d)
+    q_obj = build_query(query, target_channel_id=target_channel_id)
+
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
-        candidates = services.youtube_search({"topic": query, "exclude_terms": []})[:count]
+        candidates = services.youtube_search(q_obj.to_dict())[:count]
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
     else:
         candidates = _scripted_candidates(query, count)
@@ -195,14 +206,29 @@ def run_query(
         mode = "mock"
 
     run_id = f"run_{uuid.uuid4().hex[:8]}"
-    per_video_status = []
+
+    # Build Payloads and rank by priority (P1-c)
+    payloads = []
     for c in candidates:
-        payload = new_payload(
+        p = new_payload(
             video_id=c["video_id"], run_id=run_id,
             channel_id=c.get("channel_id", ""), title=c.get("title", ""),
             published_at=c.get("published_at", ""), source_query=query,
         )
-        run_pipeline(payload, services, store, logger)
+        p["priority_score"] = compute_priority(
+            p, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
+        )
+        payloads.append(p)
+    payloads = sort_queue(
+        payloads, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
+    )
+
+    per_video_status = []
+    for payload in payloads:
+        run_pipeline(
+            payload, services, store, logger,
+            fast_track=bool(q_obj.target_channel_id and payload.get("channel_id") == q_obj.target_channel_id),
+        )
         per_video_status.append({
             "video_id": payload["video_id"],
             "title": payload["title"],
@@ -210,6 +236,7 @@ def run_query(
             "confidence": payload.get("confidence"),
             "failure_reason_code": payload.get("failure_reason_code"),
             "rules_n": len(payload.get("rules") or []),
+            "priority_score": payload.get("priority_score"),
         })
 
     summary = {
@@ -236,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--logs", default="logs")
     ap.add_argument("--llm", choices=["gemini", "anthropic"], default=None,
                     help="LLM 선택 (기본: gemini 무료 티어)")
+    ap.add_argument("--target-channel", default=None,
+                    help="Fast-Track 대상 channel_id (지정 시 해당 채널 우선)")
     ap.add_argument("--json", action="store_true", help="결과를 JSON으로 출력")
     args = ap.parse_args(argv)
 
@@ -244,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         data_store_root=Path(args.data_store),
         logs_root=Path(args.logs),
         llm_choice=args.llm,
+        target_channel_id=args.target_channel,
     )
 
     if args.json:

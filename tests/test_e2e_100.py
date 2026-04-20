@@ -28,10 +28,16 @@ def _payload(vid: str) -> dict:
     return new_payload(video_id=vid, run_id=f"run_{vid}")
 
 
+_LONG_SUMMARY = (
+    "단타 매매 전략 요약입니다. 장중 고점 돌파 시 분할 진입하고 "
+    "거래량과 저항선을 반드시 확인합니다. 손절선은 직전 저점, 익절은 분할로 수행합니다."
+)
+
+
 def _svc_success(vid: str, similarity: float = 0.75, caption_source: str = "manual"):
     return build_mock_services(
         captions_map={vid: {"source": caption_source, "text": f"{vid} 자막 원문 내용 {random.randint(0, 999)}"}},
-        llm_script=[{"summary": f"{vid} 요약 본문", "rules": [f"{vid}_rule_1", f"{vid}_rule_2"], "tags": ["t1", "t2"]}],
+        llm_script=[{"summary": f"[{vid}] {_LONG_SUMMARY}", "rules": [f"{vid}_rule_1", f"{vid}_rule_2"], "tags": ["t1", "t2"]}],
         similarity=similarity,
     )
 
@@ -145,7 +151,7 @@ def _gen_reprompt_cases(n: int) -> list[Case]:
                 captions_map={_vid: {"source": "manual", "text": "자막"}},
                 llm_script=[
                     MockError("SEMANTIC_JSON_SCHEMA_FAIL", "bad"),
-                    {"summary": "복구 요약", "rules": ["r"], "tags": ["t"]},
+                    {"summary": f"[{_vid}] {_LONG_SUMMARY}", "rules": ["r"], "tags": ["t"]},
                 ],
                 similarity=0.8,
             )
@@ -163,7 +169,7 @@ def _gen_sync_invalid_cases(n: int) -> list[Case]:
         def setup(_s, _l, _vid=vid):
             return _payload(_vid), build_mock_services(
                 captions_map={_vid: {"source": "manual", "text": "자막"}},
-                llm_script=[{"summary": "요약", "rules": ["r"], "tags": ["t"]}],
+                llm_script=[{"summary": f"[{_vid}] {_LONG_SUMMARY}", "rules": ["r"], "tags": ["t"]}],
                 similarity=0.8,
                 git_script=[MockError("GIT_CONFLICT", "c")] * 6,
             )

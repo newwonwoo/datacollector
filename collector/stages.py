@@ -1,6 +1,7 @@
 """Seven pipeline stages (Master_02, Master_03)."""
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .events import EventLogger
@@ -8,6 +9,11 @@ from .hashing import transcript_hash
 from .payload import snapshot_for_history, utcnow_iso
 from .services import MockError, Services
 from .store import JSONStore
+
+# Soft filter thresholds (Master_02 §2A)
+SHORT_MIN_SEC = 240           # < 4 min → hard drop
+STREAM_LONG_MAX_SEC = 7200    # > 2 h → hard drop
+LONG_PENALTY_SEC = 5400       # > 90 min → priority penalty flag
 
 
 class StageFail(Exception):
@@ -64,6 +70,21 @@ def stage_discover(payload: dict, services: Services, logger: EventLogger, *, fa
 
 def stage_collect(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "collect", "started", logger)
+
+    # P1-b: Soft filter by duration (hard drop at extremes, priority flag for long)
+    duration = payload.get("duration_sec")
+    if isinstance(duration, (int, float)) and duration > 0:
+        if duration < SHORT_MIN_SEC:
+            err = StageFail("YT_SHORTS_DROP", f"duration {duration}s < 4min")
+            _fail(payload, "collect", err, logger)
+            raise err
+        if duration > STREAM_LONG_MAX_SEC:
+            err = StageFail("YT_STREAM_DROP", f"duration {duration}s > 2h")
+            _fail(payload, "collect", err, logger)
+            raise err
+        if duration >= LONG_PENALTY_SEC:
+            payload["_flag_long"] = True
+
     try:
         result = services.youtube_captions(payload["video_id"])
     except MockError as e:
@@ -108,6 +129,8 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
             attempt += 1
     err = StageFail(getattr(last_err, "code", "SEMANTIC_JSON_SCHEMA_FAIL"), str(last_err))
     _fail(payload, "extract", err, logger)
+    # P1-a: quarantine on terminal semantic failure
+    _set_record(payload, "invalid", logger, reason=err.code)
     raise err
 
 
@@ -117,12 +140,20 @@ def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> d
     if not rules:
         err = StageFail("SEMANTIC_EMPTY_RULES", "no rules")
         _fail(payload, "normalize", err, logger)
+        _set_record(payload, "invalid", logger, reason=err.code)
         raise err
     summary = payload.get("summary") or ""
+    # P2-c: summary length check (50~300 chars)
+    if len(summary) < 50 or len(summary) > 300:
+        err = StageFail("SEMANTIC_SUMMARY_LENGTH", f"len={len(summary)}")
+        _fail(payload, "normalize", err, logger)
+        _set_record(payload, "invalid", logger, reason=err.code)
+        raise err
     forbidden = ["이 영상은", "전반적으로"]
     if any(w in summary for w in forbidden):
         err = StageFail("SEMANTIC_FORBIDDEN_WORD", "forbidden")
         _fail(payload, "normalize", err, logger)
+        _set_record(payload, "invalid", logger, reason=err.code)
         raise err
     payload["tags"] = [t.lower().replace(" ", "_") for t in payload.get("tags", [])][:5]
     _set_stage(payload, "normalize", "completed", logger)
@@ -161,7 +192,19 @@ def stage_promote(payload: dict, services: Services, logger: EventLogger, store:
     return payload
 
 
-def stage_package(payload: dict, services: Services, logger: EventLogger, *, max_retries: int = 5) -> dict:
+def stage_package(
+    payload: dict,
+    services: Services,
+    logger: EventLogger,
+    *,
+    max_retries: int = 5,
+    backoff_base: float = 2.0,
+) -> dict:
+    """Package stage with exponential backoff (P2-a).
+
+    Backoff schedule: 2, 4, 8, 16, 32 seconds between attempts.
+    `time.sleep` is looked up at call time so tests can monkeypatch it.
+    """
     _set_stage(payload, "package", "started", logger)
     attempt = 0
     last_err: MockError | None = None
@@ -173,6 +216,9 @@ def stage_package(payload: dict, services: Services, logger: EventLogger, *, max
         except MockError as e:
             last_err = e
             attempt += 1
+            if attempt <= max_retries:
+                delay = backoff_base ** attempt
+                time.sleep(delay)  # runtime lookup → patchable in tests
     # exhausted
     err = StageFail(last_err.code if last_err else "GIT_CONFLICT", last_err.detail if last_err else "")
     _fail(payload, "package", err, logger)

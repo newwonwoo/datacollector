@@ -15,12 +15,20 @@ def _run(store: JSONStore, logger: EventLogger, payload: dict, services, **kw):
     return run_pipeline(payload, services, store, logger, **kw)
 
 
+# Helper: produce a 50~300 char Korean summary satisfying Master_02 §3 validation
+_LONG_SUMMARY = (
+    "단타 매매 장중 고점 돌파 분할 진입 전략의 핵심 흐름 요약. "
+    "저항선과 거래량 동반 확인을 전제로 한 진입, 손절은 직전 저점, "
+    "익절은 두 번에 나눠 수행한다."
+)
+
+
 # SC-01 New collect success
 def test_sc01_new_collect_success(store, logger, make_payload_fn):
     payload = make_payload_fn("SC01VIDEOID")
     services = build_mock_services(
         captions_map={"SC01VIDEOID": {"source": "manual", "text": "단타 매매는 장중 고점 돌파 시 진입한다."}},
-        llm_script=[{"summary": "장중 고점 돌파 전략 요약.", "rules": ["장중 고점 돌파 시 분할 진입"], "tags": ["단타"]}],
+        llm_script=[{"summary": _LONG_SUMMARY, "rules": ["장중 고점 돌파 시 분할 진입"], "tags": ["단타"]}],
         similarity=0.75,
     )
     _run(store, logger, payload, services)
@@ -59,7 +67,7 @@ def test_sc03_rule_b_reprocess(store, logger, make_payload_fn):
     payload = make_payload_fn("SC03VIDEOID")
     services = build_mock_services(
         captions_map={"SC03VIDEOID": {"source": "manual", "text": "새로운 자막 본문 차이"}},
-        llm_script=[{"summary": "새 요약 본문", "rules": ["새규칙"], "tags": ["t"]}],
+        llm_script=[{"summary": _LONG_SUMMARY, "rules": ["새규칙"], "tags": ["t"]}],
         similarity=0.8,
     )
     _run(store, logger, payload, services)
@@ -75,7 +83,7 @@ def test_sc04_reprompt_then_success(store, logger, make_payload_fn):
         captions_map={"SC04VIDEOID": {"source": "manual", "text": "자막 본문"}},
         llm_script=[
             MockError("SEMANTIC_JSON_SCHEMA_FAIL", "bad json"),
-            {"summary": "복구된 요약", "rules": ["복구규칙"], "tags": ["t"]},
+            {"summary": _LONG_SUMMARY, "rules": ["복구규칙"], "tags": ["t"]},
         ],
         similarity=0.8,
     )
@@ -99,7 +107,7 @@ def test_sc06_sync_invalid_dlq(store, logger, make_payload_fn):
     payload = make_payload_fn("SC06VIDEOID")
     services = build_mock_services(
         captions_map={"SC06VIDEOID": {"source": "manual", "text": "자막"}},
-        llm_script=[{"summary": "요약", "rules": ["r"], "tags": ["t"]}],
+        llm_script=[{"summary": _LONG_SUMMARY, "rules": ["r"], "tags": ["t"]}],
         similarity=0.8,
         git_script=[MockError("GIT_CONFLICT", "conflict")] * 6,
     )

@@ -1,6 +1,7 @@
 """Shared fixtures for the E2E suite."""
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -9,6 +10,32 @@ from collector.events import EventLogger
 from collector.payload import new_payload
 from collector.services import MockError, build_mock_services
 from collector.store import JSONStore
+
+
+@pytest.fixture(autouse=True)
+def _fast_backoff(monkeypatch):
+    """Skip real sleep inside stage_package exp-backoff so tests stay sub-second."""
+    import collector.stages
+    monkeypatch.setattr(collector.stages.time, "sleep", lambda _s: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_kill_switch(monkeypatch):
+    """Ensure COLLECTOR_PAUSED isn't leaked from the host env into tests."""
+    monkeypatch.delenv("COLLECTOR_PAUSED", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_locks(monkeypatch, tmp_path):
+    """Use a per-test lock directory so lockfiles don't collide across tests."""
+    import collector.locks
+    import collector.pipeline
+    lock_dir = tmp_path / "locks"
+    lock_dir.mkdir()
+    orig = collector.pipeline.acquire
+    def _acquire(source_key, *, root=lock_dir, owner=None):
+        return orig(source_key, root=root, owner=owner)
+    monkeypatch.setattr(collector.pipeline, "acquire", _acquire)
 
 
 @pytest.fixture
