@@ -9,6 +9,7 @@ dlq/
 logs/
 metrics/
 index/
+vault/
 build/
 dist/
 *.egg-info/

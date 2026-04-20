@@ -38,6 +38,21 @@ def _isolated_locks(monkeypatch, tmp_path):
     monkeypatch.setattr(collector.pipeline, "acquire", _acquire)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_vault(monkeypatch, tmp_path):
+    """Route run_pipeline's default vault_root into tmp_path so test runs
+    don't litter the repo root with vault/ artifacts (G-11 follow-up)."""
+    import collector.pipeline
+    vault_dir = tmp_path / "default_vault"
+    orig = collector.pipeline.run_pipeline
+    def _run(payload, services, store, logger, *, fast_track=False, use_lock=True, vault_root=None):
+        if vault_root is None:
+            vault_root = vault_dir
+        return orig(payload, services, store, logger,
+                    fast_track=fast_track, use_lock=use_lock, vault_root=vault_root)
+    monkeypatch.setattr(collector.pipeline, "run_pipeline", _run)
+
+
 @pytest.fixture
 def logger():
     return EventLogger()
