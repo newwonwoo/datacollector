@@ -6,19 +6,25 @@
 
 ---
 
-## 요약 (2026-04-20 기준, 3차 업데이트 — final sweep 완료)
+## 요약 (2026-04-20 기준, 4차 업데이트 — sweep+ 완료)
 
-- ✅ 완전 구현: **67**
-- 🟡 부분 구현: **2**
-- ⬜ 미구현: **1**
-- 합계 검증 대상: **70** 명제
+- ✅ 완전 구현: **70 / 70 (100%)**
+- 🟡 부분 구현: **0**
+- ⬜ 미구현: **0**
 
-테스트: `python -m pytest` → **229 passed** (~1.9s).
+테스트: `python -m pytest` → **240 passed** (~2.3s).
 
-### 남은 항목
-- 🟡 자막 수집 3단 fallback — timedtext는 있음, yt-dlp/공식 API 미구현 (실사용 시 timedtext만으로 대부분 커버)
-- 🟡 Run 상태 별도 파일 `runs/<run_id>.json` — events.jsonl 내 run 이벤트로 커버 중
-- ⬜ Prompts 버전 관리 자동화 (수동으로 prompts/*.md 추가는 가능, 버전 선택 UI 없음)
+### 이번 라운드 클로즈
+- ✅ 자막 수집 3단 fallback — `adapters/youtube.py` + yt-dlp 서브프로세스 (opt-in via `COLLECTOR_YT_DLP=1`)
+- ✅ Run 상태 별도 파일 — `collector/runs.py:save_run_snapshot` → `runs/<run_id>.json`
+- ✅ 채널 품질 점수 — `collector/channel_quality.py` (Master_02 §2.4) + `status.json` top/bottom 5
+- ✅ 대시보드 전문 검색 — 🔍 입력 1개로 title/summary/rules/tags/source_key/channel 필터
+
+### 설계서 외 추가 기능 (bonus)
+- 대시보드 완료 배너 + NEW 배지 + 모달 상세 뷰
+- 2-클릭 도달성: 레코드 → 모달 → YouTube/Markdown/JSON
+- 운영 스트립 (Budget / Breaker / DLQ / Queue / KillSwitch)
+- Client-side 전문 검색 + debounced input
 
 ---
 
