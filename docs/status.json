@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-20T04:49:05Z",
+  "updated_at": "2026-04-20T04:49:39Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_5a2dd3a8a9e3",
-    "run_id": "run_5adc77ce",
+    "event_id": "evt_429b7e919ba5",
+    "run_id": "run_ff4aefbe",
     "entity_type": "run",
-    "entity_id": "run_5adc77ce",
+    "entity_id": "run_ff4aefbe",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_5adc77ce.json",
+    "reason": "runs/run_ff4aefbe.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-04-20T04:49:04Z"
+    "recorded_at": "2026-04-20T04:49:38Z"
   },
   "latest_run_detail": {
-    "run_id": "run_5adc77ce",
-    "started_at": "2026-04-20T04:48:57Z",
-    "ended_at": "2026-04-20T04:49:04Z",
+    "run_id": "run_ff4aefbe",
+    "started_at": "2026-04-20T04:49:33Z",
+    "ended_at": "2026-04-20T04:49:38Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-04-20T04:48:57Z",
-        "ended_at": "2026-04-20T04:49:03Z"
+        "started_at": "2026-04-20T04:49:33Z",
+        "ended_at": "2026-04-20T04:49:37Z"
       },
       "collect": {
         "status": "failed",
@@ -67,8 +67,8 @@
         "failure_reasons": {
           "YT_NO_TRANSCRIPT": 5
         },
-        "started_at": "2026-04-20T04:48:57Z",
-        "ended_at": "2026-04-20T04:49:04Z",
+        "started_at": "2026-04-20T04:49:33Z",
+        "ended_at": "2026-04-20T04:49:38Z",
         "reason": "YT_NO_TRANSCRIPT"
       },
       "extract": {
