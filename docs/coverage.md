@@ -6,14 +6,14 @@
 
 ---
 
-## 요약 (2026-04-20 기준)
+## 요약 (2026-04-20 기준, 2차 업데이트)
 
-- ✅ 완전 구현: **52**
-- 🟡 부분 구현: **12**
-- ⬜ 미구현: **6**
+- ✅ 완전 구현: **61**
+- 🟡 부분 구현: **6**
+- ⬜ 미구현: **3**
 - 합계 검증 대상: **70** 명제
 
-테스트: `python -m pytest` → **206 passed** (~1.7s).
+테스트: `python -m pytest` → **219 passed** (~1.9s).
 
 ---
 
@@ -138,18 +138,16 @@
 
 ---
 
-## 대시보드 노출 Gap (아직 시각화 안 됨)
+## 대시보드 노출 Gap (거의 해소)
 
-방법론 §4 규칙에 따라 "대시보드에 없으면 없는 것" 기준. 다음 항목들은 코드에 구현돼 있으나 사용자 가시성이 부족:
+방법론 §4 규칙에 따라 "대시보드에 없으면 없는 것" 기준. 이전 4건 모두 해소됨 (`status.json` 기반 op-strip으로):
 
-- ⬜ Budget 진행률 (일일 LLM 비용 % / YouTube 쿼터 % / runner-min %)
-- ⬜ Circuit Breaker open/closed 상태
-- ⬜ DLQ 대기 건수
-- ⬜ Review Queue 대기 건수
-- ⬜ Kill Switch (COLLECTOR_PAUSED) 표시
-- ⬜ 최근 실행의 실패 원인 코드 분포
-
-⇒ 이것들이 다음 스프린트의 P2 항목.
+- ✅ Budget 진행률 (일일 LLM 비용 % / YouTube 쿼터 % / runner-min %)
+- ✅ Circuit Breaker open/closed 상태
+- ✅ DLQ 대기 건수
+- ✅ Review Queue 대기 건수
+- ✅ Kill Switch (COLLECTOR_PAUSED) 표시
+- 🟡 최근 실행의 실패 원인 코드 분포 (부분 — records 카드 상세 모달에만)
 
 ---
 
