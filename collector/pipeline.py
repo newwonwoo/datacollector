@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pathlib import Path
+
 from .events import EventLogger
 from .killswitch import KillSwitchTriggered, is_paused
 from .locks import acquire, heartbeat, release
@@ -19,6 +21,7 @@ from .stages import (
     stage_review,
 )
 from .store import JSONStore
+from .vault import regenerate_moc, write_note
 
 
 def _check_kill_switch(payload: dict[str, Any], logger: EventLogger, where: str) -> None:
@@ -51,6 +54,7 @@ def run_pipeline(
     *,
     fast_track: bool = False,
     use_lock: bool = True,
+    vault_root: Path | None = Path("vault"),
 ) -> dict[str, Any]:
     """Run all seven stages on a single payload.
 
@@ -147,6 +151,19 @@ def run_pipeline(
         except StageFail:
             _fail_run(payload, logger, run_id)
             return payload
+
+        # Obsidian vault write (Master_03 §2 Renderer) — local, always.
+        if vault_root is not None:
+            try:
+                write_note(payload, vault_root)
+                regenerate_moc(vault_root)
+            except Exception as e:
+                logger.log(
+                    entity_type="stage",
+                    entity_id=f"{payload['source_key']}:vault",
+                    from_status=None, to_status="failed",
+                    run_id=run_id, reason=f"vault_write_error:{e}",
+                )
 
         try:
             stage_package(payload, services, logger)

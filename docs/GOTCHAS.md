@@ -138,6 +138,20 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-11. Obsidian Vault 출력 누락 — 설계에 있는데 코드에서 빠짐
+### 증상
+- 유저: "레포에서 바로 읽고 볼트에도 옮기라고 다 지시했을 텐데 읽을 게 왜 없어"
+- Master_03 §2에 "Obsidian Renderer & Sync Worker" 명시. GitSyncAdapter만 구현됐고, vault/ 폴더에 Markdown이 실제로 안 써짐.
+### 원인
+- G-09 (설계 ↔ 코드 drift)의 한 사례. Renderer 로직이 GitSyncAdapter 안에만 있고, Git sync가 no-op일 때는 아무 Markdown도 생성 안 됨.
+- 유저가 직접 "vault/ 폴더 검사해봐라" 하지 않는 이상 발견 어려움.
+### 예방
+- 파이프라인 기본 출력은 항상 **로컬 파일시스템**(`vault/`) 이다. Git sync는 선택 오버레이.
+- 테스트에 `vault/<source_key>.md` 파일 존재 검증 필수.
+### 대응 완료?
+- ✅ collector/vault.py 신규, pipeline.run_pipeline이 vault_root 기본 "vault/"로 write_note + regenerate_moc (커밋 TBD)
+- ✅ collect.yml 이 vault/ 도 함께 커밋
+
 ## G-10. 커밋 전 배포 경로 실제로 눌러보지 않음
 ### 증상
 - "대시보드 URL입니다" 라고 안내 → 유저가 눌러보니 무한 로딩 / 404
