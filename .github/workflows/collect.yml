@@ -123,22 +123,24 @@ jobs:
             echo ""
             if [ "${{ steps.pages.outcome }}" = "success" ]; then
               echo "### ✅ GitHub Pages (활성)"
-              echo "- 🔗 **${{ steps.deploy.outputs.page_url }}**  (북마크용)"
+              echo "- 🔗 **${{ steps.deploy.outputs.page_url }}**  (깔끔한 영구 URL, 북마크용)"
               echo ""
             else
               echo "### ⚠️  GitHub Pages 미활성"
-              echo "한 번만 설정하시면 고정 URL이 생깁니다:"
+              echo "한 번만 ON 하면 영구 URL이 생깁니다:"
               echo "https://github.com/$OWNER/$REPO/settings/pages → Source: GitHub Actions"
               echo ""
             fi
-            echo "### 🌐 즉시 사용 가능 (설정 불필요)"
-            echo "- 🔗 **https://htmlpreview.github.io/?https://github.com/$OWNER/$REPO/blob/main/docs/dashboard.html**"
-            echo "  (htmlpreview.github.io 가 raw HTML을 대신 렌더링 — Pages 없어도 동작)"
+            echo "### 🌐 즉시 사용 (설정 불필요, 빠름)"
+            echo "- 🔗 **https://raw.githack.com/$OWNER/$REPO/main/docs/dashboard.html**"
+            echo "  (raw.githack.com CDN — 모바일/PC 브라우저에서 바로 렌더링)"
             echo ""
-            echo "- 🔗 https://github.com/$OWNER/$REPO/blob/main/docs/dashboard.html"
-            echo "  (소스 보기 — GitHub 내장 블롭 뷰어)"
-            echo ""
-            echo "- 📦 페이지 하단 **Artifacts** → \`collector-dashboard\` 다운로드"
+            echo "### 대안 URL"
+            echo "- https://htmlpreview.github.io/?https://github.com/$OWNER/$REPO/blob/main/docs/dashboard.html"
+            echo "  (가끔 느릴 수 있음)"
+            echo "- https://github.com/$OWNER/$REPO/blob/main/docs/dashboard.html"
+            echo "  (GitHub 내장 소스 뷰어)"
+            echo "- 페이지 하단 **Artifacts** → \`collector-dashboard\` 다운로드"
           } >> $GITHUB_STEP_SUMMARY
 
       - name: Commit data_store + docs
