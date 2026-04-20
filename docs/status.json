@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-20T04:00:12Z",
+  "updated_at": "2026-04-20T04:03:26Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,19 +24,19 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_8ac2a3c5c82d",
-    "run_id": "run_30849ab4",
+    "event_id": "evt_c97bd3313168",
+    "run_id": "run_d8fda9f9",
     "entity_type": "run",
-    "entity_id": "run_30849ab4",
+    "entity_id": "run_d8fda9f9",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_30849ab4.json",
+    "reason": "runs/run_d8fda9f9.json",
     "metrics": {
-      "videos": 5,
+      "videos": 20,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-04-20T04:00:12Z"
+    "recorded_at": "2026-04-20T04:03:26Z"
   },
   "top_channels": [],
   "bottom_channels": []
