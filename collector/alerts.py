@@ -120,3 +120,33 @@ def emit_stdout(alert: Alert) -> None:
     print(f"[{alert.severity.upper()}] {alert.code}: {alert.title}")
     print(alert.body)
     print("---")
+
+
+def emit_slack(
+    alert: Alert,
+    *,
+    webhook_url: str,
+    http: Callable | None = None,
+) -> dict[str, Any]:
+    """Post the alert to a Slack incoming webhook URL.
+
+    webhook_url is typically sourced from env SLACK_ALERT_URL.
+    """
+    color = {"critical": "#dc2626", "warning": "#d97706", "info": "#2563eb"}.get(alert.severity, "#6b7280")
+    body = json.dumps({
+        "attachments": [{
+            "color": color,
+            "title": f"[{alert.severity.upper()}] {alert.title}",
+            "text": alert.body,
+            "fields": [{"title": "code", "value": alert.code, "short": True}],
+        }],
+    }).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if http is not None:
+        return http("POST", webhook_url, headers=headers, data=body)
+    req = urllib.request.Request(webhook_url, method="POST", headers=headers, data=body)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return {"status": resp.status, "body": resp.read().decode("utf-8", "replace")}
+    except urllib.error.HTTPError as e:
+        return {"status": e.code, "body": e.read().decode("utf-8", "replace")}

@@ -18,6 +18,7 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "aggregate": ("collector.cli.extras_cli", "main_aggregate"),
     "archive": ("collector.cli.extras_cli", "main_archive"),
     "replay": ("collector.cli.replay_cli", "main"),
+    "status": ("collector.cli.status_cli", "main"),
 }
 
 
@@ -60,6 +61,7 @@ Usage:
   collector aggregate   다영상 집계 (--tags 단타,돌파) → aggregates/*.json
   collector archive     지난 분기 기록을 archive/YYYY_QN/ 으로 이동
   collector replay      DLQ 재처리 (dlq/* → pipeline 재실행)
+  collector status      운영 상태 JSON 스냅샷 (dashboard용)
 
 각 서브커맨드에 --help 를 붙이면 세부 옵션을 볼 수 있다.
 """

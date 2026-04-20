@@ -110,6 +110,19 @@ jobs:
           collector traces --events logs/events.jsonl \
             --out logs/traces.jsonl || true
 
+      - name: Publish status snapshot (docs/status.json)
+        if: always()
+        run: |
+          collector status --out docs/status.json || true
+          ls -la docs/status.json || true
+
+      - name: Slack alert (optional, if SLACK_ALERT_URL set)
+        if: always() && env.SLACK_ALERT_URL != ''
+        env:
+          SLACK_ALERT_URL: ${{ secrets.SLACK_ALERT_URL }}
+        run: |
+          collector alerts --metrics metrics/daily.jsonl --emit slack || true
+
       - name: Build dashboard
         run: collector dashboard --data-store data_store --html index/dashboard.html
 

@@ -61,6 +61,50 @@ def archive_quarter(
     return moved
 
 
+def archive_quarter_markdown(
+    vault_root: Path,
+    archive_root: Path,
+    *,
+    year: int,
+    quarter: int,
+) -> list[Path]:
+    """Move vault/strategies/*.md whose frontmatter `collected` falls in
+    the target (year, quarter) to `archive_root/<year>_Q<quarter>/`.
+
+    README.md is regenerated after the move (caller's responsibility).
+    Returns list of target paths.
+    """
+    import re
+
+    moved: list[Path] = []
+    strat = Path(vault_root) / "strategies"
+    if not strat.exists():
+        return moved
+
+    for src in strat.glob("*.md"):
+        text = src.read_text(encoding="utf-8")
+        # Extract collected: YYYY-MM-DD... from frontmatter
+        m = re.search(r"^collected:\s*(\S+)", text, flags=re.MULTILINE)
+        if not m:
+            continue
+        iso = m.group(1)
+        if len(iso) < 7:
+            continue
+        try:
+            y, mo = int(iso[:4]), int(iso[5:7])
+        except ValueError:
+            continue
+        if y != year or not month_in_quarter(mo, quarter):
+            continue
+        target_dir = Path(archive_root) / f"{year}_Q{quarter}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / src.name
+        target.write_text(text, encoding="utf-8")
+        src.unlink(missing_ok=True)
+        moved.append(target)
+    return moved
+
+
 def current_year_quarter(today: date | None = None) -> tuple[int, int]:
     today = today or date.today()
     return today.year, quarter_of(today.month)

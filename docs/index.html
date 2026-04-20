@@ -373,6 +373,13 @@
   <!-- 완료 배너 (동적) -->
   <div id="banner-host"></div>
 
+  <!-- 운영 상태 스트립 (docs/status.json 기반, 공개 URL이라 PAT 불필요) -->
+  <div class="card" style="padding: 14px 18px;">
+    <div id="op-strip" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px;">
+      <span class="muted">운영 상태 로드 중…</span>
+    </div>
+  </div>
+
   <!-- 실행 카드 -->
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
@@ -865,11 +872,70 @@ function openModal(encodedSk){
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 
+async function loadOpStrip(){
+  // Public URL, no PAT required — committed to main by the workflow.
+  const host = document.getElementById('op-strip');
+  try {
+    const resp = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) { host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
+    const s = await resp.json();
+    const chips = [];
+    // Kill switch
+    if (s.kill_switch){
+      chips.push(`<span class="op-chip err">⛔ <span class="label">KILL:</span> <span class="val">ON</span></span>`);
+    } else {
+      chips.push(`<span class="op-chip ok">● <span class="label">실행 가능</span></span>`);
+    }
+    // Budget — runner minutes
+    const b = s.budget || {};
+    const pct = (x)=> Math.min(100, Math.round((x||0)*100));
+    const barCls = (p)=> p >= 95 ? 'err' : (p >= 80 ? 'warn' : '');
+    if (b.actions_minutes_used !== undefined){
+      const p = pct(b.actions_minutes_pct);
+      chips.push(`<span class="op-chip ${barCls(p)}">⏱ <span class="label">Actions:</span>
+        <span class="val">${b.actions_minutes_used}m</span>
+        <span class="bar"><i style="width:${p}%"></i></span></span>`);
+    }
+    if (b.llm_cost_usd !== undefined){
+      const p = pct(b.llm_cost_pct);
+      chips.push(`<span class="op-chip ${barCls(p)}">🤖 <span class="label">LLM:</span>
+        <span class="val">$${(b.llm_cost_usd||0).toFixed(3)}</span>
+        <span class="bar"><i style="width:${p}%"></i></span></span>`);
+    }
+    if (b.youtube_units_used !== undefined){
+      const p = pct(b.youtube_units_pct);
+      chips.push(`<span class="op-chip ${barCls(p)}">📺 <span class="label">YT:</span>
+        <span class="val">${b.youtube_units_used}u</span>
+        <span class="bar"><i style="width:${p}%"></i></span></span>`);
+    }
+    // Breakers
+    const brk = s.breakers || {};
+    const openBreakers = Object.entries(brk).filter(([, v]) => v.open);
+    for (const [svc, st] of openBreakers){
+      chips.push(`<span class="op-chip err">🚨 <span class="label">${svc}:</span>
+        <span class="val">open ${Math.ceil(st.seconds_remaining/60)}m</span></span>`);
+    }
+    // DLQ + review queue
+    if (s.dlq_count > 0)          chips.push(`<span class="op-chip warn">⚠ <span class="label">DLQ:</span> <span class="val">${s.dlq_count}</span></span>`);
+    if (s.review_queue_count > 0) chips.push(`<span class="op-chip warn">👤 <span class="label">사람 리뷰:</span> <span class="val">${s.review_queue_count}</span></span>`);
+    // Records quick glance
+    if (s.records?.total){
+      chips.push(`<span class="op-chip">📚 <span class="label">총:</span> <span class="val">${s.records.total}</span></span>`);
+      chips.push(`<span class="op-chip">✅ <span class="label">Promoted:</span> <span class="val">${s.records.promoted}</span></span>`);
+    }
+    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at?.replace('T',' ').slice(0,16) || '?'}</span>`);
+    host.innerHTML = chips.join('');
+  } catch(e){
+    host.innerHTML = '<span class="muted">운영 상태 로드 실패</span>';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('pat').value = token();
-  updateConn(); loadLatest(); loadRuns();
+  updateConn(); loadLatest(); loadRuns(); loadOpStrip();
   setInterval(loadRuns, 10000);
   setInterval(loadLatest, 60000);
+  setInterval(loadOpStrip, 30000);  // refresh every 30s
   document.getElementById('query').addEventListener('keydown', e=>{
     if(e.key==='Enter') runQuery();
   });
