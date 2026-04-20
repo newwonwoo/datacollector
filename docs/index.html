@@ -1,5 +1,451 @@
 <!doctype html>
-<meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=dashboard.html">
-<title>Collector</title>
-<p>Redirecting to <a href="dashboard.html">dashboard</a>…</p>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light only" />
+  <title>Collector — YouTube 지식 파이프라인</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card: #ffffff;
+      --subtle: #f1f3f7;
+      --border: #e5e7ec;
+      --border-strong: #d1d5db;
+      --text: #0f172a;
+      --text-2: #475569;
+      --text-dim: #94a3b8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --ok: #16a34a;
+      --ok-bg: #dcfce7;
+      --warn: #d97706;
+      --warn-bg: #fef3c7;
+      --err: #dc2626;
+      --err-bg: #fee2e2;
+      --info-bg: #dbeafe;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, .04);
+      --shadow: 0 4px 12px rgba(15, 23, 42, .06);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo",
+                   "Noto Sans KR", "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5; min-height: 100vh;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 28px 20px 80px; }
+
+    /* Header */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+    }
+    .brand {
+      display: flex; align-items: baseline; gap: 12px;
+    }
+    .brand .title {
+      font-weight: 700; font-size: 22px; letter-spacing: -0.01em;
+    }
+    .brand .tag {
+      color: var(--text-dim); font-size: 13px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 22px; margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card .section-title {
+      margin: 0 0 16px;
+      font-size: 12px; font-weight: 600;
+      color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .card .desc { color: var(--text-2); font-size: 13px; margin: 10px 0 0; }
+
+    /* Form */
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+    input[type="text"], input[type="password"], input[type="number"] {
+      flex: 1; min-width: 180px;
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border-strong); border-radius: 10px;
+      padding: 11px 14px; font-size: 15px; font-family: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="number"] { min-width: 82px; max-width: 110px; text-align: center; }
+    input:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+    }
+    button {
+      background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+      padding: 11px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: background .15s, transform .08s;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: scale(.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost {
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border-strong);
+    }
+    button.ghost:hover { background: var(--subtle); }
+    button.ghost.danger { color: var(--err); border-color: var(--err-bg); }
+    button.ghost.danger:hover { background: var(--err-bg); }
+
+    /* Pill */
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 100px; font-size: 12px; font-weight: 600;
+      font-family: var(--mono);
+    }
+    .pill.ok { background: var(--ok-bg); color: var(--ok); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .pill.err { background: var(--err-bg); color: var(--err); }
+    .pill.run { background: var(--info-bg); color: var(--accent); }
+    .pill .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* KPI grid */
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      gap: 10px;
+    }
+    .kpi {
+      background: var(--subtle); border-radius: 10px; padding: 14px 16px;
+    }
+    .kpi .label { font-size: 11px; color: var(--text-2); margin-bottom: 6px;
+                  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+    .kpi .value { font-size: 24px; font-weight: 700; font-family: var(--mono);
+                  color: var(--text); letter-spacing: -0.02em; }
+    .kpi .value.sm { font-size: 14px; font-weight: 500; color: var(--text-2); }
+
+    /* Run list */
+    .run-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+    }
+    .run-item:last-child { border-bottom: 0; }
+    .run-item .title { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                        white-space: nowrap; font-family: var(--mono);
+                        color: var(--text-2); font-size: 13px; }
+    .run-item .time { color: var(--text-dim); font-size: 12px; font-family: var(--mono); }
+    .run-item a { color: var(--accent); text-decoration: none; font-size: 12px; }
+    .run-item a:hover { text-decoration: underline; }
+
+    /* Record list */
+    .rec-item {
+      padding: 14px; background: var(--subtle); border-radius: 10px;
+      margin-bottom: 10px; border: 1px solid transparent;
+      transition: border-color .15s;
+    }
+    .rec-item:hover { border-color: var(--border); }
+    .rec-item .head {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: 11px; color: var(--text-2);
+    }
+    .rec-item .title-line { font-weight: 600; margin: 8px 0 5px; font-size: 14.5px;
+                             color: var(--text); }
+    .rec-item .summary { color: var(--text-2); font-size: 13px; }
+
+    details { margin-top: 4px; }
+    summary { cursor: pointer; color: var(--text-2); font-size: 14px;
+              user-select: none; padding: 6px 0; font-weight: 600;
+              list-style: none; display: flex; align-items: center; gap: 6px; }
+    summary::before { content: "▸"; font-size: 10px; transition: transform .15s; color: var(--text-dim);}
+    details[open] summary::before { transform: rotate(90deg); }
+    summary::-webkit-details-marker { display: none; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--border-strong); color: var(--text);
+      padding: 12px 18px; border-radius: 10px; box-shadow: var(--shadow);
+      max-width: 90%; z-index: 100; font-size: 14px;
+      opacity: 0; transition: opacity .2s, transform .2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+
+    .empty { text-align: center; color: var(--text-dim); padding: 28px 10px; font-size: 14px; }
+    code.kbd {
+      background: var(--subtle); padding: 2px 7px; border-radius: 5px;
+      font-family: var(--mono); font-size: 12.5px; color: var(--text-2);
+    }
+    a { color: var(--accent); }
+    a.subtle { color: var(--text-2); text-decoration: none; }
+    a.subtle:hover { color: var(--accent); text-decoration: underline; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .kpi .value { font-size: 22px; }
+      .wrap { padding: 20px 16px 60px; }
+      .run-item { grid-template-columns: 1fr auto; gap: 6px 10px; }
+      .run-item .time, .run-item a { grid-column: span 2; font-size: 11px; margin-top: -4px; }
+    }
+
+    footer { text-align: center; color: var(--text-dim); font-size: 12.5px; margin-top: 26px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <span class="title">Collector</span>
+      <span class="tag">YouTube 지식 파이프라인 · v10</span>
+    </div>
+    <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
+  </header>
+
+  <!-- 실행 카드 -->
+  <div class="card">
+    <div class="section-title">새 파이프라인 실행</div>
+    <div class="form-row">
+      <input id="query" type="text" placeholder="검색어 입력 (예: 단타매매전략)" />
+      <input id="count" type="number" value="5" min="1" max="20" title="수집 후보 영상 수" />
+      <button id="run-btn" onclick="runQuery()">실행 ▶</button>
+    </div>
+    <p class="desc">
+      GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요.
+      최초 1회만 <a href="#" onclick="document.getElementById('settings').open=true;return false;">토큰 설정</a>이 필요합니다.
+    </p>
+  </div>
+
+  <!-- 요약 KPI -->
+  <div class="card">
+    <div class="section-title">현재 데이터</div>
+    <div class="kpi-grid" id="kpi">
+      <div class="kpi"><div class="label">총 레코드</div><div class="value">—</div></div>
+      <div class="kpi"><div class="label">Promoted</div><div class="value">—</div></div>
+      <div class="kpi"><div class="label">LLM 비용</div><div class="value sm">—</div></div>
+      <div class="kpi"><div class="label">최근 수집</div><div class="value sm">—</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- 최근 실행 -->
+    <div class="card">
+      <div class="section-title">최근 실행</div>
+      <div id="runs"><div class="empty">토큰 설정 후 로드됩니다</div></div>
+    </div>
+
+    <!-- 최신 결과 -->
+    <div class="card">
+      <div class="section-title">최신 결과</div>
+      <div id="records"><div class="empty">아직 데이터가 없습니다</div></div>
+      <p style="margin:14px 0 0"><a class="subtle" href="dashboard.html">전체 리포트 보기 →</a></p>
+    </div>
+  </div>
+
+  <!-- 설정 -->
+  <div class="card" style="margin-top: 20px;">
+    <details id="settings">
+      <summary>토큰 설정 (최초 1회)</summary>
+      <p class="desc" style="margin-top:0">
+        실행·상태조회 API에 GitHub Personal Access Token이 필요합니다.
+        값은 <strong>이 브라우저에만 저장</strong>되고 서버로 전송되지 않습니다.
+      </p>
+      <p class="desc">
+        👉 <a href="https://github.com/settings/tokens/new?description=collector-dashboard&scopes=workflow" target="_blank">
+          PAT 발급 바로가기</a> (scope: <code class="kbd">workflow</code>)
+      </p>
+      <div class="form-row" style="margin-top:12px">
+        <input id="pat" type="password" placeholder="ghp_... 붙여넣기" />
+        <button class="ghost" onclick="saveToken()">저장</button>
+        <button class="ghost danger" onclick="clearToken()">삭제</button>
+      </div>
+    </details>
+  </div>
+
+  <footer>
+    <a class="subtle" href="https://github.com/newwonwoo/datacollector" target="_blank">
+      newwonwoo/datacollector
+    </a>
+    &nbsp;·&nbsp;
+    <span id="updated">—</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const OWNER = 'newwonwoo';
+const REPO  = 'datacollector';
+const WF    = 'collect.yml';
+const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+function token(){ return localStorage.getItem('gh_pat') || ''; }
+function setToken(v){ localStorage.setItem('gh_pat', v); }
+function clearToken(){
+  localStorage.removeItem('gh_pat');
+  document.getElementById('pat').value='';
+  toast('토큰 삭제됨'); updateConn();
+}
+function saveToken(){
+  const v = document.getElementById('pat').value.trim();
+  if (!v) return toast('빈 값은 저장 안 됨');
+  setToken(v); toast('저장됨'); updateConn(); loadRuns(); loadLatest();
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window.__tt);
+  window.__tt = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+async function gh(path, opts={}){
+  const headers = Object.assign({
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  }, opts.headers||{});
+  const t = token();
+  if (t) headers['Authorization'] = `Bearer ${t}`;
+  return fetch(`${API}${path}`, Object.assign({}, opts, {headers}));
+}
+
+async function updateConn(){
+  const el = document.getElementById('conn');
+  if (!token()){
+    el.className='pill warn'; el.innerHTML='<span class="dot"></span>토큰 필요'; return;
+  }
+  try {
+    const r = await gh('');
+    if (r.ok){ el.className='pill ok'; el.textContent='● 연결됨'; }
+    else if (r.status===401){ el.className='pill err'; el.textContent='● 토큰 무효'; }
+    else { el.className='pill err'; el.textContent='● API '+r.status; }
+  } catch(e){ el.className='pill err'; el.textContent='● 네트워크 오류'; }
+}
+
+async function runQuery(){
+  const q = document.getElementById('query').value.trim();
+  const c = document.getElementById('count').value || '5';
+  const btn = document.getElementById('run-btn');
+  if (!q) return toast('검색어를 입력하세요');
+  if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
+  btn.disabled = true; btn.textContent = '요청 중…';
+  try {
+    const resp = await gh(`/actions/workflows/${WF}/dispatches`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ref: 'main', inputs: { query: q, count: String(c) } }),
+    });
+    if (resp.status === 204){
+      toast('✓ 실행 요청 성공 · 1~2분 소요');
+      document.getElementById('query').value = '';
+      setTimeout(loadRuns, 2500);
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0,140)}`);
+    }
+  } catch(e){ toast('오류: '+e.message); }
+  finally { btn.disabled = false; btn.textContent = '실행 ▶'; }
+}
+
+function fmtTime(iso){
+  try { return new Date(iso).toLocaleString('ko',
+    {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+  catch(e){ return iso; }
+}
+
+function runPill(r){
+  if (r.status === 'completed' && r.conclusion === 'success') return '<span class="pill ok">✓ 완료</span>';
+  if (r.status === 'completed' && r.conclusion === 'failure') return '<span class="pill err">✗ 실패</span>';
+  if (r.status === 'completed') return `<span class="pill warn">${r.conclusion||'?'}</span>`;
+  return '<span class="pill run"><span class="dot"></span>진행중</span>';
+}
+
+async function loadRuns(){
+  const host = document.getElementById('runs');
+  if (!token()){ host.innerHTML = '<div class="empty">토큰 설정 후 로드됩니다</div>'; return; }
+  const r = await gh(`/actions/workflows/${WF}/runs?per_page=5`);
+  if (!r.ok){ host.innerHTML = '<div class="empty">상태 조회 실패</div>'; return; }
+  const b = await r.json();
+  if (!b.workflow_runs?.length){ host.innerHTML='<div class="empty">실행 기록 없음</div>'; return; }
+  host.innerHTML = b.workflow_runs.map(r => `
+    <div class="run-item">
+      <div class="title">${r.display_title || r.name || 'run'}</div>
+      <div>${runPill(r)}</div>
+      <div class="time">${fmtTime(r.created_at)}</div>
+      <a href="${r.html_url}" target="_blank">로그</a>
+    </div>
+  `).join('');
+}
+
+async function loadLatest(){
+  const r = await gh('/contents/data_store');
+  const host = document.getElementById('records');
+  const kpi = document.getElementById('kpi');
+
+  if (!r.ok){
+    host.innerHTML = r.status===404
+      ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
+      : '<div class="empty">data_store/ 조회 실패</div>';
+    return;
+  }
+  const dirs = await r.json();
+  if (!Array.isArray(dirs) || !dirs.length){
+    host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
+  }
+  dirs.sort((a,b)=>b.name.localeCompare(a.name));
+  const r2 = await gh(`/contents/${dirs[0].path}`);
+  if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
+  const files = await r2.json();
+  const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
+
+  const records = await Promise.all(recent.map(async f => {
+    const cr = await gh(`/contents/${f.path}`);
+    if (!cr.ok) return null;
+    const cb = await cr.json();
+    try {
+      const raw = atob(cb.content.replace(/\n/g,''));
+      const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
+      const text = new TextDecoder('utf-8').decode(bytes);
+      return JSON.parse(text);
+    } catch(e){ return null; }
+  }));
+
+  const valid = records.filter(Boolean);
+  host.innerHTML = valid.length ? valid.map(p => `
+    <div class="rec-item">
+      <div class="head">
+        <span>${p.source_key || '?'}</span>
+        <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+      </div>
+      <div class="title-line">${(p.title||'').slice(0,80) || '(제목 없음)'}</div>
+      <div class="summary">${(p.summary||'').slice(0,140)}${(p.summary||'').length>140?'…':''}</div>
+    </div>
+  `).join('') : '<div class="empty">레코드 파싱 실패</div>';
+
+  const promoted = valid.filter(p=>p.record_status==='promoted').length;
+  const cost = valid.reduce((s,p)=>s + (p.llm_context?.cost_usd||0), 0);
+  kpi.children[0].querySelector('.value').textContent = files.length;
+  kpi.children[1].querySelector('.value').textContent = promoted;
+  kpi.children[2].querySelector('.value').textContent = '$'+cost.toFixed(4);
+  kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
+  document.getElementById('updated').textContent = '마지막 로드 '+new Date().toLocaleTimeString('ko');
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('pat').value = token();
+  updateConn(); loadLatest(); loadRuns();
+  setInterval(loadRuns, 10000);
+  setInterval(loadLatest, 60000);
+  document.getElementById('query').addEventListener('keydown', e=>{
+    if(e.key==='Enter') runQuery();
+  });
+});
+</script>
+</body>
+</html>

@@ -73,21 +73,25 @@ jobs:
       - name: Build dashboard
         run: collector dashboard --data-store data_store --html index/dashboard.html
 
-      - name: Add index.html redirect
+      - name: Add index.html to Pages artifact (prefer docs/index.html)
         run: |
-          cat > index/index.html <<'HTML'
+          if [ -f docs/index.html ]; then
+            cp docs/index.html index/index.html
+          else
+            cat > index/index.html <<'HTML'
           <!doctype html>
           <meta charset="utf-8">
           <meta http-equiv="refresh" content="0; url=dashboard.html">
           <title>Collector</title>
           <p>Redirecting to <a href="dashboard.html">dashboard</a>…</p>
           HTML
+          fi
 
       - name: Copy dashboard to docs/ (no-Pages fallback)
         run: |
           mkdir -p docs
           cp index/dashboard.html docs/dashboard.html
-          cp index/index.html docs/index.html 2>/dev/null || true
+          # Do NOT overwrite docs/index.html — it's the interactive app.
 
       - name: Upload raw artifacts (backup, always)
         if: always()
