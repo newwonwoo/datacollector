@@ -433,12 +433,14 @@
 
   <!-- 🎯 수집 상태 요약 — 한 눈에 알 수 있는 건강도 -->
   <div id="health" class="health unk">
-    <div class="icon">⏳</div>
+    <div class="icon" id="health-icon">⏳</div>
     <div class="body">
       <div class="title" id="health-title">상태 확인 중…</div>
       <div class="sub" id="health-sub">status.json 로드 중</div>
       <div class="hint" id="health-hint"></div>
     </div>
+    <span class="age" id="health-age"></span>
+    <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
   </div>
 
   <!-- 운영 상태 스트립 (docs/status.json 기반, 공개 URL이라 PAT 불필요) -->
@@ -1240,13 +1242,22 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); }
 let __lastActiveGARun = null;  // cached from loadRuns
 let __busyTicker = null;
 
+let __healthDismissed = false;
+
+function dismissHealth(){
+  __healthDismissed = true;
+  document.getElementById('health').classList.add('hidden');
+}
+
 function updateHealth(s){
   const el   = document.getElementById('health');
-  const icon = el.querySelector('.icon');
+  const icon = document.getElementById('health-icon');
   const title= document.getElementById('health-title');
   const sub  = document.getElementById('health-sub');
   const hint = document.getElementById('health-hint');
+  const age  = document.getElementById('health-age');
   if (!el) return;
+  if (__healthDismissed){ el.classList.add('hidden'); return; }
 
   const detail = s.latest_run_detail || {};
   const ps = detail.per_stage || {};
@@ -1260,6 +1271,17 @@ function updateHealth(s){
   const extOk  = e.completed || e.count || 0;
   const prOk   = pr.completed || pr.count || 0;
 
+  // Age-awareness: fresh (<5min) vs recent (<60min) vs stale (>60min)
+  let ageMin = null;
+  let ageLabel = '';
+  if (detail.ended_at || detail.started_at){
+    const t = new Date(detail.ended_at || detail.started_at).getTime();
+    ageMin = (Date.now() - t) / 60000;
+    ageLabel = fmtTime(detail.ended_at || detail.started_at);
+  }
+  const isFresh = ageMin !== null && ageMin <= 5;
+  const isStale = ageMin !== null && ageMin >= 60;
+
   let cls, iconCh, titleTxt, titleCls, subTxt, hintTxt = '';
 
   if (discovered === 0 && !detail.run_id){
@@ -1270,7 +1292,6 @@ function updateHealth(s){
   } else if (colAtt === 0){
     cls = 'unk'; iconCh = '⏳';
     titleTxt = '실행 초기화 중';
-    titleCls = '';
     subTxt = `DISCOVER ${discovered}/${discovered}, COLLECT 대기`;
   } else if (colOk > 0 && colBad === 0){
     if (prOk > 0){
@@ -1283,16 +1304,16 @@ function updateHealth(s){
       titleTxt = '자막은 수집됐으나 아직 Promoted 없음';
       titleCls = 'warn';
       subTxt = `자막 ${colOk}/${colAtt} · LLM ${extOk} · Promoted 0`;
-      hintTxt = 'Confidence < 0.60 이거나 summary 길이 조건 미달 가능 — review_queue 확인';
+      hintTxt = 'Confidence 부족 또는 summary 길이 조건 미달 — review_queue 확인';
     }
   } else if (colOk > 0 && colBad > 0){
     cls = 'warn'; iconCh = '⚠️';
-    titleTxt = `자막 부분 수집 (${colOk}/${colAtt}) — 일부 영상은 실패`;
+    titleTxt = `자막 부분 수집 (${colOk}/${colAtt})`;
     titleCls = 'warn';
     const code = c.reason || Object.keys(c.failure_reasons||{})[0] || '?';
     subTxt = `성공 ${colOk} · 실패 ${colBad} (${code})`;
-    hintTxt = '일부 영상이 자막을 제공하지 않는 정상 상황일 수 있음';
   } else {
+    // All failed
     cls = 'err'; iconCh = '❌';
     titleTxt = `자막 수집 실패 (0/${colAtt})`;
     titleCls = 'err';
@@ -1300,23 +1321,35 @@ function updateHealth(s){
     const codes = Object.entries(fr).map(([k,v]) => `${k}×${v}`).join(', ') || c.reason || '?';
     subTxt = `실패 코드: ${codes}`;
     if (codes.includes('YT_NO_TRANSCRIPT')){
-      hintTxt = 'timedtext 404 — 워크플로우 로그에서 \'youtube-transcript-api OK\' 확인';
+      hintTxt = 'timedtext 404 + youtube-transcript-api API 버전 문제 가능';
     } else if (codes.includes('HTTP_429')){
-      hintTxt = 'YouTube 쿼터 초과 — 내일 재시도 또는 새 API 키';
+      hintTxt = 'YouTube 쿼터 초과 — 내일 재시도';
     } else if (codes.includes('HTTP_400')){
-      hintTxt = 'API 키 만료/무효 — Secrets 에서 YOUTUBE_API_KEY 갱신';
+      hintTxt = 'API 키 만료 — Secrets 갱신';
     } else {
-      hintTxt = '실패 코드를 GOTCHAS.md 에 대조하거나 actions 로그 확인';
+      hintTxt = 'Actions 로그 확인 필요';
     }
   }
 
-  el.className = 'health ' + cls;
+  // Tone down stale failures (>1 hour old) — informational, not alarming
+  let displayCls = cls;
+  let toneDown = false;
+  if (isStale && (cls === 'err' || cls === 'warn')){
+    displayCls = 'stale';
+    titleCls = '';
+    iconCh = 'ℹ️';
+    titleTxt = '이전 실행 결과: ' + titleTxt;
+    toneDown = true;
+  }
+
+  el.className = 'health ' + displayCls + (isFresh && !toneDown ? ' fresh' : '');
   icon.textContent = iconCh;
   title.className = 'title ' + titleCls;
   title.textContent = titleTxt;
   sub.textContent = subTxt;
   hint.textContent = hintTxt;
   hint.style.display = hintTxt ? 'block' : 'none';
+  age.textContent = ageLabel ? (ageMin < 1 ? '방금' : ageMin < 60 ? `${Math.round(ageMin)}분 전` : ageLabel) : '';
 }
 
 function updateRunBusyBanner(activeRun){
