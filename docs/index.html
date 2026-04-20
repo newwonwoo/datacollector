@@ -319,6 +319,43 @@
 
     footer { text-align: center; color: var(--text-dim); font-size: 12.5px; margin-top: 26px; }
 
+    /* Health banner */
+    .health {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 16px; border-radius: 10px; margin-bottom: 14px;
+      border: 1px solid var(--border); background: var(--subtle);
+      position: relative;
+    }
+    .health.ok   { background: var(--ok-bg);   border-color: #86efac; color: var(--ok); }
+    .health.warn { background: var(--warn-bg); border-color: #fcd34d; color: var(--warn); }
+    .health.err  { background: var(--err-bg);  border-color: #fca5a5; color: var(--err); }
+    .health.unk, .health.stale { background: var(--subtle); color: var(--text-2); }
+    .health.fresh { padding: 16px 20px; border-radius: 14px; }
+    .health.hidden { display: none; }
+    .health .icon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+    .health.fresh .icon { font-size: 28px; }
+    .health .body { flex: 1; min-width: 0; }
+    .health .title { font-size: 14px; font-weight: 700; margin-bottom: 2px; color: var(--text); }
+    .health.fresh .title { font-size: 15px; margin-bottom: 3px; }
+    .health .title.ok { color: var(--ok); }
+    .health .title.warn { color: var(--warn); }
+    .health .title.err { color: var(--err); }
+    .health .sub { font-size: 12.5px; color: var(--text-2); font-family: var(--mono); }
+    .health .hint { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+    .health .age {
+      font-size: 11px; color: var(--text-dim); margin-left: auto;
+      font-family: var(--mono); white-space: nowrap; flex: 0 0 auto;
+    }
+    .health button.close {
+      background: transparent !important; border: 0 !important;
+      color: inherit !important; opacity: 0.5;
+      font-size: 20px !important; cursor: pointer;
+      padding: 2px 8px !important; margin: 0 !important;
+      border-radius: 4px !important; font-weight: 400 !important;
+      flex: 0 0 auto; line-height: 1;
+    }
+    .health button.close:hover { opacity: 1; background: rgba(0,0,0,0.05) !important; }
+
     /* Pipeline diagram */
     .pipeline-stages {
       display: flex; align-items: center; gap: 4px; margin-top: 8px;
@@ -1413,11 +1450,22 @@ function updateRunBusyBanner(activeRun){
 }
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
+  // Try two sources to bypass CDN/proxy 403: absolute jsDelivr → relative → raw.githubusercontent.
   const host = document.getElementById('op-strip');
+  const urls = [
+    `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
+    `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
+    `status.json?t=${Date.now()}`,
+  ];
   try {
-    const resp = await fetch('status.json?t=' + Date.now(), { cache: 'no-store' });
-    if (!resp.ok) { host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
-    const s = await resp.json();
+    let s = null;
+    for (const u of urls){
+      try {
+        const r = await fetch(u, { cache: 'no-store' });
+        if (r.ok){ s = await r.json(); break; }
+      } catch(_){ /* try next */ }
+    }
+    if (!s){ host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
     // Top-of-page health summary (수집 됨? 안됨?)
     updateHealth(s);
     // Pipeline live view from events-derived detail
