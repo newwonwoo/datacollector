@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-20T05:08:07Z",
+  "updated_at": "2026-04-20T05:09:37Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -19,56 +19,56 @@
     "kill_switch_recommended": false
   },
   "records": {
-    "total": 5,
+    "total": 10,
     "promoted": 0,
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_12341a0170e9",
-    "run_id": "run_ebda2680",
+    "event_id": "evt_0a5e52fcbb9b",
+    "run_id": "run_3cc3fc0b",
     "entity_type": "run",
-    "entity_id": "run_ebda2680",
+    "entity_id": "run_3cc3fc0b",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_ebda2680.json",
+    "reason": "runs/run_3cc3fc0b.json",
     "metrics": {
-      "videos": 5,
+      "videos": 10,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-04-20T05:08:06Z"
+    "recorded_at": "2026-04-20T05:09:37Z"
   },
   "latest_run_detail": {
-    "run_id": "run_ebda2680",
-    "started_at": "2026-04-20T05:07:57Z",
-    "ended_at": "2026-04-20T05:08:06Z",
+    "run_id": "run_3cc3fc0b",
+    "started_at": "2026-04-20T05:09:19Z",
+    "ended_at": "2026-04-20T05:09:37Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
         "status": "completed",
-        "count": 5,
-        "attempts": 5,
-        "completed": 5,
+        "count": 10,
+        "attempts": 10,
+        "completed": 10,
         "failed": 0,
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-04-20T05:07:57Z",
-        "ended_at": "2026-04-20T05:08:05Z"
+        "started_at": "2026-04-20T05:09:19Z",
+        "ended_at": "2026-04-20T05:09:35Z"
       },
       "collect": {
         "status": "failed",
         "count": 0,
-        "attempts": 5,
+        "attempts": 10,
         "completed": 0,
-        "failed": 5,
+        "failed": 10,
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_NO_TRANSCRIPT": 5
+          "YT_NO_TRANSCRIPT": 10
         },
-        "started_at": "2026-04-20T05:07:57Z",
-        "ended_at": "2026-04-20T05:08:06Z",
+        "started_at": "2026-04-20T05:09:19Z",
+        "ended_at": "2026-04-20T05:09:37Z",
         "reason": "YT_NO_TRANSCRIPT"
       },
       "extract": {
@@ -125,7 +125,7 @@
   },
   "top_channels": [
     {
-      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
+      "channel_id": "UCL-BbpCSruAQAQlNoo72hKQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -137,7 +137,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
       "total": 2,
       "promoted": 0,
       "inferred": 0,
@@ -149,7 +149,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCiBoygB9RF46zirsUZ1UabA",
+      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -161,7 +161,19 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC-jgYMsPz6NuDT9j9dmNODg",
+      "channel_id": "UCW1fmUAZKeJcR6E5qjNWi9g",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UCmwKLc7RR2Wqyh4NqbBYEIQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -175,7 +187,7 @@
   ],
   "bottom_channels": [
     {
-      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
+      "channel_id": "UCL-BbpCSruAQAQlNoo72hKQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -187,7 +199,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
       "total": 2,
       "promoted": 0,
       "inferred": 0,
@@ -199,7 +211,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCiBoygB9RF46zirsUZ1UabA",
+      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
