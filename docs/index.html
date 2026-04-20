@@ -1361,12 +1361,15 @@ function updateHealth(s){
     const fr = c.failure_reasons || {};
     const codes = Object.entries(fr).map(([k,v]) => `${k}×${v}`).join(', ') || c.reason || '?';
     subTxt = `실패 코드: ${codes}`;
-    if (codes.includes('YT_NO_TRANSCRIPT')){
-      hintTxt = 'timedtext 404 + youtube-transcript-api API 버전 문제 가능';
+    // Prefer the actual error detail from adapter (ytdlp:X | ytapi:Y | timedtext:Z)
+    if (c.failure_detail){
+      hintTxt = c.failure_detail;
     } else if (codes.includes('HTTP_429')){
       hintTxt = 'YouTube 쿼터 초과 — 내일 재시도';
     } else if (codes.includes('HTTP_400')){
       hintTxt = 'API 키 만료 — Secrets 갱신';
+    } else if (codes.includes('YT_NO_TRANSCRIPT')){
+      hintTxt = 'Actions 로그에서 captions libs sanity 스텝 확인';
     } else {
       hintTxt = 'Actions 로그 확인 필요';
     }

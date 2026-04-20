@@ -56,12 +56,27 @@ jobs:
 
       - name: Install
         run: |
+          set -e
           pip install -e .
-          # Captions fetchers. Pure-Python so no PATH/subprocess issues.
-          pip install youtube-transcript-api yt-dlp
+          # Captions fetchers. Pure-Python. Use latest yt-dlp (aggressive anti-bot
+          # handling is often broken in older releases).
+          pip install -U youtube-transcript-api "yt-dlp[default]"
           echo "--- captions libs sanity ---"
-          python -c "from youtube_transcript_api import YouTubeTranscriptApi; print('youtube-transcript-api OK')"
-          python -c "from yt_dlp import YoutubeDL; print('yt-dlp (python lib) OK')"
+          python -c "from youtube_transcript_api import YouTubeTranscriptApi; print('youtube-transcript-api OK, version:', __import__('youtube_transcript_api').__version__ if hasattr(__import__('youtube_transcript_api'), '__version__') else 'unknown')"
+          python -c "import yt_dlp; print('yt-dlp OK, version:', yt_dlp.version.__version__)"
+          # Quick probe: try fetching captions for a known-public tutorial video
+          python - <<'PY'
+          from collector.adapters.youtube import YouTubeAdapter
+          import os
+          key = os.environ.get('YOUTUBE_API_KEY', '')
+          yt = YouTubeAdapter(key) if key else YouTubeAdapter('NONE')
+          probe_id = 'YbJOTdZBX1g'  # popular Korean trading tutorial, usually has ASR
+          try:
+              result = yt.captions(probe_id)
+              print(f'PROBE {probe_id}: source={result.get("source")}, len={len(result.get("text",""))}, err={result.get("error","")}')
+          except Exception as e:
+              print(f'PROBE {probe_id}: EXCEPTION {type(e).__name__}: {e}')
+          PY
 
       - name: Sanity (no keys → mock, otherwise real)
         run: |

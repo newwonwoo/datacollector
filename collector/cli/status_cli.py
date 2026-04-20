@@ -185,8 +185,12 @@ def _latest_run_detail(events: Path) -> dict:
                 slot["ended_at"] = ts
                 reason = e.get("reason", "") or "UNKNOWN"
                 slot["failure_reasons"][reason] = slot["failure_reasons"].get(reason, 0) + 1
-                # expose most recent failure reason at top level for convenience
                 slot["reason"] = reason
+                # Capture per-path detail (e.g., 'ytdlp:X | ytapi:Y | timedtext:Z')
+                detail = (e.get("metrics") or {}).get("detail") or ""
+                if detail:
+                    slot["failure_detail"] = detail
+                    slot.setdefault("failure_details", []).append(detail)
             elif to == "skipped":
                 slot["skipped"] += 1
                 slot["ended_at"] = ts

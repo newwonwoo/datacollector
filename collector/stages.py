@@ -55,7 +55,19 @@ def _set_record(payload: dict, state: str, logger: EventLogger, reason: str = ""
 def _fail(payload: dict, stage: str, err: MockError | StageFail, logger: EventLogger) -> None:
     payload["failure_reason_code"] = err.code
     payload["failure_reason_detail"] = err.detail
-    _set_stage(payload, stage, "failed", logger, reason=err.code)
+    # Include detail in the stage event so status_cli/dashboard can surface it.
+    reason = err.code
+    prev = payload["stage_status"].get(stage)
+    payload["stage_status"][stage] = "failed"
+    logger.log(
+        entity_type="stage",
+        entity_id=f"{payload['source_key']}:{stage}",
+        from_status=prev,
+        to_status="failed",
+        run_id=payload["run_id"],
+        reason=reason,
+        metrics={"detail": err.detail or ""},
+    )
 
 
 # ---------- Stages ----------
