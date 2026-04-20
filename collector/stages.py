@@ -95,7 +95,8 @@ def stage_collect(payload: dict, services: Services, logger: EventLogger) -> dic
     source = result.get("source", "none")
     text = result.get("text", "")
     if source == "none" or not text:
-        err = StageFail("YT_NO_TRANSCRIPT", "no captions")
+        detail = result.get("error") or "no captions from any source"
+        err = StageFail("YT_NO_TRANSCRIPT", detail)
         _fail(payload, "collect", err, logger)
         raise err
     payload["caption_source"] = source

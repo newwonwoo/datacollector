@@ -136,27 +136,31 @@ def test_channel_score_serializable(tmp_path):
 
 # ============== yt-dlp fallback ==============
 
-def test_ytdlp_fallback_not_invoked_by_default(monkeypatch):
+def test_captions_returns_error_details_when_all_paths_fail(monkeypatch):
+    """When all paths fail, response includes 'error' with digest for UX."""
     from collector.adapters.youtube import YouTubeAdapter
-    monkeypatch.delenv("COLLECTOR_YT_DLP", raising=False)
+    import sys
+    monkeypatch.setitem(sys.modules, "yt_dlp", None)
+    monkeypatch.setitem(sys.modules, "youtube_transcript_api", None)
+    yt = YouTubeAdapter("KEY", http=lambda *a, **kw: {"status": 404, "body": ""})
+    out = yt.captions("vid")
+    assert out["source"] == "none"
+    assert "error" in out
+    # At least one path's error is captured
+    assert any(k in out["error"] for k in ("ytdlp", "ytapi", "timedtext"))
+
+
+def test_captions_http_calls_end_at_timedtext_after_libs_missing(monkeypatch):
+    """With no Python libs, should still attempt timedtext URLs (last resort)."""
+    from collector.adapters.youtube import YouTubeAdapter
+    import sys
+    monkeypatch.setitem(sys.modules, "yt_dlp", None)
+    monkeypatch.setitem(sys.modules, "youtube_transcript_api", None)
     calls = []
     def fake_http(method, url, **kw):
-        calls.append(url)
-        return {"status": 404, "body": ""}
+        calls.append(url); return {"status": 404, "body": ""}
     yt = YouTubeAdapter("KEY", http=fake_http)
-    out = yt.captions("vid")
-    assert out == {"source": "none", "text": ""}
-    # Only timedtext URLs were tried (4 variants)
+    yt.captions("vid")
+    # timedtext tried 4 variants (ko/en × manual/asr)
+    assert len(calls) == 4
     assert all("timedtext" in u for u in calls)
-
-
-def test_ytdlp_fallback_gated_by_env(monkeypatch):
-    from collector.adapters.youtube import YouTubeAdapter
-    monkeypatch.setenv("COLLECTOR_YT_DLP", "1")
-    # Guarantee the shutil.which lookup fails so we exercise the gate cleanly
-    monkeypatch.setattr("shutil.which", lambda binary: None)
-    def fake_http(method, url, **kw):
-        return {"status": 404, "body": ""}
-    yt = YouTubeAdapter("KEY", http=fake_http)
-    out = yt.captions("vid")
-    assert out == {"source": "none", "text": ""}

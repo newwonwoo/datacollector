@@ -18,8 +18,7 @@ def test_captions_primary_yt_transcript_api(monkeypatch):
         def fetch(self):
             return [{"text": "안녕"}, {"text": "세계"}]
     class FakeApi:
-        @staticmethod
-        def list_transcripts(vid):
+        def list(self, vid):
             return [FakeTranscript()]
 
     fake_mod = ModuleType("youtube_transcript_api")
@@ -43,8 +42,7 @@ def test_captions_transcript_api_prefers_manual_over_asr(monkeypatch):
         language_code = "ko"; is_generated = True
         def fetch(self): return [{"text": "자동"}]
     class FakeApi:
-        @staticmethod
-        def list_transcripts(vid):
+        def list(self, vid):
             return [Auto(), Manual()]
     fake_mod = ModuleType("youtube_transcript_api")
     fake_mod.YouTubeTranscriptApi = FakeApi
@@ -59,8 +57,7 @@ def test_captions_transcript_api_prefers_manual_over_asr(monkeypatch):
 def test_captions_falls_back_when_all_paths_fail(monkeypatch):
     # Break youtube_transcript_api
     class BrokenApi:
-        @staticmethod
-        def list_transcripts(vid):
+        def list(self, vid):
             raise RuntimeError("broken")
     fake_mod = ModuleType("youtube_transcript_api")
     fake_mod.YouTubeTranscriptApi = BrokenApi
@@ -72,7 +69,9 @@ def test_captions_falls_back_when_all_paths_fail(monkeypatch):
     # timedtext always 404
     yt = YouTubeAdapter("KEY", http=lambda *a, **kw: {"status": 404, "body": ""})
     out = yt.captions("vid")
-    assert out == {"source": "none", "text": ""}
+    assert out["source"] == "none"
+    assert out["text"] == ""
+    assert "error" in out  # details are now captured for UX
 
 
 def test_captions_ytdlp_lib_fallback(monkeypatch):

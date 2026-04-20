@@ -70,17 +70,29 @@ class YouTubeAdapter:
         return results[:max_results]
 
     def captions(self, video_id: str) -> dict[str, Any]:
-        # Primary: youtube-transcript-api (pure-Python, no subprocess).
-        res = self._captions_via_yt_transcript(video_id)
-        if res["source"] != "none":
-            return res
+        """Multi-path captions fetch with per-path error capture.
 
-        # 2nd: yt-dlp Python library (also pure-Python once installed).
+        yt-dlp is primary because it handles YouTube's anti-scraping better
+        (full User-Agent, cookies, Innertube). youtube-transcript-api is
+        secondary (gets blocked with 403 more often). timedtext is last resort.
+        """
+        errors: list[str] = []
+
+        # 1st: yt-dlp Python library
         res = self._captions_via_ytdlp_lib(video_id)
         if res["source"] != "none":
             return res
+        if res.get("error"):
+            errors.append(f"ytdlp:{res['error']}")
 
-        # 3rd (last resort): timedtext (often 404 now).
+        # 2nd: youtube-transcript-api
+        res = self._captions_via_yt_transcript(video_id)
+        if res["source"] != "none":
+            return res
+        if res.get("error"):
+            errors.append(f"ytapi:{res['error']}")
+
+        # 3rd: timedtext direct
         for lang in ("ko", "en"):
             for kind in ("", "asr"):
                 params = {"v": video_id, "lang": lang, "fmt": "srv3"}
@@ -93,43 +105,51 @@ class YouTubeAdapter:
                         "source": "asr" if kind == "asr" else "manual",
                         "text": resp["body"],
                     }
-        return {"source": "none", "text": ""}
+        errors.append("timedtext:all-empty")
+        return {"source": "none", "text": "", "error": " | ".join(errors)}
 
     def _captions_via_yt_transcript(self, video_id: str) -> dict[str, Any]:
-        """Primary captions fetcher via youtube-transcript-api (pip)."""
+        """youtube-transcript-api 1.x — uses list()/fetch() (not list_transcripts)."""
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
         except ImportError:
-            return {"source": "none", "text": ""}
+            return {"source": "none", "text": "", "error": "not_installed"}
+        api = YouTubeTranscriptApi()
         try:
-            transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-        except Exception:
-            return {"source": "none", "text": ""}
-        # Priority: manual Korean > asr Korean > manual English > asr English
-        priority: list[tuple] = [
+            tr_list = api.list(video_id)
+        except Exception as e:
+            return {"source": "none", "text": "", "error": type(e).__name__}
+
+        priority = [
             (lambda t: t.language_code == "ko" and not t.is_generated, "manual"),
             (lambda t: t.language_code == "ko" and t.is_generated,     "asr"),
             (lambda t: t.language_code == "en" and not t.is_generated, "manual"),
             (lambda t: t.language_code == "en" and t.is_generated,     "asr"),
         ]
+        first_err = ""
         for pred, kind in priority:
-            for tr in transcripts:
+            for tr in tr_list:
                 try:
                     if pred(tr):
-                        segments = tr.fetch()
-                        text = " ".join(s.get("text", "") for s in segments)
+                        fetched = tr.fetch()
+                        # v1.x: FetchedTranscript with .snippets; legacy: list of dicts
+                        if hasattr(fetched, "snippets"):
+                            text = " ".join(s.text for s in fetched.snippets)
+                        else:
+                            text = " ".join(s.get("text", "") for s in fetched)
                         if text.strip():
                             return {"source": kind, "text": text}
-                except Exception:
+                except Exception as e:  # noqa: BLE001
+                    first_err = first_err or type(e).__name__
                     continue
-        return {"source": "none", "text": ""}
+        return {"source": "none", "text": "", "error": first_err or "no_matching_lang"}
 
     def _captions_via_ytdlp_lib(self, video_id: str) -> dict[str, Any]:
-        """Secondary captions fetcher via yt_dlp Python library."""
+        """Primary captions fetcher via yt_dlp Python library."""
         try:
             from yt_dlp import YoutubeDL  # type: ignore
         except ImportError:
-            return {"source": "none", "text": ""}
+            return {"source": "none", "text": "", "error": "not_installed"}
         opts = {
             "skip_download": True,
             "writesubtitles": True,
@@ -143,10 +163,10 @@ class YouTubeAdapter:
                 info = ydl.extract_info(
                     f"https://www.youtube.com/watch?v={video_id}", download=False
                 )
-        except Exception:
-            return {"source": "none", "text": ""}
+        except Exception as e:  # noqa: BLE001
+            return {"source": "none", "text": "", "error": type(e).__name__}
         for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
-            tracks_by_lang = info.get(key) or {}
+            tracks_by_lang = (info or {}).get(key) or {}
             for lang in ("ko", "en"):
                 tracks = tracks_by_lang.get(lang) or []
                 for t in tracks:
@@ -156,7 +176,7 @@ class YouTubeAdapter:
                     resp = self.http("GET", url)
                     if resp["status"] == 200 and resp["body"].strip():
                         return {"source": source_name, "text": resp["body"]}
-        return {"source": "none", "text": ""}
+        return {"source": "none", "text": "", "error": "no_caption_tracks"}
 
     def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:
         """Last-resort caption extraction via yt-dlp. Requires binary on PATH."""
