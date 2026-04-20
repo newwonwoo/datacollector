@@ -64,11 +64,51 @@ jobs:
           print(f"LLM key set: {have_llm}")
           PY
 
+      - name: Budget guard — set COLLECTOR_PAUSED if exceeded
+        id: budget
+        run: |
+          set +e
+          QUOTA_JSON=$(collector quota --usage metrics/quota.jsonl 2>/dev/null || echo '{}')
+          echo "$QUOTA_JSON"
+          KILL=$(python -c "import sys, json; d=json.loads(sys.stdin.read() or '{}'); print('1' if d.get('kill_switch_recommended') else '0')" <<< "$QUOTA_JSON")
+          if [ "$KILL" = "1" ]; then
+            echo "COLLECTOR_PAUSED=1" >> $GITHUB_ENV
+            echo "⚠️  Budget kill switch engaged — pipeline will run in paused mode."
+          fi
+
       - name: Run pipeline
         run: |
           collector run \
             --query "${{ github.event.inputs.query || '단타매매전략' }}" \
             --count "${{ github.event.inputs.count || '5' }}"
+
+      - name: Replay DLQ (best-effort, no crash on empty)
+        if: always()
+        run: |
+          collector replay --dlq dlq --review-queue review_queue \
+            --data-store data_store --logs logs || true
+
+      - name: Aggregate daily metrics
+        if: always()
+        run: |
+          mkdir -p metrics
+          collector metrics --events logs/events.jsonl --data-store data_store \
+            --out metrics/daily.jsonl || true
+
+      - name: Evaluate alerts → GitHub Issues
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          collector alerts --metrics metrics/daily.jsonl \
+            --emit github --owner ${{ github.repository_owner }} \
+            --repo ${{ github.event.repository.name }} --token-env GH_TOKEN || true
+
+      - name: Build traces
+        if: always()
+        run: |
+          collector traces --events logs/events.jsonl \
+            --out logs/traces.jsonl || true
 
       - name: Build dashboard
         run: collector dashboard --data-store data_store --html index/dashboard.html
