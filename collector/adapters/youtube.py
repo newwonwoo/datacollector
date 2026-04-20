@@ -145,38 +145,66 @@ class YouTubeAdapter:
         return {"source": "none", "text": "", "error": first_err or "no_matching_lang"}
 
     def _captions_via_ytdlp_lib(self, video_id: str) -> dict[str, Any]:
-        """Primary captions fetcher via yt_dlp Python library."""
+        """Primary captions fetcher via yt_dlp Python library.
+
+        Tries multiple YouTube player clients in order — YouTube blocks
+        some clients based on IP (especially GitHub Actions). Optional
+        cookies file via env COLLECTOR_YT_COOKIES_FILE (path to cookies.txt
+        exported from a real browser).
+        """
+        import os
         try:
             from yt_dlp import YoutubeDL  # type: ignore
         except ImportError:
             return {"source": "none", "text": "", "error": "not_installed"}
-        opts = {
-            "skip_download": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitleslangs": ["ko", "en"],
-            "quiet": True,
-            "no_warnings": True,
-        }
-        try:
-            with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(
-                    f"https://www.youtube.com/watch?v={video_id}", download=False
-                )
-        except Exception as e:  # noqa: BLE001
-            return {"source": "none", "text": "", "error": type(e).__name__}
-        for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
-            tracks_by_lang = (info or {}).get(key) or {}
-            for lang in ("ko", "en"):
-                tracks = tracks_by_lang.get(lang) or []
-                for t in tracks:
-                    url = t.get("url")
-                    if not url:
-                        continue
-                    resp = self.http("GET", url)
-                    if resp["status"] == 200 and resp["body"].strip():
-                        return {"source": source_name, "text": resp["body"]}
-        return {"source": "none", "text": "", "error": "no_caption_tracks"}
+
+        cookies = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
+
+        # Try multiple player clients — newer yt-dlp supports many fallbacks
+        client_sets = [
+            ["ios", "tv_embedded"],
+            ["android"],
+            ["web", "web_creator"],
+            ["mweb"],
+        ]
+        last_err = ""
+        for clients in client_sets:
+            opts = {
+                "skip_download": True,
+                "writesubtitles": True,
+                "writeautomaticsub": True,
+                "subtitleslangs": ["ko", "en"],
+                "quiet": True,
+                "no_warnings": True,
+                "extractor_args": {"youtube": {"player_client": clients}},
+            }
+            if cookies and os.path.exists(cookies):
+                opts["cookiefile"] = cookies
+
+            try:
+                with YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(
+                        f"https://www.youtube.com/watch?v={video_id}", download=False
+                    )
+            except Exception as e:  # noqa: BLE001
+                last_err = f"{','.join(clients)}:{type(e).__name__}"
+                continue
+
+            # Look for any caption tracks
+            for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
+                tracks_by_lang = (info or {}).get(key) or {}
+                for lang in ("ko", "en"):
+                    tracks = tracks_by_lang.get(lang) or []
+                    for t in tracks:
+                        url = t.get("url")
+                        if not url:
+                            continue
+                        resp = self.http("GET", url)
+                        if resp["status"] == 200 and resp["body"].strip():
+                            return {"source": source_name, "text": resp["body"]}
+            # info ok but no tracks — try next client
+            last_err = f"{','.join(clients)}:no_tracks"
+        return {"source": "none", "text": "", "error": last_err or "all_clients_failed"}
 
     def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:
         """Last-resort caption extraction via yt-dlp. Requires binary on PATH."""
