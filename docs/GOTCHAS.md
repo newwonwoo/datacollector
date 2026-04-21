@@ -165,6 +165,43 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-13. YouTube 자막 수집이 GitHub Actions에서 전멸 (403/Forbidden)
+### 증상
+- 대시보드에서 실행 → `collect` 스테이지에서 전부 `YT_NO_TRANSCRIPT` / `HTTP_403`
+- 같은 키·같은 코드로 로컬(가정망)에서 돌리면 정상
+### 원인
+- YouTube가 2024~2026년에 걸쳐 AWS/GCP/Azure/GitHub Actions 등 cloud provider IP 블록에 대해
+  timedtext·yt-dlp·youtube-transcript-api 접근을 공격적으로 차단.
+- YOUTUBE_API_KEY(Data API v3)는 메타데이터만 받고, 실제 자막은 캡션 다운로드 경로라
+  API 키로 우회 불가.
+### 예방
+- 기본 실행 경로를 **로컬 웹앱**(`collector app`)으로 명시. GH Actions는 스케줄링·백업용으로만.
+- 초기 설정 마법사(`docs/index.html`)에서 API 키 2개를 브라우저로 받아 `.env` 저장 → 즉시 사용.
+### 대응 완료?
+- ✅ `/api/run` 로컬 엔드포인트, 로컬 모드 감지, 초기 설정 마법사 (커밋 TBD)
+- ✅ USER_MANUAL §0 로컬 웹앱 모드를 기본 사용법으로 전면 배치
+- ❌ Residential proxy / OAuth YouTube Captions API 통합 — 스코프 밖
+
+---
+
+## G-14. 웹 UI에서 받은 API 키를 안전하게 저장/재사용
+### 증상
+- 유저가 매번 터미널에서 `.env` 손으로 편집 → 오타, 플레이스홀더 그대로 두기(G-01 재발)
+### 원인
+- `.env` 편집은 터미널/에디터 사용 능력 전제. 모바일·초보 유저에겐 큰 장벽.
+### 예방
+- `POST /api/config` 엔드포인트 — body에 받은 키를 `collector/env_io.merge_env()`로 병합 저장.
+  - 기존 `.env`의 주석·다른 키를 보존 (re-entry 가능).
+  - `os.environ`에도 반영하여 재시작 없이 즉시 `/api/run` 이 실제 어댑터 사용.
+- `GET /api/config` 는 **key 값을 절대 반환하지 않고** `has_*` 플래그만. 로그에도 마스킹.
+- 서버 바인딩은 `127.0.0.1` 고정 — LAN 노출 금지.
+### 대응 완료?
+- ✅ `collector/env_io.py` + `tests/test_env_io.py` (플레이스홀더 감지 포함)
+- ✅ `collector/cli/api_handler.py` + `tests/test_app_api.py` (directory traversal 차단 검증 포함)
+- ✅ 브라우저 쪽은 저장 후 즉시 input 값 지움 (DOM에도 남지 않음)
+
+---
+
 ## 시스템적 개선 요구
 
 이 파일이 **다음 세션의 Claude에게도 읽히려면**:

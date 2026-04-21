@@ -1,9 +1,28 @@
 # 사용자 매뉴얼 — YouTube Data Collector v10 E2E Tester
 
-## 0. 터미널 없이 쓰는 방법 (모바일/PC 공통)
+## 0. 로컬 웹앱 모드 (권장) — YouTube 차단 우회
 
-### 0.1 초간단 — 웹 브라우저만 (모바일 최적)
-> 아무것도 설치 안 함. 핸드폰에서도 가능.
+> **중요 (2026-04 기준):** YouTube는 클라우드 제공자 IP(GitHub Actions 포함)에서의
+> 자막 요청을 광범위하게 차단합니다. 안정적인 수집은 **본인 PC의 가정 IP**에서 돌려야
+> 합니다. 이를 위해 아래 로컬 웹앱 모드가 기본 사용법입니다.
+
+### 0.0 3단계로 시작
+
+1. **설치 (한 번만)**
+   ```bash
+   pip install -e .
+   ```
+2. **실행** — `./run.sh` (mac/Linux) 또는 `run.bat` (Windows) 더블클릭.
+   브라우저가 `http://127.0.0.1:8765` 를 자동으로 엽니다.
+3. **첫 실행**에서 화면 상단의 **🔑 초기 설정** 카드에 두 API 키를 붙여넣기 → **저장 후 시작 ▶**.
+   키는 이 PC의 `.env` 파일에만 저장되며 Git/외부 서버로 전송되지 않습니다.
+   이후 실행에서는 마법사가 뜨지 않습니다.
+4. 검색어 입력 → **실행 ▶** → 완료되면 지식 카드 + Obsidian Markdown 링크가 생깁니다.
+
+재설정은 설정 섹션의 **🔑 API 키 재설정** 버튼으로 언제든 가능합니다.
+
+### 0.1 클라우드 모드 — 웹 브라우저만 (모바일 최적, 제한적)
+> 아무것도 설치 안 함. 다만 YouTube 자막 수집이 GH Actions IP에서 실패할 수 있음.
 
 1. **Secrets 등록 (최초 1회)** — https://github.com/newwonwoo/datacollector/settings/secrets/actions
    - New repository secret → `YOUTUBE_API_KEY` / `GOOGLE_API_KEY` 추가
