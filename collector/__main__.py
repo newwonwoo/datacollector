@@ -19,6 +19,7 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "archive": ("collector.cli.extras_cli", "main_archive"),
     "replay": ("collector.cli.replay_cli", "main"),
     "status": ("collector.cli.status_cli", "main"),
+    "apitest": ("collector.cli.apitest_cli", "main"),
 }
 
 
@@ -62,6 +63,7 @@ Usage:
   collector archive     지난 분기 기록을 archive/YYYY_QN/ 으로 이동
   collector replay      DLQ 재처리 (dlq/* → pipeline 재실행)
   collector status      운영 상태 JSON 스냅샷 (dashboard용)
+  collector apitest     YouTube/LLM API 연결 진단 (captions 경로별 개별 호출)
 
 각 서브커맨드에 --help 를 붙이면 세부 옵션을 볼 수 있다.
 """
