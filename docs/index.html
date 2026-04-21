@@ -8,6 +8,8 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <meta name="build" content="v2-live-pipeline" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
   <title>Collector — YouTube 지식 파이프라인</title>
   <style>
     :root {
@@ -463,10 +465,44 @@
       <span class="tag">YouTube 지식 파이프라인 · v10</span>
     </div>
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="mode-badge" class="pill" style="display:none"></span>
     <span id="mini-health" class="pill" style="display:none"></span>
     <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
   </span>
   </header>
+
+  <!-- 초기 설정 마법사 (로컬 모드에서 API 키 미설정 시만 표시) -->
+  <div id="setup-wizard" class="card" style="display:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.08)">
+    <div class="section-title" style="color:var(--accent)">🔑 초기 설정 필요 · 최초 1회</div>
+    <p class="desc" style="margin-top:4px">
+      아래에 API 키 2개를 붙여넣으면 이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다.
+      키는 <strong>브라우저 바깥으로 나가지 않으며</strong>, Git에도 커밋되지 않습니다.
+    </p>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">YouTube Data API v3 키</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-youtube" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>
+        → "API 키 만들기" · 무료 (10,000 units/day)
+      </p>
+    </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Gemini API 키 (LLM)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-gemini" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+        → "Create API key" · 무료 티어 (15 RPM / 1500 RPD)
+      </p>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <button onclick="saveKeys()">저장 후 시작 ▶</button>
+      <button class="ghost" onclick="hideWizard(true)">일단 닫기</button>
+    </div>
+  </div>
 
   <!-- 완료 배너 (동적 — 실행 성공/실패 알림, 새 이벤트만) -->
   <div id="banner-host"></div>
@@ -490,7 +526,7 @@
       <span class="dots"><span></span><span></span><span></span></span>
       <span id="run-busy-text">실행 중…</span>
     </div>
-    <p class="desc">
+    <p class="desc" id="run-desc">
       GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요.
       최초 1회만 <a href="#" onclick="document.getElementById('settings').open=true;return false;">토큰 설정</a>이 필요합니다.
     </p>
@@ -618,8 +654,22 @@
 
   <!-- 설정 -->
   <div class="card" style="margin-top: 20px;">
-    <details id="settings">
-      <summary>토큰 설정 (최초 1회)</summary>
+    <!-- 로컬 모드: API 키 (서버가 .env에 저장) -->
+    <details id="local-settings" style="display:none">
+      <summary>API 키 설정 (로컬)</summary>
+      <p class="desc" style="margin-top:0">
+        이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다. Git에는 커밋되지 않습니다.
+      </p>
+      <div id="local-key-status" style="margin:10px 0;display:flex;gap:14px;font-size:13px;color:var(--text-2)"></div>
+      <div class="form-row">
+        <button class="ghost" onclick="showWizard()">🔑 API 키 재설정</button>
+        <button class="ghost" onclick="fetchKeyState().then(s=>{if(s){localKeyState=s;renderLocalKeyStatus();toast('상태 새로고침');}})">↻ 상태 확인</button>
+      </div>
+    </details>
+
+    <!-- 클라우드 모드: PAT -->
+    <details id="settings" style="margin-top:14px">
+      <summary>토큰 설정 (최초 1회, 클라우드 모드)</summary>
       <p class="desc" style="margin-top:0">
         실행·상태조회 API에 GitHub Personal Access Token이 필요합니다.
         값은 <strong>이 브라우저에만 저장</strong>되고 서버로 전송되지 않습니다.
@@ -652,6 +702,14 @@ const OWNER = 'newwonwoo';
 const REPO  = 'datacollector';
 const WF    = 'collect.yml';
 const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+// ---- Local vs Cloud mode ----
+// Local mode: the UI is served by `collector app` on 127.0.0.1. The same
+// origin exposes /api/run and /api/config so no PAT is required and YouTube
+// is fetched from the user's residential IP (avoids GH Actions blocks).
+const isLocalMode = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(location.hostname);
+let localKeyState = { has_youtube: false, has_gemini: false, has_anthropic: false };
+let __localRunPoll = null;
 
 // State: track which runs we've already announced so the banner doesn't spam
 let lastAnnouncedRun = null;
@@ -693,6 +751,11 @@ async function gh(path, opts={}){
 
 async function updateConn(){
   const el = document.getElementById('conn');
+  if (isLocalMode){
+    el.className = 'pill ok';
+    el.textContent = '● 로컬 서버';
+    return;
+  }
   if (!token()){
     el.className='pill warn'; el.innerHTML='<span class="dot"></span>토큰 필요'; return;
   }
@@ -704,11 +767,132 @@ async function updateConn(){
   } catch(e){ el.className='pill err'; el.textContent='● 네트워크 오류'; }
 }
 
+// ---- Local-mode helpers: API keys + pipeline run ----
+async function fetchKeyState(){
+  try {
+    const r = await fetch('/api/config', {cache: 'no-store'});
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e){ return null; }
+}
+
+function showWizard(){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = '';
+}
+function hideWizard(manual){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = 'none';
+  if (manual) sessionStorage.setItem('wizard_dismissed', '1');
+}
+
+async function saveKeys(){
+  const yt = (document.getElementById('setup-youtube').value || '').trim();
+  const gem = (document.getElementById('setup-gemini').value || '').trim();
+  if (!yt && !gem) return toast('최소 1개 키를 입력하세요');
+  const body = {};
+  if (yt) body.youtube = yt;
+  if (gem) body.google = gem;
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    // Wipe inputs immediately — the value is now on disk.
+    document.getElementById('setup-youtube').value = '';
+    document.getElementById('setup-gemini').value = '';
+    if (!r.ok){
+      const txt = await r.text();
+      return toast('저장 실패 ' + r.status + ': ' + txt.slice(0, 120));
+    }
+    const st = await r.json();
+    localKeyState = st;
+    toast('✓ 키 저장됨 (.env)');
+    renderLocalKeyStatus();
+    if (localKeyState.has_youtube && (localKeyState.has_gemini || localKeyState.has_anthropic)){
+      hideWizard(false);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+function renderLocalKeyStatus(){
+  const host = document.getElementById('local-key-status');
+  if (!host) return;
+  const mark = (ok) => ok ? '<span style="color:var(--ok)">✅</span>'
+                           : '<span style="color:var(--err)">❌</span>';
+  host.innerHTML = `
+    <span>${mark(localKeyState.has_youtube)} YouTube</span>
+    <span>${mark(localKeyState.has_gemini)} Gemini</span>
+    ${localKeyState.has_anthropic ? `<span>${mark(true)} Anthropic</span>` : ''}
+  `;
+}
+
+async function runQueryLocal(q, c){
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  try {
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query: q, count: parseInt(c, 10) || 10}),
+    });
+    if (resp.status === 202){
+      toast('✓ 로컬 실행 시작');
+      document.getElementById('query').value = '';
+      startLocalRunPolling();
+    } else if (resp.status === 409){
+      toast('이미 실행 중');
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '실행 ▶'; }
+}
+
+function startLocalRunPolling(){
+  if (__localRunPoll) clearInterval(__localRunPoll);
+  const busy = document.getElementById('run-busy');
+  const txt  = document.getElementById('run-busy-text');
+  if (busy) busy.classList.add('show');
+  __localRunPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/run/status', {cache: 'no-store'});
+      if (!r.ok) return;
+      const s = await r.json();
+      if (txt){
+        const base = `실행 중 · ${s.query || ''}`;
+        txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
+      }
+      if (s.status === 'completed' || s.status === 'failed' || s.status === 'idle'){
+        clearInterval(__localRunPoll);
+        __localRunPoll = null;
+        if (busy) busy.classList.remove('show');
+        if (s.status === 'completed'){
+          toast('✅ 로컬 실행 완료');
+        } else if (s.status === 'failed'){
+          toast('❌ 실행 실패: ' + (s.error || ''));
+        }
+        loadLatest();
+        loadOpStrip();
+      }
+    } catch(_){}
+  }, 1500);
+}
+
 async function runQuery(){
   const q = document.getElementById('query').value.trim();
   const c = document.getElementById('count').value || '5';
   const btn = document.getElementById('run-btn');
   if (!q) return toast('검색어를 입력하세요');
+  if (isLocalMode){
+    if (!localKeyState.has_youtube || !(localKeyState.has_gemini || localKeyState.has_anthropic)){
+      showWizard();
+      return toast('API 키부터 등록하세요');
+    }
+    return runQueryLocal(q, c);
+  }
   if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
   if (__lastActiveGARun){
     if (!confirm(`이미 실행 중인 run이 있습니다 (${__lastActiveGARun.display_title || ''}).\n`+
@@ -1015,10 +1199,17 @@ function renderKnowledge(valid){
            ${p.failure_reason_detail ? '<br>'+escapeHtml(String(p.failure_reason_detail).slice(0,200)) : ''}
          </div>`
       : '';
-    // Obsidian / JSON links only make sense for promoted records
+    // Obsidian / JSON links only make sense for promoted records.
+    // Local mode: resolve to the local HTTP server so files open even without git.
+    const vaultHref = isLocalMode
+      ? `/vault/strategies/${vaultName}`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
+    const jsonHref = isLocalMode
+      ? `/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`;
     const promotedLinks = isPromoted
-      ? `<a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
-         <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>`
+      ? `<a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Obsidian Markdown</a>
+         <a class="link-btn" href="${jsonHref}" ${isLocalMode ? '' : 'target="_blank"'}>📦 원본 JSON</a>`
       : '';
     return `
       <div class="know-card">
@@ -1526,10 +1717,64 @@ async function loadOpStrip(){
   }
 }
 
+async function bootstrapLocalMode(){
+  // Badge
+  const badge = document.getElementById('mode-badge');
+  if (badge){
+    badge.style.display = 'inline-flex';
+    badge.className = 'pill ' + (isLocalMode ? 'ok' : 'run');
+    badge.textContent = isLocalMode ? '🏠 로컬 모드' : '☁ 클라우드 모드';
+    badge.title = isLocalMode
+      ? 'collector app 로컬 서버에 연결됨 — YouTube 접근에 사용자 IP 사용'
+      : 'GitHub Pages / 클라우드 API 사용 중';
+  }
+  const runDesc = document.getElementById('run-desc');
+  if (runDesc){
+    runDesc.innerHTML = isLocalMode
+      ? '이 PC에서 파이프라인이 돌아갑니다. YouTube 자막은 사용자 IP로 가져옵니다. ' +
+        '<a href="#" onclick="document.getElementById(\'local-settings\').open=true;return false;">API 키 설정</a>'
+      : 'GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요. ' +
+        '최초 1회만 <a href="#" onclick="document.getElementById(\'settings\').open=true;return false;">토큰 설정</a>이 필요합니다.';
+  }
+  // Show appropriate settings section
+  const localSettings = document.getElementById('local-settings');
+  const cloudSettings = document.getElementById('settings');
+  if (isLocalMode){
+    if (localSettings) localSettings.style.display = '';
+    if (cloudSettings) cloudSettings.style.display = 'none';
+    const st = await fetchKeyState();
+    if (st) localKeyState = st;
+    renderLocalKeyStatus();
+    const ready = localKeyState.has_youtube && (localKeyState.has_gemini || localKeyState.has_anthropic);
+    if (!ready && !sessionStorage.getItem('wizard_dismissed')){
+      showWizard();
+    }
+  } else {
+    if (localSettings) localSettings.style.display = 'none';
+    if (cloudSettings) cloudSettings.style.display = '';
+  }
+}
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {/* non-fatal */});
+  });
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
-  document.getElementById('pat').value = token();
-  updateConn(); loadLatest(); loadRuns(); loadOpStrip();
-  setInterval(loadRuns, 10000);
+  const pat = document.getElementById('pat');
+  if (pat) pat.value = token();
+  bootstrapLocalMode();
+  updateConn(); loadLatest();
+  if (!isLocalMode){
+    loadRuns();
+    setInterval(loadRuns, 10000);
+  } else {
+    // Local mode: runs come from /api/run/status; hide GH runs list.
+    const runsHost = document.getElementById('runs');
+    if (runsHost) runsHost.innerHTML = '<div class="empty">로컬 모드: /api/run/status 로 진행 상태 표시</div>';
+  }
+  loadOpStrip();
   setInterval(loadLatest, 60000);
   setInterval(loadOpStrip, 30000);  // refresh every 30s
   document.getElementById('query').addEventListener('keydown', e=>{
