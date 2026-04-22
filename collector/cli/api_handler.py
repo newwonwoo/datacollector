@@ -314,9 +314,15 @@ def _run_worker(
 
     # Best-effort: refresh docs/status.json so the dashboard polls see
     # up-to-date per-stage counts. Matches what the GH Actions workflow does.
+    # Pass through the app's data/log paths so non-default layouts don't read
+    # from cwd-relative defaults (which would report empty counts).
     try:
         from .status_cli import main as status_main
-        status_main(["--out", str(docs_dir / "status.json")])
+        status_main([
+            "--out", str(docs_dir / "status.json"),
+            "--data-store", str(data_store),
+            "--events", str(logs_root / "events.jsonl"),
+        ])
     except Exception as e:  # noqa: BLE001
         sys.stderr.write(f"[app] status.json refresh failed: {e}\n")
 

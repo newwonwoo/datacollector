@@ -198,6 +198,46 @@ def test_api_run_rejects_when_already_running(server, layout, monkeypatch):
         reset_run_state_for_tests()
 
 
+def test_status_refresh_uses_app_paths(tmp_path, monkeypatch):
+    """After a run, status_cli must be called with the app's data/log paths."""
+    from collector.cli import api_handler
+
+    recorded: dict = {}
+
+    def fake_status_main(argv):
+        recorded["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr(
+        "collector.cli.status_cli.main", fake_status_main, raising=True
+    )
+
+    def fake_run_query(*_a, **_k):
+        return {"query": "x", "mode": "mock", "run_id": "run_fake",
+                "candidates": 0, "promoted": 0, "inferred": 0,
+                "unverified": 0, "invalid": 0, "failed_reasons": [],
+                "events": 0, "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query, raising=True)
+
+    data = tmp_path / "custom_ds"
+    logs = tmp_path / "custom_logs"
+    docs = tmp_path / "custom_docs"
+    docs.mkdir()
+
+    api_handler.reset_run_state_for_tests()
+    api_handler._run_worker(
+        query="x", count=1, llm_choice=None,
+        data_store=data, logs_root=logs, docs_dir=docs,
+    )
+
+    argv = recorded.get("argv") or []
+    assert "--data-store" in argv and str(data) in argv
+    assert "--events" in argv
+    assert str(logs / "events.jsonl") in argv
+    assert "--out" in argv and str(docs / "status.json") in argv
+
+
 def test_static_files_from_project_root(server, layout):
     # Arbitrary file inside the sandbox
     (layout["root"] / "vault").mkdir()
