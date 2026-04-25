@@ -203,3 +203,57 @@ def test_vault_skips_empty_v2_sections():
     assert "## 사례" not in md
     assert "## 화자의 주장" not in md
     assert "## 명확하지 않은 부분" not in md
+
+
+# ---------- rule-based fallback ----------
+
+def test_rule_based_extract_fallback_when_chain_all_429(monkeypatch):
+    """When every LLM in the chain returns HTTP_429, the run still
+    completes — a rule-based dict is emitted from the transcript so
+    nothing is lost. The record will land in unverified/inferred and
+    can be re-extracted after quota reset."""
+    from collector.cli.run import _rule_based_extract
+
+    out = _rule_based_extract(
+        "단타 매매 전략의 기본은 거래량 확인이다. 손절 직전 저점은 핵심.",
+        "HTTP_429",
+    )
+    assert out["llm_confidence"] == "low"
+    assert out["content_type"] == "mixed"
+    assert "단타" in out["notes_md"]
+    assert len(out["summary"]) >= 30
+    assert any("HTTP_429" in u for u in out["unclear"])
+    # Tags came from noun extractor, not LLM
+    assert isinstance(out["tags"], list)
+
+
+def test_rule_based_extract_handles_empty_transcript():
+    from collector.cli.run import _rule_based_extract
+    out = _rule_based_extract("", "HTTP_429")
+    assert len(out["summary"]) >= 30  # synthetic placeholder
+    assert out["notes_md"] == ""
+
+
+def test_llm_chain_falls_back_to_rule_based_after_all_quota(monkeypatch):
+    """End-to-end: chain of two adapters both return 429 → llm_extract
+    returns the rule-based dict instead of raising."""
+    from collector.services import MockError
+    monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+    for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    from collector.cli.run import _real_services_or_none
+    services = _real_services_or_none()
+
+    def always_429(*a, **kw):
+        raise MockError("HTTP_429", "limit")
+
+    for a in services.llm_extract.adapters:
+        a.extract = always_429
+
+    out = services.llm_extract("자막 본문 단타 거래량 손절 익절 분할", 0)
+    # Rule-based fallback shape — never raises
+    assert out["llm_confidence"] == "low"
+    assert out["content_type"] == "mixed"
+    assert "단타" in out["notes_md"]

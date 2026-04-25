@@ -129,7 +129,9 @@ def _adapter_names(services):
 
 
 def test_real_services_picks_groq_when_only_groq_set(monkeypatch):
-    """Auto-pick fallback chain: YouTube + only GROQ_API_KEY → use Groq."""
+    """Auto-pick fallback chain: YouTube + only GROQ_API_KEY → use Groq.
+    The Groq provider expands to two adapters (70b + 8b) so a TPD cap
+    on the bigger model rolls over within the same provider."""
     monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
     monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
     for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
@@ -138,7 +140,10 @@ def test_real_services_picks_groq_when_only_groq_set(monkeypatch):
     from collector.cli.run import _real_services_or_none
     services = _real_services_or_none()
     assert services is not None
-    assert _adapter_names(services) == ["GroqAdapter"]
+    assert _adapter_names(services) == ["GroqAdapter", "GroqAdapter"]
+    chain = services.llm_extract.adapters
+    assert chain[0].model == "llama-3.3-70b-versatile"
+    assert chain[1].model == "llama-3.1-8b-instant"
 
 
 def test_real_services_explicit_llm_choice_groq(monkeypatch):
@@ -149,15 +154,16 @@ def test_real_services_explicit_llm_choice_groq(monkeypatch):
 
     from collector.cli.run import _real_services_or_none
     services = _real_services_or_none(llm_choice="groq")
-    # Explicit choice → exactly one adapter, no fallback.
-    assert _adapter_names(services) == ["GroqAdapter"]
+    # Explicit 'groq' choice → both Groq models, no Gemini
+    assert _adapter_names(services) == ["GroqAdapter", "GroqAdapter"]
 
     services2 = _real_services_or_none(llm_choice="gemini")
     assert _adapter_names(services2) == ["GeminiAdapter"]
 
 
 def test_real_services_auto_chain_orders_gemini_then_groq(monkeypatch):
-    """Without --llm, auto-chain so a 429 on Gemini falls through to Groq."""
+    """Without --llm, auto-chain so a 429 on Gemini falls through to Groq
+    (and within Groq, 70b → 8b)."""
     monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
     monkeypatch.setenv("GOOGLE_API_KEY", "AIza_fake")
     monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
@@ -166,7 +172,7 @@ def test_real_services_auto_chain_orders_gemini_then_groq(monkeypatch):
 
     from collector.cli.run import _real_services_or_none
     services = _real_services_or_none()
-    assert _adapter_names(services) == ["GeminiAdapter", "GroqAdapter"]
+    assert _adapter_names(services) == ["GeminiAdapter", "GroqAdapter", "GroqAdapter"]
 
 
 def test_llm_chain_falls_through_on_429(monkeypatch):

@@ -25,6 +25,55 @@ from ..services import MockError, Services, build_mock_services
 from ..store import JSONStore
 
 
+def _rule_based_extract(transcript: str, last_code: str) -> dict:
+    """Minimal payload built from the transcript when every LLM is
+    quota-exhausted. Schema-shaped so downstream stages don't crash.
+
+    summary: first ~250 chars of transcript (trimmed at sentence boundary
+        when possible).
+    notes_md: full transcript wrapped in a fenced quote so vault still
+        archives the raw text.
+    tags: extracted via collector.clickbait.extract_nouns on the
+        transcript (no LLM, regex over Korean noun-shaped tokens).
+    llm_confidence: "low" so review never auto-confirms it.
+    content_type: "mixed" — we don't know.
+    A note in `unclear` records why this fallback fired so re-extraction
+    later (after quota reset) is easy to identify.
+    """
+    from ..clickbait import extract_nouns
+
+    text = (transcript or "").strip()
+    if not text:
+        summary = "자막이 비어있어 추출할 내용이 없음. (룰베이스 폴백 — 데이터 보존용 placeholder)"
+    else:
+        snippet = text[:300]
+        cut = max(snippet.rfind("."), snippet.rfind("。"), snippet.rfind("?"),
+                  snippet.rfind("!"))
+        if cut >= 50:
+            summary = snippet[: cut + 1].strip()
+        else:
+            summary = snippet[:250].strip()
+        if len(summary) < 30:
+            summary = (summary + " — 자막 일부").strip()
+
+    tags = [n.lower() for n in extract_nouns(text, top_n=5) if n][:5]
+    return {
+        "summary": summary,
+        "content_type": "mixed",
+        "knowledge": [],
+        "rules": [],
+        "examples": [],
+        "claims": [],
+        "unclear": [
+            f"LLM 전체 chain 이 {last_code} 로 quota 소진되어 룰베이스 폴백 적용. "
+            "quota 리셋 후 재추출 권장."
+        ],
+        "tags": tags,
+        "llm_confidence": "low",
+        "notes_md": text,
+    }
+
+
 def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     """Build real adapters with a free-tier-friendly LLM fallback chain.
 
@@ -53,29 +102,34 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     def _make(name: str):
         if name == "gemini" and goog_key:
             from ..adapters.llm_gemini import GeminiAdapter
-            return GeminiAdapter(goog_key, model="gemini-2.5-flash")
+            return [GeminiAdapter(goog_key, model="gemini-2.5-flash")]
         if name == "groq" and groq_key:
             from ..adapters.llm_groq import GroqAdapter
-            return GroqAdapter(groq_key)
+            # Two adapters in the same provider: the quality model first
+            # (lower TPD on Groq free tier — 100k for llama-3.3-70b), then
+            # a smaller, higher-TPD bulk model so a daily-cap 429 on the
+            # primary just falls through to the secondary instead of the
+            # whole run dying.
+            return [
+                GroqAdapter(groq_key, model="llama-3.3-70b-versatile"),
+                GroqAdapter(groq_key, model="llama-3.1-8b-instant"),
+            ]
         if name == "anthropic" and anth_key:
             from ..adapters.llm_anthropic import AnthropicAdapter
-            return AnthropicAdapter(anth_key)
-        return None
+            return [AnthropicAdapter(anth_key)]
+        return []
 
     # Build the adapter chain. When the user explicitly forces a single
-    # provider via --llm/COLLECTOR_LLM we skip the fallback. Otherwise we
-    # collect every adapter whose key is set so a mid-run quota/auth
-    # failure on the primary one transparently rolls over to the next.
+    # provider via --llm/COLLECTOR_LLM we still expand it into one or more
+    # adapters (e.g., 'groq' yields two models). Otherwise we collect
+    # every provider whose key is set so a mid-run quota/auth failure on
+    # the primary one transparently rolls over to the next.
     chain: list = []
     if want:
-        a = _make(want)
-        if a is not None:
-            chain.append(a)
+        chain.extend(_make(want))
     else:
         for name in ("gemini", "groq", "anthropic"):
-            a = _make(name)
-            if a is not None:
-                chain.append(a)
+            chain.extend(_make(name))
     if not chain:
         return None
 
@@ -86,22 +140,38 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
         signal for "API key expired"), HTTP_5XX — trigger a fallback to the
         next adapter. Schema/semantic errors mean the model answered, so we
         re-raise immediately (the pipeline's own retry layer handles them).
+
+        After the chain is exhausted with quota-class errors only, emit a
+        rule-based minimal payload from the transcript itself instead of
+        failing — data is preserved and a later run (after quota reset)
+        can re-extract the same source_key.
         """
         ROLLOVER_CODES = {"HTTP_429", "HTTP_5XX", "LLM_HTTP_400", "LLM_HTTP_401", "LLM_HTTP_403"}
         last_err = None
+        all_quota = True
         for i, adapter in enumerate(chain):
             try:
                 return adapter.extract(transcript, attempt)
             except MockError as e:
                 last_err = e
-                if e.code in ROLLOVER_CODES and i < len(chain) - 1:
-                    sys.stderr.write(
-                        f"[llm] {adapter.__class__.__name__} {e.code} → fallback to "
-                        f"{chain[i+1].__class__.__name__}\n"
-                    )
+                if e.code in ROLLOVER_CODES:
+                    if i < len(chain) - 1:
+                        sys.stderr.write(
+                            f"[llm] {adapter.__class__.__name__} {e.code} → fallback to "
+                            f"{chain[i+1].__class__.__name__}\n"
+                        )
                     continue
+                all_quota = False
                 raise
-        # Exhausted chain — surface the last error
+        # Chain exhausted. If every failure was quota-class, emit a
+        # rule-based minimal extraction so the record is preserved
+        # rather than marked invalid.
+        if all_quota and last_err is not None and last_err.code in ROLLOVER_CODES:
+            sys.stderr.write(
+                f"[llm] all adapters quota-exhausted ({last_err.code}); "
+                f"using rule-based fallback to preserve transcript\n"
+            )
+            return _rule_based_extract(transcript, last_err.code)
         if last_err is not None:
             raise last_err
         raise MockError("LLM_NO_PROVIDER", "no LLM adapter available")
