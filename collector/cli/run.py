@@ -28,7 +28,7 @@ from ..store import JSONStore
 def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     """Build real adapters honoring the free-tier default (Gemini Flash).
 
-    - Gemini 1.5 Flash: 무료 티어 (15 RPM / 1500 RPD). 기본값.
+    - Gemini 2.5 Flash: 무료 티어 (15 RPM / 1500 RPD). 기본값.
     - YouTube Data API v3: 무료 티어 (10,000 quota units/day).
     - Anthropic Claude: 유료. `--llm anthropic` 또는 COLLECTOR_LLM=anthropic로만 선택.
     """
@@ -46,13 +46,13 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     llm = None
     if want == "gemini" and goog_key:
         from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
+        llm = GeminiAdapter(goog_key, model="gemini-2.5-flash")
     elif want == "anthropic" and anth_key:
         from ..adapters.llm_anthropic import AnthropicAdapter
         llm = AnthropicAdapter(anth_key)
     elif goog_key:  # safe fallback to free-tier
         from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
+        llm = GeminiAdapter(goog_key, model="gemini-2.5-flash")
     elif anth_key:
         from ..adapters.llm_anthropic import AnthropicAdapter
         llm = AnthropicAdapter(anth_key)

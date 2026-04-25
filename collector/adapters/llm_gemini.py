@@ -34,7 +34,7 @@ class GeminiAdapter:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-1.5-flash",
+        model: str = "gemini-2.5-flash",
         prompt_version: str = "extract_saju_v1",
         http: Callable = _default_http,
     ):
