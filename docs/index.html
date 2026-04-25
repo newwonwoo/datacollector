@@ -489,7 +489,7 @@
       </p>
     </div>
     <div style="margin-top:14px">
-      <label style="font-size:12px;color:var(--text-2);font-weight:600">Gemini API 키 (LLM)</label>
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Gemini API 키 (LLM, 선택)</label>
       <div class="form-row" style="margin-top:6px">
         <input id="setup-gemini" type="password" placeholder="AIza..." autocomplete="off" />
       </div>
@@ -498,6 +498,20 @@
         → "Create API key" · 무료 티어 (15 RPM / 1500 RPD)
       </p>
     </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Groq API 키 (LLM 대체, 선택)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-groq" type="password" placeholder="gsk_..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.groq.com/keys" target="_blank">Groq Console</a>
+        → "Create API Key" · 무료 (Llama 3.3 70B) · Gemini 와 별도 카운터
+      </p>
+    </div>
+    <p class="desc" style="margin-top:10px;font-size:12px;color:var(--text-2)">
+      Gemini · Groq 둘 중 하나만 있어도 동작합니다. 둘 다 있으면 Gemini 가 우선,
+      <code class="kbd">--llm groq</code> 또는 <code class="kbd">COLLECTOR_LLM=groq</code> 으로 강제 가능.
+    </p>
     <div class="form-row" style="margin-top:16px">
       <button onclick="saveKeys()">저장 후 시작 ▶</button>
       <button class="ghost" onclick="hideWizard(true)">일단 닫기</button>
@@ -708,7 +722,7 @@ const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
 // origin exposes /api/run and /api/config so no PAT is required and YouTube
 // is fetched from the user's residential IP (avoids GH Actions blocks).
 const isLocalMode = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(location.hostname);
-let localKeyState = { has_youtube: false, has_gemini: false, has_anthropic: false };
+let localKeyState = { has_youtube: false, has_gemini: false, has_groq: false, has_anthropic: false };
 let __localRunPoll = null;
 
 // State: track which runs we've already announced so the banner doesn't spam
@@ -789,10 +803,13 @@ function hideWizard(manual){
 async function saveKeys(){
   const yt = (document.getElementById('setup-youtube').value || '').trim();
   const gem = (document.getElementById('setup-gemini').value || '').trim();
-  if (!yt && !gem) return toast('최소 1개 키를 입력하세요');
+  const groqEl = document.getElementById('setup-groq');
+  const groq = groqEl ? (groqEl.value || '').trim() : '';
+  if (!yt && !gem && !groq) return toast('최소 1개 키를 입력하세요');
   const body = {};
   if (yt) body.youtube = yt;
   if (gem) body.google = gem;
+  if (groq) body.groq = groq;
   try {
     const r = await fetch('/api/config', {
       method: 'POST',
@@ -802,6 +819,7 @@ async function saveKeys(){
     // Wipe inputs immediately — the value is now on disk.
     document.getElementById('setup-youtube').value = '';
     document.getElementById('setup-gemini').value = '';
+    if (groqEl) groqEl.value = '';
     if (!r.ok){
       const txt = await r.text();
       return toast('저장 실패 ' + r.status + ': ' + txt.slice(0, 120));
@@ -810,7 +828,7 @@ async function saveKeys(){
     localKeyState = st;
     toast('✓ 키 저장됨 (.env)');
     renderLocalKeyStatus();
-    if (localKeyState.has_youtube && (localKeyState.has_gemini || localKeyState.has_anthropic)){
+    if (localKeyState.has_youtube && _hasAnyLLM()){
       hideWizard(false);
     }
   } catch(e){ toast('오류: ' + e.message); }
@@ -824,8 +842,13 @@ function renderLocalKeyStatus(){
   host.innerHTML = `
     <span>${mark(localKeyState.has_youtube)} YouTube</span>
     <span>${mark(localKeyState.has_gemini)} Gemini</span>
+    <span>${mark(localKeyState.has_groq)} Groq</span>
     ${localKeyState.has_anthropic ? `<span>${mark(true)} Anthropic</span>` : ''}
   `;
+}
+
+function _hasAnyLLM(){
+  return localKeyState.has_gemini || localKeyState.has_groq || localKeyState.has_anthropic;
 }
 
 async function runQueryLocal(q, c){
@@ -896,7 +919,7 @@ async function runQuery(){
   const btn = document.getElementById('run-btn');
   if (!q) return toast('검색어를 입력하세요');
   if (isLocalMode){
-    if (!localKeyState.has_youtube || !(localKeyState.has_gemini || localKeyState.has_anthropic)){
+    if (!localKeyState.has_youtube || !_hasAnyLLM()){
       showWizard();
       return toast('API 키부터 등록하세요');
     }
@@ -1759,7 +1782,7 @@ async function bootstrapLocalMode(){
     const st = await fetchKeyState();
     if (st) localKeyState = st;
     renderLocalKeyStatus();
-    const ready = localKeyState.has_youtube && (localKeyState.has_gemini || localKeyState.has_anthropic);
+    const ready = localKeyState.has_youtube && _hasAnyLLM();
     if (!ready && !sessionStorage.getItem('wizard_dismissed')){
       showWizard();
     }

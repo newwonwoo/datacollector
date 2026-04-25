@@ -26,14 +26,20 @@ from ..store import JSONStore
 
 
 def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
-    """Build real adapters honoring the free-tier default (Gemini Flash).
+    """Build real adapters with a free-tier-friendly LLM fallback chain.
 
-    - Gemini 2.5 Flash: 무료 티어 (15 RPM / 1500 RPD). 기본값.
-    - YouTube Data API v3: 무료 티어 (10,000 quota units/day).
-    - Anthropic Claude: 유료. `--llm anthropic` 또는 COLLECTOR_LLM=anthropic로만 선택.
+    LLM priority — picked from env keys + an optional `llm_choice`:
+      gemini  : Gemini 2.5 Flash    (1500 RPD / 15 RPM, project-wide)
+      groq    : Llama 3.3 70B       (separate RPD pool, very fast)
+      anthropic: Claude (paid)
+
+    Default order if `llm_choice` is None: gemini → groq → anthropic, taking
+    the first one whose key is set. Explicit `--llm <name>` forces one.
+    YouTube Data API v3: free tier (10k quota units/day).
     """
     yt_key = os.environ.get("YOUTUBE_API_KEY")
     goog_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    groq_key = os.environ.get("GROQ_API_KEY")
     anth_key = os.environ.get("ANTHROPIC_API_KEY")
 
     if not yt_key:
@@ -42,21 +48,30 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     from ..adapters.youtube import YouTubeAdapter
     yt = YouTubeAdapter(yt_key)
 
-    want = (llm_choice or os.environ.get("COLLECTOR_LLM", "gemini")).lower()
+    want = (llm_choice or os.environ.get("COLLECTOR_LLM", "")).lower()
     llm = None
-    if want == "gemini" and goog_key:
-        from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-2.5-flash")
-    elif want == "anthropic" and anth_key:
-        from ..adapters.llm_anthropic import AnthropicAdapter
-        llm = AnthropicAdapter(anth_key)
-    elif goog_key:  # safe fallback to free-tier
-        from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-2.5-flash")
-    elif anth_key:
-        from ..adapters.llm_anthropic import AnthropicAdapter
-        llm = AnthropicAdapter(anth_key)
-    else:
+
+    def _make(name: str):
+        if name == "gemini" and goog_key:
+            from ..adapters.llm_gemini import GeminiAdapter
+            return GeminiAdapter(goog_key, model="gemini-2.5-flash")
+        if name == "groq" and groq_key:
+            from ..adapters.llm_groq import GroqAdapter
+            return GroqAdapter(groq_key)
+        if name == "anthropic" and anth_key:
+            from ..adapters.llm_anthropic import AnthropicAdapter
+            return AnthropicAdapter(anth_key)
+        return None
+
+    if want:
+        llm = _make(want)
+    if llm is None:
+        # Free-first auto-pick: gemini → groq → anthropic
+        for name in ("gemini", "groq", "anthropic"):
+            llm = _make(name)
+            if llm is not None:
+                break
+    if llm is None:
         return None
 
     return Services(
@@ -337,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--count", type=int, default=10, help="후보 영상 수 (기본 10, 상한 없음 — YouTube 쿼터 주의)")
     ap.add_argument("--data-store", default="data_store")
     ap.add_argument("--logs", default="logs")
-    ap.add_argument("--llm", choices=["gemini", "anthropic"], default=None,
+    ap.add_argument("--llm", choices=["gemini", "groq", "anthropic"], default=None,
                     help="LLM 선택 (기본: gemini 무료 티어)")
     ap.add_argument("--target-channel", default=None,
                     help="Fast-Track 대상 channel_id (지정 시 해당 채널 우선)")

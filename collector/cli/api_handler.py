@@ -180,6 +180,7 @@ def make_handler(
                 "has_youtube": has_keys(env, ["YOUTUBE_API_KEY"]),
                 "has_gemini": has_keys(env, ["GOOGLE_API_KEY"])
                               or has_keys(env, ["GEMINI_API_KEY"]),
+                "has_groq": has_keys(env, ["GROQ_API_KEY"]),
                 "has_anthropic": has_keys(env, ["ANTHROPIC_API_KEY"]),
                 "env_path": str(env_path),
             }
@@ -191,11 +192,14 @@ def make_handler(
             # Accept multiple field names for flexibility.
             yt = (body.get("youtube") or body.get("YOUTUBE_API_KEY") or "").strip()
             goog = (body.get("google") or body.get("gemini") or body.get("GOOGLE_API_KEY") or "").strip()
+            groq = (body.get("groq") or body.get("GROQ_API_KEY") or "").strip()
             anth = (body.get("anthropic") or body.get("ANTHROPIC_API_KEY") or "").strip()
             if yt:
                 updates["YOUTUBE_API_KEY"] = yt
             if goog:
                 updates["GOOGLE_API_KEY"] = goog
+            if groq:
+                updates["GROQ_API_KEY"] = groq
             if anth:
                 updates["ANTHROPIC_API_KEY"] = anth
             if not updates:
@@ -216,6 +220,7 @@ def make_handler(
                 "has_youtube": has_keys(env, ["YOUTUBE_API_KEY"]),
                 "has_gemini": has_keys(env, ["GOOGLE_API_KEY"])
                               or has_keys(env, ["GEMINI_API_KEY"]),
+                "has_groq": has_keys(env, ["GROQ_API_KEY"]),
                 "has_anthropic": has_keys(env, ["ANTHROPIC_API_KEY"]),
             })
 
