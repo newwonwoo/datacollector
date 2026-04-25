@@ -199,20 +199,24 @@ def run_query(
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
-        # Ask the adapter for as many as `count` (adapter paginates internally).
+        # Oversample so that after pre-COLLECT dedup we still have ~`count`
+        # genuinely new videos. YouTube search pagination is paid quota
+        # (100 units/page) so we cap the multiplier at 3× — enough for the
+        # common case of "most top results already in store" without
+        # blowing through 10k daily units.
         q_dict = q_obj.to_dict()
-        q_dict["max_results"] = count
+        q_dict["max_results"] = max(count * 3, count)
         try:
-            candidates = services.youtube_search(q_dict)[:count]
+            candidates = services.youtube_search(q_dict)
         except Exception:
             candidates = []
         # P4-5: fallback query on empty result (Master_02 §1)
         if not candidates:
             fb = fallback_query(query)
             fb_dict = fb.to_dict()
-            fb_dict["max_results"] = count
+            fb_dict["max_results"] = max(count * 3, count)
             try:
-                candidates = services.youtube_search(fb_dict)[:count]
+                candidates = services.youtube_search(fb_dict)
             except Exception:
                 candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
@@ -241,9 +245,19 @@ def run_query(
 
     # Pre-COLLECT dedup (G-15-related: don't waste caption fetches on
     # already-known videos — saves bot-score, time, and Gemini quota).
-    # Pipeline-level Rule C still runs for transcript-change detection
-    # on records we DO process; this filter just skips ones we've already
-    # processed at all (active or archived).
+    # Pipeline-level Rule C still runs for transcript-change detection on
+    # records we DO process; this filter just skips ones we've already
+    # *successfully* processed. Records previously left in `invalid`,
+    # `collected`, `extracted`, or `normalized` are retried — those failed
+    # mid-pipeline (e.g., a transient LLM_HTTP_404 or stale model name)
+    # and silently skipping them forever surprises the user.
+    SUCCESS_STATES = {
+        "promoted",
+        "reviewed_confirmed",
+        "reviewed_inferred",
+        "reviewed_unverified",
+        "reviewed_rejected",
+    }
     pre_dedup = len(payloads)
     seen: set[str] = set()
     deduped: list = []
@@ -251,10 +265,16 @@ def run_query(
         sk = p["source_key"]
         if sk in seen:  # de-dup within the same search response
             continue
-        if store.get(sk) is not None:  # already in store from prior run
+        existing = store.get(sk)
+        if existing is not None and existing.get("record_status") in SUCCESS_STATES:
             continue
         seen.add(sk)
         deduped.append(p)
+    # User asked for `count` NEW videos — keep at most that many from the
+    # oversampled batch. (The oversample factor is set in the YouTube
+    # search call above.)
+    if len(deduped) > count:
+        deduped = deduped[:count]
     skipped_duplicates = pre_dedup - len(deduped)
     if skipped_duplicates:
         logger.log(
@@ -296,6 +316,7 @@ def run_query(
         "query": query,
         "mode": mode,
         "run_id": run_id,
+        "requested_count": count,
         "candidates": len(candidates),
         "skipped_duplicates": skipped_duplicates,
         "processed": len(payloads),

@@ -870,7 +870,16 @@ function startLocalRunPolling(){
         __localRunPoll = null;
         if (busy) busy.classList.remove('show');
         if (s.status === 'completed'){
-          toast('✅ 로컬 실행 완료');
+          // Surface dedup stats so the user understands why "asked 10, got 1"
+          const sm = s.summary || {};
+          const ask = sm.requested_count;
+          const skip = sm.skipped_duplicates || 0;
+          const proc = sm.processed || 0;
+          let msg = '✅ 로컬 실행 완료';
+          if (ask !== undefined && skip > 0){
+            msg += ` (요청 ${ask} · 신규 ${proc} · 이미 처리됨 ${skip})`;
+          }
+          toast(msg);
         } else if (s.status === 'failed'){
           toast('❌ 실행 실패: ' + (s.error || ''));
         }
