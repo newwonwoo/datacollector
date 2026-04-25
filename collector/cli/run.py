@@ -146,7 +146,11 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
         failing — data is preserved and a later run (after quota reset)
         can re-extract the same source_key.
         """
-        ROLLOVER_CODES = {"HTTP_429", "HTTP_5XX", "LLM_HTTP_400", "LLM_HTTP_401", "LLM_HTTP_403"}
+        ROLLOVER_CODES = {
+            "HTTP_429", "HTTP_5XX",
+            "LLM_HTTP_400", "LLM_HTTP_401", "LLM_HTTP_403",
+            "LLM_HTTP_413",  # request too large for the current model's TPM
+        }
         last_err = None
         all_quota = True
         for i, adapter in enumerate(chain):
