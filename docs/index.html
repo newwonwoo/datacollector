@@ -1028,39 +1028,64 @@ function announceCompletion(run){
 }
 
 async function loadLatest(){
-  const r = await gh('/contents/data_store');
   const host = document.getElementById('records');
   const kpi = document.getElementById('kpi');
 
-  if (!r.ok){
-    host.innerHTML = r.status===404
-      ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
-      : '<div class="empty">data_store/ 조회 실패</div>';
-    return;
-  }
-  const dirs = await r.json();
-  if (!Array.isArray(dirs) || !dirs.length){
-    host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
-  }
-  dirs.sort((a,b)=>b.name.localeCompare(a.name));
-  const r2 = await gh(`/contents/${dirs[0].path}`);
-  if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
-  const files = await r2.json();
-  const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
-
-  const records = await Promise.all(recent.map(async f => {
-    const cr = await gh(`/contents/${f.path}`);
-    if (!cr.ok) return null;
-    const cb = await cr.json();
+  // Local mode: read from the local server's /api/records — much faster
+  // than the GitHub Contents API and works for the user's own runs that
+  // are not yet pushed.
+  let valid = [];
+  let totalFiles = 0;
+  if (isLocalMode){
     try {
-      const raw = atob(cb.content.replace(/\n/g,''));
-      const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
-      const text = new TextDecoder('utf-8').decode(bytes);
-      return JSON.parse(text);
-    } catch(e){ return null; }
-  }));
+      const r = await fetch('/api/records?limit=50', {cache: 'no-store'});
+      if (!r.ok){
+        host.innerHTML = '<div class="empty">/api/records 조회 실패 ('+r.status+')</div>';
+        return;
+      }
+      const body = await r.json();
+      valid = (body.records || []).filter(Boolean);
+      totalFiles = body.total_files || valid.length;
+    } catch(e){
+      host.innerHTML = '<div class="empty">로컬 records 로드 실패: '+e.message+'</div>';
+      return;
+    }
+  } else {
+    const r = await gh('/contents/data_store');
+    if (!r.ok){
+      host.innerHTML = r.status===404
+        ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
+        : '<div class="empty">data_store/ 조회 실패</div>';
+      return;
+    }
+    const dirs = await r.json();
+    if (!Array.isArray(dirs) || !dirs.length){
+      host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
+    }
+    dirs.sort((a,b)=>b.name.localeCompare(a.name));
+    const r2 = await gh(`/contents/${dirs[0].path}`);
+    if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
+    const files = await r2.json();
+    totalFiles = files.length;
+    const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
 
-  const valid = records.filter(Boolean);
+    const records = await Promise.all(recent.map(async f => {
+      const cr = await gh(`/contents/${f.path}`);
+      if (!cr.ok) return null;
+      const cb = await cr.json();
+      try {
+        const raw = atob(cb.content.replace(/\n/g,''));
+        const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
+        const text = new TextDecoder('utf-8').decode(bytes);
+        return JSON.parse(text);
+      } catch(e){ return null; }
+    }));
+    valid = records.filter(Boolean);
+  }
+
+  if (!valid.length){
+    host.innerHTML = '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>';
+  }
 
   // detect newly-seen source_keys (NEW badge)
   const freshKeys = new Set();
@@ -1092,7 +1117,7 @@ async function loadLatest(){
 
   const promoted = valid.filter(p=>p.record_status==='promoted').length;
   const cost = valid.reduce((s,p)=>s + (p.llm_context?.cost_usd||0), 0);
-  kpi.children[0].querySelector('.value').textContent = files.length;
+  kpi.children[0].querySelector('.value').textContent = totalFiles;
   kpi.children[1].querySelector('.value').textContent = promoted;
   kpi.children[2].querySelector('.value').textContent = '$'+cost.toFixed(4);
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');

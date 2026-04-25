@@ -129,6 +129,8 @@ def make_handler(
                     return self._handle_config_get()
                 if path == "/api/run/status":
                     return self._handle_run_status()
+                if path == "/api/records":
+                    return self._handle_records()
                 if path in ("/", "/index.html"):
                     return self._send_file(docs_dir / "index.html", "text/html; charset=utf-8")
                 if path == "/dashboard.html":
@@ -275,6 +277,42 @@ def make_handler(
             with _RUN_LOCK:
                 snap = dict(_RUN_STATE)
             self._send_json(200, snap)
+
+        def _handle_records(self) -> None:
+            """Return the most recently collected records from the local
+            data_store/ tree so the dashboard can render them in local mode
+            without reaching out to the GitHub Contents API.
+
+            Query params:
+              limit: int (default 30, hard-capped at 200)
+            """
+            from urllib.parse import parse_qs
+            qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            try:
+                limit = int(qs.get("limit", ["30"])[0])
+            except (TypeError, ValueError):
+                limit = 30
+            limit = max(1, min(limit, 200))
+
+            files: list[Path] = []
+            if data_store.exists():
+                files = list(data_store.rglob("*.json"))
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            out: list[dict] = []
+            for p in files[:limit]:
+                try:
+                    rec = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                # Trim transcript out — could be 50KB and we don't render it.
+                rec.pop("transcript", None)
+                out.append(rec)
+
+            self._send_json(200, {
+                "total_files": len(files),
+                "records": out,
+            })
 
     return _Handler
 

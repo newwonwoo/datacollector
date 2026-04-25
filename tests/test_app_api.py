@@ -251,3 +251,35 @@ def test_static_files_from_project_root(server, layout):
     status, _h, body = _get(server.url("/vault/hello.md"))
     assert status == 200
     assert body == "hi"
+
+
+def test_api_records_returns_local_data_store(server, layout):
+    """Local-mode dashboard reads records via /api/records, not GitHub."""
+    ds = layout["data_store"]
+    (ds / "202604").mkdir(parents=True)
+    rec = {
+        "source_key": "youtube:LOCAL00001",
+        "video_id": "LOCAL00001",
+        "title": "로컬 테스트",
+        "record_status": "promoted",
+        "confidence": "confirmed",
+        "transcript": "이건 응답에서 제거되어야 함",
+        "summary": "요약",
+        "rules": ["r1"],
+        "tags": ["t1"],
+        "llm_context": {"cost_usd": 0.0001},
+        "collected_at": "2026-04-25T12:00:00Z",
+    }
+    (ds / "202604" / "youtube__LOCAL00001.json").write_text(
+        json.dumps(rec, ensure_ascii=False), encoding="utf-8"
+    )
+    status, _h, body = _get(server.url("/api/records?limit=10"))
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["total_files"] == 1
+    assert len(obj["records"]) == 1
+    r = obj["records"][0]
+    # transcript stripped (could be huge); other fields preserved
+    assert "transcript" not in r
+    assert r["source_key"] == "youtube:LOCAL00001"
+    assert r["record_status"] == "promoted"
