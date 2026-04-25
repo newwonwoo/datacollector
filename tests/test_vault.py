@@ -36,7 +36,9 @@ def test_render_note_contains_frontmatter_and_sections():
     assert "source_key: youtube:VAULT001" in md
     assert "tags: [단타, 돌파매매]" in md
     assert "## 요약" in md
-    assert "## 규칙" in md
+    # v2 renames the rules section to "행동 지침" when rules are populated;
+    # legacy "## 규칙" only appears when every substance field is empty.
+    assert ("## 행동 지침" in md) or ("## 규칙" in md)
     assert "[YouTube](https://www.youtube.com/watch?v=VAULT001)" in md
     assert "[[strategies-index]]" in md
 

@@ -60,17 +60,54 @@ def render_note(payload: dict[str, Any]) -> str:
         p.get("summary") or "(요약 없음)",
         "",
     ]
+
+    # extract_generic_v2 sections — only render when non-empty so notes
+    # stay clean for v1-shape records that lack these fields entirely.
+    knowledge = p.get("knowledge") or []
+    examples  = p.get("examples") or []
+    claims    = p.get("claims") or []
+    unclear   = p.get("unclear") or []
+    if knowledge:
+        lines += ["## 핵심 개념"]
+        lines += [f"- {k}" for k in knowledge]
+        lines += [""]
+    if rules:
+        lines += ["## 행동 지침"]
+        lines += [f"{i}. {r}" for i, r in enumerate(rules, 1)]
+        lines += [""]
+    if examples:
+        lines += ["## 사례"]
+        lines += [f"- {e}" for e in examples]
+        lines += [""]
+    if claims:
+        lines += ["## 화자의 주장"]
+        lines += [f"- {c_}" for c_ in claims]
+        lines += [""]
+    if unclear:
+        lines += ["## 명확하지 않은 부분"]
+        lines += [f"- {u}" for u in unclear]
+        lines += [""]
     notes_md = (p.get("notes_md") or "").strip()
     if notes_md:
         lines += ["## 상세 노트", notes_md, ""]
-    lines += ["## 규칙"]
-    if rules:
-        for i, r in enumerate(rules, 1):
-            lines.append(f"{i}. {r}")
-    else:
-        lines.append("(규칙 없음)")
+
+    # Back-compat: when none of the v2 substance fields are populated and
+    # we don't even have a notes_md, surface the legacy '규칙' block so
+    # records collected before the v2 schema still produce a usable note.
+    if not (knowledge or rules or examples or claims or unclear or notes_md):
+        lines += ["## 규칙", "(규칙 없음)", ""]
+
+    ctype = (p.get("content_type") or "").strip().lower()
+    llm_conf = (p.get("llm_confidence") or "").strip().lower()
+    meta_bits = []
+    if ctype:
+        meta_bits.append(f"종류: `{ctype}`")
+    if llm_conf:
+        meta_bits.append(f"LLM 자평: `{llm_conf}`")
+    if meta_bits:
+        lines += ["> " + " · ".join(meta_bits), ""]
+
     lines += [
-        "",
         "## 태그",
         " ".join(f"#{t}" for t in tags) if tags else "(없음)",
         "",

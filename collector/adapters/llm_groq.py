@@ -21,10 +21,13 @@ from ._llm_http import llm_http as _default_http
 
 SYSTEM_PROMPT = (
     "너는 한국어 유튜브 자막에서 영상의 핵심 지식을 JSON으로 추출한다. "
-    "도메인은 영상 내용에 맞춘다 — 미리 가정하지 말 것. "
-    "반드시 다음 스키마만 출력한다: {\"summary\": str, \"rules\": [str], \"tags\": [str], \"notes_md\": str}. "
-    "notes_md 는 영상 전체 맥락을 마크다운 (## 소제목, 목록, 인용) 으로 상세 정리. "
-    "영상에 없는 도메인의 규칙을 끼워넣지 말 것. 출력은 유효한 JSON 한 개만, 다른 설명/줄글/코드펜스 금지."
+    "도메인은 자막 내용을 따르고, 영상에 없는 외부 지식·다른 도메인의 규칙을 끼워넣지 말 것. "
+    "본문은 영상의 일부 청크일 수 있다 — 이 청크에서 직접 확인되는 내용만 추출하고, "
+    "맥락이 부족한 내용은 unclear 에 남겨라. "
+    "출력 스키마: {\"summary\": str, \"content_type\": str, \"knowledge\": [str], \"rules\": [str], "
+    "\"examples\": [str], \"claims\": [str], \"unclear\": [str], \"tags\": [str], "
+    "\"llm_confidence\": str, \"notes_md\": str}. "
+    "출력은 유효한 JSON 한 개만, 다른 설명/줄글/코드펜스 금지."
 )
 
 
@@ -38,7 +41,7 @@ class GroqAdapter:
         self,
         api_key: str,
         model: str = "llama-3.3-70b-versatile",
-        prompt_version: str = "extract_generic_v1",
+        prompt_version: str = "extract_generic_v2",
         http: Callable = _default_http,
     ):
         self.api_key = api_key
@@ -93,12 +96,20 @@ class GroqAdapter:
         return _normalize_schema(out)
 
 
-def _normalize_schema(out: dict) -> dict:
-    """Coerce JSON schema fields to expected primitive types.
+_CONTENT_TYPES = {"concept", "howto", "case", "opinion", "ad", "chat", "mixed"}
+_LLM_CONFIDENCES = {"high", "medium", "low"}
 
-    LLMs sometimes emit list-of-strings or nested objects where we asked
-    for a string. We normalise rather than reject — a malformed-but-
+
+def _normalize_schema(out: dict) -> dict:
+    """Coerce JSON schema fields to expected primitive types and ensure
+    every field present (with sensible empty defaults).
+
+    LLMs occasionally emit list-of-strings where we asked for a string,
+    or vice-versa. We normalise rather than reject — a malformed-but-
     recoverable answer is more useful than a fail.
+
+    Schema (extract_generic_v2): summary, content_type, knowledge, rules,
+    examples, claims, unclear, tags, llm_confidence, notes_md.
     """
     def _to_str(v) -> str:
         if isinstance(v, str):
@@ -113,12 +124,21 @@ def _normalize_schema(out: dict) -> dict:
         if isinstance(v, list):
             return [str(x) for x in v if x is not None and str(x).strip()]
         if isinstance(v, str):
-            # rare: LLM crammed multiple rules into one string
             return [v] if v.strip() else []
         return []
 
-    out["summary"] = _to_str(out.get("summary", ""))
-    out["rules"] = _to_list_of_str(out.get("rules", []))
-    out["tags"] = _to_list_of_str(out.get("tags", []))
-    out["notes_md"] = _to_str(out.get("notes_md", ""))
+    def _to_enum(v, allowed: set, fallback: str) -> str:
+        s = _to_str(v).strip().lower()
+        return s if s in allowed else fallback
+
+    out["summary"]        = _to_str(out.get("summary", ""))
+    out["content_type"]   = _to_enum(out.get("content_type"), _CONTENT_TYPES, "mixed")
+    out["knowledge"]      = _to_list_of_str(out.get("knowledge", []))
+    out["rules"]          = _to_list_of_str(out.get("rules", []))
+    out["examples"]       = _to_list_of_str(out.get("examples", []))
+    out["claims"]         = _to_list_of_str(out.get("claims", []))
+    out["unclear"]        = _to_list_of_str(out.get("unclear", []))
+    out["tags"]           = _to_list_of_str(out.get("tags", []))
+    out["llm_confidence"] = _to_enum(out.get("llm_confidence"), _LLM_CONFIDENCES, "medium")
+    out["notes_md"]       = _to_str(out.get("notes_md", ""))
     return out

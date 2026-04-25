@@ -40,46 +40,69 @@ def chunk(text: str, *, chunk_chars: int = CHUNK_CHARS, overlap: int = OVERLAP_C
 def reduce_outputs(outputs: list[dict]) -> dict:
     """Combine per-chunk LLM outputs into one payload-shape dict.
 
-    - summary: concat top snippets then trim to 280 chars.
-    - rules: flat de-dup preserving order.
-    - tags: union, cap 5.
-    - notes_md: concatenate per-chunk markdown notes with chunk separators
-      so the final vault note retains full chunk-level context (the
-      "knowledge library" use case — we don't want to throw away the
-      detailed prose just because the transcript was long enough to chunk).
+    Strings (summary, notes_md): concatenate, summary trimmed to 280 chars.
+    Lists (rules/tags/knowledge/examples/claims/unclear): de-dup union
+    preserving first-seen order. Tags capped at 5.
+    Enums:
+      - content_type: majority vote across chunks; tie → "mixed".
+      - llm_confidence: minimum (most pessimistic) across chunks.
     """
     summary_parts: list[str] = []
-    rules: list[str] = []
-    tags: list[str] = []
     notes_parts: list[str] = []
-    seen_rules: set[str] = set()
-    seen_tags: set[str] = set()
+    list_fields = ("rules", "tags", "knowledge", "examples", "claims", "unclear")
+    merged_lists: dict[str, list] = {f: [] for f in list_fields}
+    seen: dict[str, set] = {f: set() for f in list_fields}
+    type_votes: dict[str, int] = {}
+    confidence_rank = {"low": 0, "medium": 1, "high": 2}
+    min_conf_rank: int | None = None
+    min_conf_label = ""
+
     for o in outputs:
         s = (o.get("summary") or "").strip()
         if s:
             summary_parts.append(s)
-        for r in o.get("rules") or []:
-            if r and r not in seen_rules:
-                rules.append(r)
-                seen_rules.add(r)
-        for t in o.get("tags") or []:
-            if t and t not in seen_tags:
-                tags.append(t)
-                seen_tags.add(t)
-                if len(tags) >= 5:
-                    break
         n = (o.get("notes_md") or "").strip()
         if n:
             notes_parts.append(n)
+        for f in list_fields:
+            for v in o.get(f) or []:
+                if v and v not in seen[f]:
+                    merged_lists[f].append(v)
+                    seen[f].add(v)
+        ct = (o.get("content_type") or "").strip().lower()
+        if ct:
+            type_votes[ct] = type_votes.get(ct, 0) + 1
+        lc = (o.get("llm_confidence") or "").strip().lower()
+        if lc in confidence_rank:
+            r = confidence_rank[lc]
+            if min_conf_rank is None or r < min_conf_rank:
+                min_conf_rank = r
+                min_conf_label = lc
+
     combined_summary = " ".join(summary_parts)
-    # Trim keeping sentence boundaries when possible
     if len(combined_summary) > 280:
         cut = combined_summary.rfind(".", 0, 280)
         combined_summary = combined_summary[: cut + 1 if cut > 50 else 280].strip()
     combined_notes = "\n\n".join(notes_parts)
+
+    if not type_votes:
+        content_type = ""
+    else:
+        # majority — ties resolve to 'mixed' so a noisy chunk doesn't tip
+        ranked = sorted(type_votes.items(), key=lambda kv: kv[1], reverse=True)
+        content_type = ranked[0][0]
+        if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+            content_type = "mixed"
+
     return {
         "summary": combined_summary,
-        "rules": rules,
-        "tags": tags[:5],
+        "rules": merged_lists["rules"],
+        "tags": merged_lists["tags"][:5],
         "notes_md": combined_notes,
+        "content_type": content_type,
+        "knowledge": merged_lists["knowledge"],
+        "examples": merged_lists["examples"],
+        "claims": merged_lists["claims"],
+        "unclear": merged_lists["unclear"],
+        "llm_confidence": min_conf_label,
     }

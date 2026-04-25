@@ -644,6 +644,16 @@
         <svg id="chart-fail" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
         <div class="legend" id="legend-fail"></div>
       </div>
+      <div class="chart-card">
+        <div class="ctitle">콘텐츠 타입 분포</div>
+        <svg id="chart-ctype" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-ctype"></div>
+      </div>
+      <div class="chart-card">
+        <div class="ctitle">LLM 자평 분포</div>
+        <svg id="chart-llmconf" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-llmconf"></div>
+      </div>
     </div>
     <!-- DLQ 재처리 버튼 -->
     <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1152,6 +1162,12 @@ async function loadLatest(){
   renderStackBar('chart-fail',   'legend-fail',
                  countBy(valid.filter(p=>p.failure_reason_code), 'failure_reason_code'),
                  FAIL_COLORS);
+  renderStackBar('chart-ctype',   'legend-ctype',
+                 countBy(valid.filter(p=>p.content_type), 'content_type'),
+                 CTYPE_COLORS);
+  renderStackBar('chart-llmconf', 'legend-llmconf',
+                 countBy(valid.filter(p=>p.llm_confidence), 'llm_confidence'),
+                 LLM_CONF_COLORS);
 
   // Knowledge cards (final product) — respects current search
   applySearchAndRender();
@@ -1187,11 +1203,13 @@ function renderRecordsList(valid){
   }
   // Maintain NEW badges + modal open behaviour from earlier render
   host.innerHTML = valid.slice(0, 10).map(p => {
+    const ctype = (p.content_type || '').toLowerCase();
+    const ctLabel = ctype && CTYPE_LABEL[ctype] ? CTYPE_LABEL[ctype] : '';
     return `
       <div class="rec-item" onclick="openModal('${encodeURIComponent(p.source_key)}')">
         <div class="head">
           <span>${p.source_key || '?'}</span>
-          <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+          <span>${p.record_status || '?'} · ${p.confidence || '?'}${ctLabel ? ' · '+ctLabel : ''}</span>
         </div>
         <div class="title-line">${escapeHtml((p.title||'').slice(0,80) || '(제목 없음)')}</div>
         <div class="summary">${escapeHtml((p.summary||'').slice(0,140))}${(p.summary||'').length>140?'…':''}</div>
@@ -1269,6 +1287,19 @@ function renderKnowledge(valid){
     const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
     const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
     const isPromoted = p.record_status === 'promoted';
+    // v2 sections
+    const knowledge = (p.knowledge || []).map(k => `<li>${escapeHtml(k)}</li>`).join('');
+    const examples  = (p.examples  || []).map(e => `<li>${escapeHtml(e)}</li>`).join('');
+    const claims    = (p.claims    || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+    const unclear   = (p.unclear   || []).map(u => `<li>${escapeHtml(u)}</li>`).join('');
+    const ctype = (p.content_type || '').toLowerCase();
+    const llmConf = (p.llm_confidence || '').toLowerCase();
+    const ctypeBadge = ctype && CTYPE_LABEL[ctype]
+      ? `<span class="kbadge" style="background:${CTYPE_COLORS[ctype]||'#94a3b8'}22;color:${CTYPE_COLORS[ctype]||'#475569'}">${CTYPE_LABEL[ctype]}</span>`
+      : '';
+    const llmConfBadge = llmConf
+      ? `<span class="kbadge" style="background:${LLM_CONF_COLORS[llmConf]||'#94a3b8'}22;color:${LLM_CONF_COLORS[llmConf]||'#475569'}">LLM ${llmConf}</span>`
+      : '';
     const failRow = p.failure_reason_code
       ? `<div class="ksection">실패 사유</div>
          <div class="ksummary" style="background:var(--err-bg);color:var(--err)">
@@ -1293,6 +1324,8 @@ function renderKnowledge(valid){
         <div class="kh">
           <div class="ktitle">${escapeHtml(p.title || sk || '(제목 없음)')}</div>
           <div class="kbadge ${conf}">${p.record_status || conf}</div>
+          ${ctypeBadge}
+          ${llmConfBadge}
         </div>
         <div class="kmeta">
           <span>📺 ${sk}</span>
@@ -1302,8 +1335,11 @@ function renderKnowledge(valid){
         ${failRow}
         <div class="ksection">요약</div>
         <div class="ksummary">${escapeHtml(p.summary || '(아직 요약 없음 — 이 영상은 ' + (p.failure_reason_code ? p.failure_reason_code + ' 단계에서 중단됨' : '처리 중') + ')')}</div>
-        <div class="ksection">규칙 (${(p.rules||[]).length})</div>
-        <ol class="krules">${rules || '<li style="color:var(--text-dim)">아직 추출 안 됨</li>'}</ol>
+        ${knowledge ? `<div class="ksection">핵심 개념 (${(p.knowledge||[]).length})</div><ol class="krules">${knowledge}</ol>` : ''}
+        ${rules ? `<div class="ksection">행동 지침 (${(p.rules||[]).length})</div><ol class="krules">${rules}</ol>` : ''}
+        ${examples ? `<div class="ksection">사례 (${(p.examples||[]).length})</div><ol class="krules">${examples}</ol>` : ''}
+        ${claims ? `<div class="ksection">화자의 주장 (${(p.claims||[]).length})</div><ol class="krules">${claims}</ol>` : ''}
+        ${unclear ? `<div class="ksection">불명확 (${(p.unclear||[]).length})</div><ol class="krules">${unclear}</ol>` : ''}
         ${tags ? `<div class="ksection">태그</div><div class="ktags">${tags}</div>` : ''}
         <div class="kactions">
           <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube 원본</a>
@@ -1327,6 +1363,19 @@ const STATUS_COLORS = {
 const CONF_COLORS = {
   'confirmed': '#16a34a', 'inferred': '#eab308',
   'unverified': '#94a3b8', 'rejected': '#dc2626',
+};
+// extract_generic_v2 metas
+const CTYPE_COLORS = {
+  'concept': '#2563eb', 'howto': '#16a34a', 'case': '#0891b2',
+  'opinion': '#7c3aed', 'mixed': '#94a3b8',
+  'ad': '#dc2626', 'chat': '#9ca3af',
+};
+const LLM_CONF_COLORS = {
+  'high': '#16a34a', 'medium': '#eab308', 'low': '#dc2626',
+};
+const CTYPE_LABEL = {
+  'concept': '📘 개념', 'howto': '🎯 행동', 'case': '📋 사례',
+  'opinion': '💬 주장', 'mixed': '🧩 혼합', 'ad': '🚫 광고', 'chat': '💭 잡담',
 };
 
 function countBy(items, key){
@@ -1545,23 +1594,39 @@ function openModal(encodedSk){
   const vid = p.video_id || '';
   const vaultName = sk.replace(':', '__') + '.md';
   const body = document.getElementById('modal-body');
+  const ctype = (p.content_type || '').toLowerCase();
+  const llmConf = (p.llm_confidence || '').toLowerCase();
+  const metaBits = [
+    `<span>${sk}</span>`,
+    `<span>${p.record_status} · ${p.confidence}</span>`,
+    `<span>${fmtTime(p.collected_at||'')}</span>`,
+    ctype && CTYPE_LABEL[ctype] ? `<span>${CTYPE_LABEL[ctype]}</span>` : '',
+    llmConf ? `<span>LLM: ${llmConf}</span>` : '',
+  ].filter(Boolean).join('');
+  function _list(label, arr){
+    if (!arr || !arr.length) return '';
+    return `<div class="sec-title">${label} (${arr.length})</div>` +
+           `<ol>${arr.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ol>`;
+  }
+  const vaultHref = isLocalMode
+    ? `/vault/strategies/${vaultName}`
+    : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
   body.innerHTML = `
-    <h3>${p.title || '(제목 없음)'}</h3>
-    <div class="meta">
-      <span>${sk}</span>
-      <span>${p.record_status} · ${p.confidence}</span>
-      <span>${fmtTime(p.collected_at||'')}</span>
-    </div>
+    <h3>${escapeHtml(p.title || '(제목 없음)')}</h3>
+    <div class="meta">${metaBits}</div>
     <div class="sec-title">요약</div>
-    <div class="summary">${p.summary || '(없음)'}</div>
-    <div class="sec-title">규칙 (${(p.rules||[]).length})</div>
-    <ol>${(p.rules||[]).map(r=>`<li>${r}</li>`).join('') || '<li>(없음)</li>'}</ol>
+    <div class="summary">${escapeHtml(p.summary || '(없음)')}</div>
+    ${_list('핵심 개념', p.knowledge)}
+    ${_list('행동 지침', p.rules)}
+    ${_list('사례', p.examples)}
+    ${_list('화자의 주장', p.claims)}
+    ${_list('불명확', p.unclear)}
     <div class="sec-title">태그</div>
-    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
+    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
     <div class="close-row">
       <div class="links-row" style="margin:0">
         <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube</a>
-        <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Markdown</a>
+        <a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Markdown</a>
       </div>
       <button class="ghost" onclick="closeModal()">닫기</button>
     </div>

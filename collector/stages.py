@@ -148,10 +148,17 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
             else:
                 chunk_outs = [_call_llm_once(payload, services, c, attempt) for c in chunks]
                 out = reduce_outputs(chunk_outs)
-            payload["summary"] = out.get("summary", "")
-            payload["rules"] = list(out.get("rules", []))
-            payload["tags"] = list(out.get("tags", []))[:5]
-            payload["notes_md"] = out.get("notes_md", "")
+            payload["summary"]        = out.get("summary", "")
+            payload["rules"]          = list(out.get("rules", []))
+            payload["tags"]           = list(out.get("tags", []))[:5]
+            payload["notes_md"]       = out.get("notes_md", "")
+            # extract_generic_v2 fields (no-op when LLM returns v1 shape)
+            payload["content_type"]   = out.get("content_type", "")
+            payload["knowledge"]      = list(out.get("knowledge", []))
+            payload["examples"]       = list(out.get("examples", []))
+            payload["claims"]         = list(out.get("claims", []))
+            payload["unclear"]        = list(out.get("unclear", []))
+            payload["llm_confidence"] = out.get("llm_confidence", "")
             payload["llm_context"]["input_tokens"] = len(transcript)
             payload["llm_context"]["output_tokens"] = len(payload["summary"]) + sum(
                 len(r) for r in payload["rules"]
@@ -192,6 +199,18 @@ def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> d
         rules = [str(rules)]
         payload["rules"] = rules
 
+    # Auto-archive ad / chat (extract_generic_v2 content_type signal).
+    # Don't waste promote/package on those, and don't have smart-dedup
+    # retry them forever — set archive_state=ARCHIVED so the next run's
+    # store sees them and skips immediately.
+    ctype = (payload.get("content_type") or "").strip().lower()
+    if ctype in ("ad", "chat"):
+        err = StageFail("AD_CHAT_AUTO_SKIP", f"content_type={ctype}")
+        _fail(payload, "normalize", err, logger)
+        payload["archive_state"] = "ARCHIVED"
+        _set_record(payload, "invalid", logger, reason=err.code)
+        raise err
+
     # Strip forbidden openers ("이 영상은", "전반적으로") instead of failing
     # the whole record on them — the prompt already discourages them, so
     # when one slips through we clean it up.
@@ -204,13 +223,16 @@ def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> d
         payload["summary"] = cleaned
         summary = cleaned
 
-    # Knowledge-library content gate: require *some* substance, not specifically
-    # rules. A video with rich notes_md but zero actionable rules (e.g., a Saju
-    # explanation, a documentary) is still valuable to archive. We fail only
-    # when BOTH rules and notes_md are empty AND the summary is too short to
-    # carry any information on its own.
-    if not rules and len(notes_md) < 80 and len(summary) < 30:
-        err = StageFail("SEMANTIC_EMPTY_RULES", "no rules, no notes, no summary")
+    # Knowledge-library content gate: require *some* substance. v2 brings
+    # `knowledge` and `examples` as legitimate substance even when `rules`
+    # is empty (concept videos, documentaries). Fail only when every
+    # substance bucket is empty AND there's no usable notes_md AND the
+    # summary is too short to carry information on its own.
+    knowledge = payload.get("knowledge") or []
+    examples  = payload.get("examples") or []
+    has_substance = bool(rules or knowledge or examples)
+    if not has_substance and len(notes_md) < 80 and len(summary) < 30:
+        err = StageFail("SEMANTIC_EMPTY_RULES", "no substance: rules/knowledge/examples/notes/summary")
         _fail(payload, "normalize", err, logger)
         _set_record(payload, "invalid", logger, reason=err.code)
         raise err
@@ -232,28 +254,45 @@ def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> d
 def stage_review(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "review", "started", logger)
     cos = services.semantic_similarity(payload.get("transcript", ""), payload.get("summary", ""))
-    rules = payload.get("rules") or []
-    notes_md = (payload.get("notes_md") or "").strip()
-    # Substance gate: either at least one extracted rule, OR a meaningful
-    # markdown note (≥150 chars). The knowledge-library use case fails the
-    # rules-only criterion for explanatory videos that legitimately have no
-    # actionable rules — yet the notes_md still archives the value.
-    has_substance = bool(rules) or len(notes_md) >= 150
-    if cos >= 0.60 and has_substance and payload.get("retry_count", 0) <= 1:
+    rules     = payload.get("rules") or []
+    knowledge = payload.get("knowledge") or []
+    examples  = payload.get("examples") or []
+    notes_md  = (payload.get("notes_md") or "").strip()
+    llm_conf  = (payload.get("llm_confidence") or "").strip().lower()
+    # Substance gate: any v2 substance bucket OR a meaningful notes body.
+    has_substance = bool(rules or knowledge or examples) or len(notes_md) >= 150
+
+    # The LLM's own confidence acts as a second signal:
+    # - 'low'   → never auto-confirm (model itself flagged the chunk noisy)
+    # - 'high'  → relax the cos threshold by 0.05 (already-clear chunk)
+    cos_confirm = 0.60
+    cos_inferred = 0.50
+    if llm_conf == "high":
+        cos_confirm  -= 0.05
+        cos_inferred -= 0.05
+    block_confirm = (llm_conf == "low")
+
+    metrics = {
+        "cosine": cos,
+        "rules": len(rules),
+        "knowledge": len(knowledge),
+        "examples": len(examples),
+        "notes_chars": len(notes_md),
+        "llm_confidence": llm_conf or "unset",
+    }
+    if (cos >= cos_confirm and has_substance and not block_confirm
+            and payload.get("retry_count", 0) <= 1):
         payload["confidence"] = "confirmed"
         payload["reviewer"] = "auto"
-        _set_record(
-            payload, "reviewed_confirmed", logger,
-            metrics={"cosine": cos, "rules": len(rules), "notes_chars": len(notes_md)},
-        )
-    elif cos >= 0.50 and has_substance:
+        _set_record(payload, "reviewed_confirmed", logger, metrics=metrics)
+    elif cos >= cos_inferred and has_substance:
         payload["confidence"] = "inferred"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_inferred", logger, metrics={"cosine": cos})
+        _set_record(payload, "reviewed_inferred", logger, metrics=metrics)
     else:
         payload["confidence"] = "unverified"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_unverified", logger, metrics={"cosine": cos})
+        _set_record(payload, "reviewed_unverified", logger, metrics=metrics)
     _set_stage(payload, "review", "completed", logger)
     return payload
 
