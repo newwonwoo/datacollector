@@ -127,21 +127,42 @@ def run_pipeline(
             _fail_run(payload, logger, run_id)
             return payload
 
-        # Dedup check after collecting transcript_hash
+        # Dedup check after collecting transcript_hash. Rule C ("same
+        # source_key + same transcript_hash") normally short-circuits the
+        # rest of the pipeline. But if the existing record never reached a
+        # success state (e.g., invalid from a prior LLM_HTTP_404), we want
+        # to actually re-run extract/normalize/.../promote — so we downgrade
+        # Rule C to a fall-through whenever the existing status is non-success.
+        _SUCCESS_STATES = {
+            "promoted", "reviewed_confirmed", "reviewed_inferred",
+            "reviewed_unverified", "reviewed_rejected",
+        }
         rule = store.dedup_rule(payload["source_key"], payload["transcript_hash"])
         if rule == "C":
+            existing = store.get(payload["source_key"]) or {}
+            if existing.get("record_status") in _SUCCESS_STATES:
+                logger.log(
+                    entity_type="record",
+                    entity_id=payload["source_key"],
+                    from_status="collected",
+                    to_status="collected",
+                    run_id=run_id,
+                    reason="rule_c_duplicate",
+                )
+                for s in ("extract", "normalize", "review", "promote", "package"):
+                    payload["stage_status"][s] = "skipped"
+                logger.log(entity_type="run", entity_id=run_id, from_status="running", to_status="completed", run_id=run_id)
+                return payload
+            # Else: prior record was failed/in-progress; treat as a retry,
+            # i.e. fall through to the regular extract→...→promote flow.
             logger.log(
                 entity_type="record",
                 entity_id=payload["source_key"],
                 from_status="collected",
                 to_status="collected",
                 run_id=run_id,
-                reason="rule_c_duplicate",
+                reason=f"rule_c_retry_after_{existing.get('record_status') or 'unknown'}",
             )
-            for s in ("extract", "normalize", "review", "promote", "package"):
-                payload["stage_status"][s] = "skipped"
-            logger.log(entity_type="run", entity_id=run_id, from_status="running", to_status="completed", run_id=run_id)
-            return payload
 
         if rule == "B":
             existing = store.get(payload["source_key"]) or {}
