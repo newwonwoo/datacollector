@@ -165,6 +165,30 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-15. residential IP 임에도 YouTube 가 자막 fetch 를 throttle (HTTP 429)
+### 증상
+- `cookies.txt` + `curl_cffi` 다 갖췄는데도 timedtext URL 페치에서 HTTP 429
+- 심지어 `dQw4w9WgXcQ` (Rick Astley) 같은 무난한 영상에서도 429
+- VPN/핫스팟으로 IP 갈면 즉시 풀림 → 봇 탐지지 영상 단위 차단 아님
+### 원인 (4종 누적)
+1. **`_default_http` 가 헤더 없이 호출** — 기본 UA 가 `Python-urllib/3.x`. anti-bot 시스템에 즉시 잡힘.
+2. **Referer / Accept-Language / Cookie 없음** — 브라우저 트래픽 시그니처와 너무 다름.
+3. **재시도 폭주** — yt-dlp player_client 6 + ytapi 1 + timedtext direct 4 = 영상 1개당 최대 11회. 실패 run 4~5번 누적 시 200회+.
+4. **caption URL fetch 에는 cookies.txt 가 안 붙음** — yt-dlp 어 player API 호출 때만 cookiefile 전달. 그 다음 우리가 직접 받는 timedtext URL 호출은 익명 → 세션 끊김.
+### 예방 (구현됨)
+- `_default_http` 가 항상 진짜 Chrome UA 송신, youtube/googlevideo/ytimg 호스트엔 Referer + Accept-Language 추가.
+- `_build_opener_with_cookies()` 가 `MozillaCookieJar` 로 `cookies.txt` 파싱하여 youtube 호스트 호출에 자동 첨부.
+- `client_sets` 6 → 3 (`None`, `android_vr`, `ios+tv_embedded`) 로 축소.
+- `captions()` 각 호출 전 0.25~0.6초 jitter (`COLLECTOR_YT_NO_JITTER=1` 로 끌 수 있음 — 테스트용).
+### 운영 가이드
+- 한 번 throttle 걸리면 같은 IP 에서 풀릴 때까지 수 시간 소요 가능. **Cloudflare WARP** 같은 무료 VPN 으로 IP 갈면 즉시 풀림.
+- cookies.txt 는 만료되니 막힐 때 다시 export.
+### 대응 완료?
+- ✅ 4가지 mitigation 어댑터 구현
+- ✅ G-15 영구 기록
+
+---
+
 ## G-13. YouTube 자막 수집이 GitHub Actions에서 전멸 (403/Forbidden)
 ### 증상
 - 대시보드에서 실행 → `collect` 스테이지에서 전부 `YT_NO_TRANSCRIPT` / `HTTP_403`

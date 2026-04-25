@@ -1,18 +1,79 @@
 """YouTube Data API v3 + timedtext captions adapter."""
 from __future__ import annotations
 
+import http.cookiejar
 import json
+import os
+import random
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
 from ..services import MockError
 
+# A real desktop Chrome UA. Without this, urllib defaults to
+# `Python-urllib/3.x` which YouTube's anti-bot tier flags instantly.
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+# Process-cached opener loaded with the user's cookies.txt jar (when present).
+# Caching avoids reparsing the file on every video. Cleared if mtime changes.
+_OPENER_CACHE: dict[str, Any] = {"path": None, "mtime": None, "opener": None}
+
+
+def _build_opener_with_cookies() -> urllib.request.OpenerDirector:
+    cookies_path = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
+    if not cookies_path or not os.path.exists(cookies_path):
+        return urllib.request.build_opener()
+    mtime = os.path.getmtime(cookies_path)
+    if (
+        _OPENER_CACHE["path"] == cookies_path
+        and _OPENER_CACHE["mtime"] == mtime
+        and _OPENER_CACHE["opener"] is not None
+    ):
+        return _OPENER_CACHE["opener"]
+    jar = http.cookiejar.MozillaCookieJar()
+    try:
+        jar.load(cookies_path, ignore_discard=True, ignore_expires=True)
+    except Exception:  # noqa: BLE001
+        return urllib.request.build_opener()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    _OPENER_CACHE.update({"path": cookies_path, "mtime": mtime, "opener": opener})
+    return opener
+
+
+def _is_youtube(url: str) -> bool:
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    return host.endswith("youtube.com") or host.endswith("ytimg.com") or host.endswith("googlevideo.com")
+
 
 def _default_http(method: str, url: str, *, headers: dict | None = None, data: bytes | None = None) -> dict:
-    req = urllib.request.Request(url, method=method, headers=headers or {}, data=data)
+    """HTTP call with browser-like headers and (when available) the cookies jar.
+
+    Anti-bot mitigation per GOTCHAS G-15: bare `Python-urllib/3.x` requests
+    against `youtube.com`/`googlevideo.com` get IP-throttled within ~50 calls.
+    We always send a real Chrome UA, and on YouTube hosts we add Referer +
+    Accept-Language and attach the user's cookies.txt session if exported.
+    """
+    h: dict[str, str] = {"User-Agent": _DEFAULT_UA}
+    if _is_youtube(url):
+        h.setdefault("Referer", "https://www.youtube.com/")
+        h.setdefault("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.8")
+    if headers:
+        h.update(headers)
+
+    req = urllib.request.Request(url, method=method, headers=h, data=data)
+    opener = _build_opener_with_cookies() if _is_youtube(url) else urllib.request.build_opener()
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with opener.open(req, timeout=15) as resp:
             body = resp.read().decode("utf-8")
             return {"status": resp.status, "body": body}
     except urllib.error.HTTPError as e:
@@ -76,6 +137,12 @@ class YouTubeAdapter:
         (full User-Agent, cookies, Innertube). youtube-transcript-api is
         secondary (gets blocked with 403 more often). timedtext is last resort.
         """
+        # G-15: jitter between videos so the request stream doesn't look
+        # mechanically uniform (5 hits in 5 seconds = bot pattern).
+        # COLLECTOR_YT_NO_JITTER=1 disables this for tests / scripted services.
+        if not os.environ.get("COLLECTOR_YT_NO_JITTER"):
+            time.sleep(random.uniform(0.25, 0.6))
+
         errors: list[str] = []
 
         # 1st: yt-dlp Python library
@@ -152,7 +219,6 @@ class YouTubeAdapter:
         cookies file via env COLLECTOR_YT_COOKIES_FILE (path to cookies.txt
         exported from a real browser).
         """
-        import os
         try:
             from yt_dlp import YoutubeDL  # type: ignore
         except ImportError:
@@ -160,19 +226,15 @@ class YouTubeAdapter:
 
         cookies = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
 
-        # Try multiple YouTube player_clients in order. yt-dlp's own default
-        # progression (None == let yt-dlp choose, currently includes
-        # `android_vr` which doesn't need a JS runtime) goes first because
-        # newer yt-dlp versions deprecate forcing legacy clients without
-        # `--js-runtimes deno`. The forced clients act as fallbacks for
-        # environments where the default is rejected by IP-based blocks.
+        # Try a small, conservative set of YouTube player_clients (G-15:
+        # high attempt counts compound bot signals on a single IP). The
+        # first entry == None lets yt-dlp pick its own default progression
+        # (currently includes `android_vr`, which works without a JS runtime).
+        # Two cookie-friendly fallbacks follow.
         client_sets: list[list[str] | None] = [
             None,
             ["android_vr"],
             ["ios", "tv_embedded"],
-            ["android"],
-            ["web", "web_creator"],
-            ["mweb"],
         ]
         last_err = ""
         for clients in client_sets:
