@@ -176,11 +176,15 @@ class YouTubeAdapter:
         ]
         last_err = ""
         for clients in client_sets:
+            # IMPORTANT: do NOT pass writesubtitles / writeautomaticsub /
+            # subtitleslangs here. With recent yt-dlp (≥2026.3) those flags
+            # trigger format selection that fails with "Requested format is
+            # not available" / "Please sign in" even when extract_info
+            # succeeds. We only need the metadata to read the caption
+            # track URLs out of info["automatic_captions"] / ["subtitles"]
+            # and fetch them via self.http() ourselves.
             opts: dict[str, Any] = {
                 "skip_download": True,
-                "writesubtitles": True,
-                "writeautomaticsub": True,
-                "subtitleslangs": ["ko", "en"],
                 "quiet": True,
                 "no_warnings": True,
             }
