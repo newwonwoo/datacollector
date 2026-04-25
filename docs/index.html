@@ -1645,12 +1645,17 @@ function updateRunBusyBanner(activeRun){
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
   // Try two sources to bypass CDN/proxy 403: absolute jsDelivr → relative → raw.githubusercontent.
+  // In local mode the local server's /status.json is authoritative (the
+  // background worker rewrites it after each run); falling back to CDN
+  // would surface a stale main-branch snapshot and mislead the dashboard.
   const host = document.getElementById('op-strip');
-  const urls = [
-    `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
-    `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
-    `status.json?t=${Date.now()}`,
-  ];
+  const urls = isLocalMode
+    ? [`status.json?t=${Date.now()}`]
+    : [
+        `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
+        `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
+        `status.json?t=${Date.now()}`,
+      ];
   try {
     let s = null;
     for (const u of urls){
