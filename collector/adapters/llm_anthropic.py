@@ -19,8 +19,18 @@ SYSTEM_PROMPT = (
 )
 
 
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+
 def _default_http(method: str, url: str, *, headers: dict | None = None, data: bytes | None = None) -> dict:
-    req = urllib.request.Request(url, method=method, headers=headers or {}, data=data)
+    h = {"User-Agent": _BROWSER_UA, "Accept": "application/json"}
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, method=method, headers=h, data=data)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return {"status": resp.status, "body": resp.read().decode("utf-8")}
