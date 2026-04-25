@@ -1715,7 +1715,7 @@ async function loadOpStrip(){
       chips.push(`<span class="op-chip">📚 <span class="label">총:</span> <span class="val">${s.records.total}</span></span>`);
       chips.push(`<span class="op-chip">✅ <span class="label">Promoted:</span> <span class="val">${s.records.promoted}</span></span>`);
     }
-    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at?.replace('T',' ').slice(0,16) || '?'}</span>`);
+    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at ? fmtTime(s.updated_at) : '?'}</span>`);
     host.innerHTML = chips.join('');
   } catch(e){
     host.innerHTML = '<span class="muted">운영 상태 로드 실패</span>';
