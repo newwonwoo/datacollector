@@ -165,6 +165,29 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-17. Windows PowerShell 5.1 + 비ASCII 파일 = 무조건 깨짐
+### 증상
+- `.ps1` / `.env` / `.txt` 파일에 한글이 들어있고 해당 파일이 UTF-8 (BOM 없음) 으로 저장된 경우, PowerShell 5.1 (Win10/11 기본) 이 파일을 시스템 codepage (한국=CP949) 로 디코드 → 한글이 mojibake 가 되고, 거기에 `\` 나 `"` 가 들어있으면 파서가 "unexpected token / unterminated string" 으로 죽음.
+- `Add-Content -Path .env -Value "..."` 도 기본 인코딩 문제로 옛날 줄과 새 줄 인코딩이 섞여서 read 시 에러.
+- `Get-Content` 로 파일 본문을 보려고 하면 한글이 다 깨져 보이는 것도 같은 원인 (파일은 멀쩡, display 만 깨짐).
+### 원인
+- Windows PowerShell 5.1 기본 인코딩 = system codepage. UTF-8 BOM 없으면 자동 감지 실패. (PowerShell 7+ / `pwsh` 는 UTF-8 기본.)
+- 우리 `Write` 툴은 BOM 없는 UTF-8 만 출력.
+### 예방 (앞으로 .ps1/.bat/.cmd 작성 시)
+1. **모든 사용자 보이는 텍스트(Write-Host, echo, REM 주석)를 ASCII-only 로 작성.** 한글 메시지 필요하면 별도 .md 또는 콘솔 외 위치로.
+2. 또는 파일 첫 바이트에 UTF-8 BOM 명시 (`﻿`) — 이건 우리 Write 툴로 못 함.
+3. `Add-Content` / `Set-Content` 는 기본 인코딩 신뢰하지 말고 `-Encoding UTF8` 명시.
+4. `Get-Content` 로 한글 파일 읽을 땐 `-Encoding UTF8` 항상 붙임.
+### 같은 실수 이력
+- `.env` 추가 시 UTF-16 mojibake (`COLLECTOR_YT_COOKIES_FILE` 변수명 자체가 두 번 적힘 사건)
+- `data_store/*.json` 한글 표시할 때 mojibake 보고 사용자가 "파일 깨졌다" 오해
+- `install_desktop_shortcut.ps1` 한글 메시지 → 파서 에러 (이번 세션)
+### 대응 완료?
+- ✅ install_desktop_shortcut.ps1 ASCII-only 로 재작성
+- ✅ G-17 영구 기록 (다음 세션 Claude 반복 방지용)
+
+---
+
 ## G-16. transcript 가 raw json3/vtt 로 저장되어 LLM 토큰을 5–10배 태움
 ### 증상
 - `data_store/.../youtube__*.json` 의 `transcript` 필드에 `{"wireMagic":"pb3","events":[{"segs":[{"utf8":"..."}]}]}` 같은 구조형 JSON 통째.
