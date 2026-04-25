@@ -11,9 +11,10 @@ from ..services import MockError
 
 
 SYSTEM_PROMPT = (
-    "너는 한국어 유튜브 자막에서 매매 전략의 summary, rules, tags를 JSON으로 추출한다. "
+    "너는 한국어 유튜브 자막에서 영상의 핵심 지식을 JSON으로 추출한다. "
+    "도메인은 영상 내용에 맞춘다 — 미리 가정하지 말 것. "
     "반드시 다음 스키마만 출력한다: {\"summary\": str, \"rules\": [str], \"tags\": [str]}. "
-    "다른 설명/마크다운/줄글 금지."
+    "영상에 없는 도메인의 규칙을 끼워넣지 말 것. 다른 설명/마크다운/줄글 금지."
 )
 
 
@@ -33,7 +34,7 @@ class AnthropicAdapter:
         self,
         api_key: str,
         model: str = "claude-sonnet-4-6",
-        prompt_version: str = "extract_saju_v1",
+        prompt_version: str = "extract_generic_v1",
         http: Callable = _default_http,
     ):
         self.api_key = api_key
