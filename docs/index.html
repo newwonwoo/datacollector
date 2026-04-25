@@ -536,6 +536,16 @@
       <input id="count" type="number" value="10" min="1" max="200" title="수집 후보 영상 수 (최대 200)" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
     </div>
+    <div class="form-row" style="margin-top:8px;align-items:center">
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px">최소 조회수</label>
+      <input id="min-views" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 영상은 검색 단에서 제외 (0=필터 없음)"
+             style="max-width:140px" />
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:78px;margin-left:6px">최소 구독자수</label>
+      <input id="min-subs" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 채널의 영상은 제외 (0=필터 없음)"
+             style="max-width:140px" />
+    </div>
     <div id="run-busy" class="run-busy">
       <span class="dots"><span></span><span></span><span></span></span>
       <span id="run-busy-text">실행 중…</span>
@@ -858,10 +868,17 @@ async function runQueryLocal(q, c){
   // so they don't see the previous run's stale state.
   resetPipelineDiagram();
   try {
+    const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
+    const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({query: q, count: parseInt(c, 10) || 10}),
+      body: JSON.stringify({
+        query: q,
+        count: parseInt(c, 10) || 10,
+        min_views: minViews,
+        min_subscribers: minSubs,
+      }),
     });
     if (resp.status === 202){
       toast('✓ 로컬 실행 시작');

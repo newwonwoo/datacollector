@@ -245,6 +245,14 @@ def make_handler(
                 count = 10
             count = max(1, min(count, 200))
             llm_choice = body.get("llm_choice") or body.get("llm") or None
+            try:
+                min_views = max(0, int(body.get("min_views") or 0))
+            except (TypeError, ValueError):
+                min_views = 0
+            try:
+                min_subscribers = max(0, int(body.get("min_subscribers") or 0))
+            except (TypeError, ValueError):
+                min_subscribers = 0
             run_id = f"api_{uuid.uuid4().hex[:8]}"
 
             with _RUN_LOCK:
@@ -264,6 +272,8 @@ def make_handler(
                     "query": query,
                     "count": count,
                     "llm_choice": llm_choice,
+                    "min_views": min_views,
+                    "min_subscribers": min_subscribers,
                     "data_store": data_store,
                     "logs_root": logs_root,
                     "docs_dir": docs_dir,
@@ -271,7 +281,10 @@ def make_handler(
                 daemon=True,
             )
             t.start()
-            self._send_json(202, {"ok": True, "run_id": run_id, "query": query, "count": count})
+            self._send_json(202, {
+                "ok": True, "run_id": run_id, "query": query, "count": count,
+                "min_views": min_views, "min_subscribers": min_subscribers,
+            })
 
         def _handle_run_status(self) -> None:
             with _RUN_LOCK:
@@ -325,6 +338,8 @@ def _run_worker(
     data_store: Path,
     logs_root: Path,
     docs_dir: Path,
+    min_views: int = 0,
+    min_subscribers: int = 0,
 ) -> None:
     """Run the pipeline in a background thread and persist status."""
     # Lazy import so the handler module doesn't drag pipeline deps in during
@@ -338,6 +353,8 @@ def _run_worker(
             data_store_root=data_store,
             logs_root=logs_root,
             llm_choice=llm_choice,
+            min_views=min_views,
+            min_subscribers=min_subscribers,
         )
         with _RUN_LOCK:
             _RUN_STATE.update({

@@ -232,6 +232,8 @@ def run_query(
     logs_root: Path = Path("logs"),
     llm_choice: str | None = None,
     target_channel_id: str | None = None,
+    min_views: int = 0,
+    min_subscribers: int = 0,
 ) -> dict:
     """Run the pipeline for `query`. Returns a summary dict.
 
@@ -271,6 +273,30 @@ def run_query(
             except Exception:
                 candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
+
+        # Quality filter: enrich with view/subscriber counts and drop
+        # anything below user-supplied thresholds. Cheap (1 unit per 50
+        # video IDs + 1 unit per 50 channel IDs).
+        if candidates and (min_views > 0 or min_subscribers > 0):
+            try:
+                from ..adapters.youtube import YouTubeAdapter
+                yt_key = os.environ.get("YOUTUBE_API_KEY")
+                if yt_key:
+                    YouTubeAdapter(yt_key).enrich_stats(candidates)
+                    before = len(candidates)
+                    candidates = [
+                        c for c in candidates
+                        if c.get("view_count", 0) >= min_views
+                        and c.get("subscriber_count", 0) >= min_subscribers
+                    ]
+                    logger.log(
+                        entity_type="run", entity_id="pre_filter",
+                        from_status=None, to_status="quality_filtered",
+                        reason=f"min_views={min_views} min_subs={min_subscribers}",
+                        metrics={"before": before, "after": len(candidates)},
+                    )
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"[run] quality filter skipped: {e}\n")
     else:
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)

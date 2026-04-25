@@ -189,6 +189,78 @@ class YouTubeAdapter:
                 break
         return results[:max_results]
 
+    def enrich_stats(
+        self,
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add `view_count` and `subscriber_count` to each candidate.
+
+        Two batched API calls (1 unit each per 50 IDs):
+          - videos.list?part=statistics → viewCount per video_id
+          - channels.list?part=statistics → subscriberCount per channel_id
+
+        Candidates are mutated in place AND returned. Missing/private
+        stats become 0 (not None) so callers can filter with `>=`.
+        """
+        if not candidates:
+            return candidates
+        # Dedupe ids; YouTube takes up to 50 per call.
+        video_ids = list({c.get("video_id") for c in candidates if c.get("video_id")})
+        channel_ids = list({c.get("channel_id") for c in candidates if c.get("channel_id")})
+
+        video_stats: dict[str, int] = {}
+        for i in range(0, len(video_ids), 50):
+            chunk = video_ids[i:i + 50]
+            params = {
+                "key": self.api_key,
+                "part": "statistics",
+                "id": ",".join(chunk),
+            }
+            url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+            resp = self.http("GET", url)
+            try:
+                self._raise_for(resp)
+            except Exception:
+                continue
+            body = json.loads(resp["body"])
+            for it in body.get("items", []):
+                vid = it.get("id", "")
+                vc = (it.get("statistics") or {}).get("viewCount")
+                if vid and vc is not None:
+                    try:
+                        video_stats[vid] = int(vc)
+                    except (TypeError, ValueError):
+                        video_stats[vid] = 0
+
+        channel_stats: dict[str, int] = {}
+        for i in range(0, len(channel_ids), 50):
+            chunk = channel_ids[i:i + 50]
+            params = {
+                "key": self.api_key,
+                "part": "statistics",
+                "id": ",".join(chunk),
+            }
+            url = f"https://www.googleapis.com/youtube/v3/channels?{urllib.parse.urlencode(params)}"
+            resp = self.http("GET", url)
+            try:
+                self._raise_for(resp)
+            except Exception:
+                continue
+            body = json.loads(resp["body"])
+            for it in body.get("items", []):
+                cid = it.get("id", "")
+                sc = (it.get("statistics") or {}).get("subscriberCount")
+                if cid and sc is not None:
+                    try:
+                        channel_stats[cid] = int(sc)
+                    except (TypeError, ValueError):
+                        channel_stats[cid] = 0
+
+        for c in candidates:
+            c["view_count"] = video_stats.get(c.get("video_id", ""), 0)
+            c["subscriber_count"] = channel_stats.get(c.get("channel_id", ""), 0)
+        return candidates
+
     def captions(self, video_id: str) -> dict[str, Any]:
         """Multi-path captions fetch with per-path error capture.
 
