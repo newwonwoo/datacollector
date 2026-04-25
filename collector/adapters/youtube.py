@@ -47,6 +47,65 @@ def _build_opener_with_cookies() -> urllib.request.OpenerDirector:
     return opener
 
 
+def _captions_to_plain_text(body: str, ext: str) -> str:
+    """Convert a caption-track payload to plain text suitable for the LLM.
+
+    Without this, transcripts hit the LLM as raw json3/vtt/ttml — multi-KB
+    of structural fluff that inflates token cost 5–10× and burns daily
+    quota fast (G-16 root cause).
+    """
+    if not body:
+        return ""
+    ext = (ext or "").lower()
+    body_strip = body.lstrip()
+    # json3 / heuristic JSON
+    if ext == "json3" or body_strip.startswith("{"):
+        try:
+            obj = json.loads(body)
+            parts: list[str] = []
+            for ev in obj.get("events") or []:
+                segs = ev.get("segs") or []
+                line = "".join(s.get("utf8", "") for s in segs)
+                if line and line != "\n":
+                    parts.append(line.strip())
+            txt = " ".join(p for p in parts if p)
+            if txt:
+                return txt
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+    # vtt / srt
+    if ext in {"vtt", "srt"} or "-->" in body[:200]:
+        out: list[str] = []
+        for raw in body.splitlines():
+            ln = raw.strip()
+            if not ln:
+                continue
+            if ln.startswith("WEBVTT") or ln.startswith("NOTE") or "-->" in ln:
+                continue
+            if ln.isdigit():
+                continue
+            # strip simple HTML/VTT cue tags like <c> <00:00:00.000>
+            import re as _re
+            ln = _re.sub(r"<[^>]+>", "", ln)
+            if ln:
+                out.append(ln)
+        if out:
+            return " ".join(out)
+    # srv1/srv2/srv3/ttml — XML-ish; pull text between tags
+    if ext.startswith("srv") or ext == "ttml" or body_strip.startswith("<"):
+        import re as _re
+        # decode common entities and strip tags
+        cleaned = _re.sub(r"<[^>]+>", " ", body)
+        cleaned = (cleaned.replace("&amp;", "&")
+                   .replace("&lt;", "<").replace("&gt;", ">")
+                   .replace("&quot;", '"').replace("&#39;", "'"))
+        cleaned = _re.sub(r"\s+", " ", cleaned).strip()
+        if cleaned:
+            return cleaned
+    # Last resort: return whatever we got, callers can decide.
+    return body.strip()
+
+
 def _is_youtube(url: str) -> bool:
     try:
         host = urllib.parse.urlparse(url).hostname or ""
@@ -159,19 +218,21 @@ class YouTubeAdapter:
         if res.get("error"):
             errors.append(f"ytapi:{res['error']}")
 
-        # 3rd: timedtext direct
+        # 3rd: timedtext direct (use json3 for trivial plain-text conversion)
         for lang in ("ko", "en"):
             for kind in ("", "asr"):
-                params = {"v": video_id, "lang": lang, "fmt": "srv3"}
+                params = {"v": video_id, "lang": lang, "fmt": "json3"}
                 if kind:
                     params["kind"] = kind
                 url = f"{self.TIMEDTEXT_URL}?{urllib.parse.urlencode(params)}"
                 resp = self.http("GET", url)
                 if resp["status"] == 200 and resp["body"].strip():
-                    return {
-                        "source": "asr" if kind == "asr" else "manual",
-                        "text": resp["body"],
-                    }
+                    text = _captions_to_plain_text(resp["body"], "json3")
+                    if text.strip():
+                        return {
+                            "source": "asr" if kind == "asr" else "manual",
+                            "text": text,
+                        }
         errors.append("timedtext:all-empty")
         return {"source": "none", "text": "", "error": " | ".join(errors)}
 
@@ -265,18 +326,30 @@ class YouTubeAdapter:
                 last_err = f"{tag}:{type(e).__name__}"
                 continue
 
-            # Look for any caption tracks
+            # Look for any caption tracks. Prefer the json3 format because
+            # it's trivially convertible to plain text (G-16); other formats
+            # like vtt/ttml work but get parsed less precisely. Whatever is
+            # returned, we coerce it to plain text before handing back —
+            # otherwise the LLM stage gets multi-KB of structural fluff
+            # that inflates token cost ~5–10× and exhausts the daily quota.
             for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
                 tracks_by_lang = (info or {}).get(key) or {}
                 for lang in ("ko", "en"):
                     tracks = tracks_by_lang.get(lang) or []
-                    for t in tracks:
+                    # json3 first; everything else after.
+                    tracks_sorted = sorted(
+                        tracks, key=lambda t: 0 if t.get("ext") == "json3" else 1
+                    )
+                    for t in tracks_sorted:
                         url = t.get("url")
                         if not url:
                             continue
                         resp = self.http("GET", url)
-                        if resp["status"] == 200 and resp["body"].strip():
-                            return {"source": source_name, "text": resp["body"]}
+                        if resp["status"] != 200 or not resp["body"].strip():
+                            continue
+                        text = _captions_to_plain_text(resp["body"], t.get("ext", ""))
+                        if text.strip():
+                            return {"source": source_name, "text": text}
             # info ok but no tracks — try next client
             last_err = f"{tag}:no_tracks"
         return {"source": "none", "text": "", "error": last_err or "all_clients_failed"}

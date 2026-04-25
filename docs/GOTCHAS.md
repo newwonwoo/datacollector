@@ -165,6 +165,24 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-16. transcript 가 raw json3/vtt 로 저장되어 LLM 토큰을 5–10배 태움
+### 증상
+- `data_store/.../youtube__*.json` 의 `transcript` 필드에 `{"wireMagic":"pb3","events":[{"segs":[{"utf8":"..."}]}]}` 같은 구조형 JSON 통째.
+- Gemini extract 단계가 `cost_usd: $33` 등 비정상적으로 높음. 일일 quota 즉시 소진. 추출 정확도도 떨어짐.
+### 원인
+- `_captions_via_ytdlp_lib` 가 yt-dlp 가 알려준 caption track URL 의 응답 body 를 **포맷 변환 없이** 그대로 `transcript` 로 저장.
+- 그 응답이 json3/vtt/srv3 등 구조형 포맷이면 통째로 LLM 입력으로 들어감.
+### 예방 (구현됨)
+- `_captions_to_plain_text(body, ext)` 헬퍼가 json3/vtt/srt/srv*/ttml 모두 plain text 로 변환.
+- json3 트랙이 있으면 우선 선택 (가장 깔끔한 변환).
+- timedtext direct 도 `fmt=srv3` → `fmt=json3` 로 변경.
+### 대응 완료?
+- ✅ json3/vtt/xml 파서 추가 + 트랙 우선순위 (json3 first)
+- ✅ 테스트 3개 (json3 strip / vtt strip / 우선순위)
+- ❌ 이미 저장된 raw json3 레코드 정리 — 사용자가 `data_store/` 비우거나, 무시하고 새 run 으로 덮어씀
+
+---
+
 ## G-15. residential IP 임에도 YouTube 가 자막 fetch 를 throttle (HTTP 429)
 ### 증상
 - `cookies.txt` + `curl_cffi` 다 갖췄는데도 timedtext URL 페치에서 HTTP 429
