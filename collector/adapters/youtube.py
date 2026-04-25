@@ -160,8 +160,15 @@ class YouTubeAdapter:
 
         cookies = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
 
-        # Try multiple player clients — newer yt-dlp supports many fallbacks
-        client_sets = [
+        # Try multiple YouTube player_clients in order. yt-dlp's own default
+        # progression (None == let yt-dlp choose, currently includes
+        # `android_vr` which doesn't need a JS runtime) goes first because
+        # newer yt-dlp versions deprecate forcing legacy clients without
+        # `--js-runtimes deno`. The forced clients act as fallbacks for
+        # environments where the default is rejected by IP-based blocks.
+        client_sets: list[list[str] | None] = [
+            None,
+            ["android_vr"],
             ["ios", "tv_embedded"],
             ["android"],
             ["web", "web_creator"],
@@ -169,25 +176,27 @@ class YouTubeAdapter:
         ]
         last_err = ""
         for clients in client_sets:
-            opts = {
+            opts: dict[str, Any] = {
                 "skip_download": True,
                 "writesubtitles": True,
                 "writeautomaticsub": True,
                 "subtitleslangs": ["ko", "en"],
                 "quiet": True,
                 "no_warnings": True,
-                "extractor_args": {"youtube": {"player_client": clients}},
             }
+            if clients is not None:
+                opts["extractor_args"] = {"youtube": {"player_client": clients}}
             if cookies and os.path.exists(cookies):
                 opts["cookiefile"] = cookies
 
+            tag = ",".join(clients) if clients else "default"
             try:
                 with YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(
                         f"https://www.youtube.com/watch?v={video_id}", download=False
                     )
             except Exception as e:  # noqa: BLE001
-                last_err = f"{','.join(clients)}:{type(e).__name__}"
+                last_err = f"{tag}:{type(e).__name__}"
                 continue
 
             # Look for any caption tracks
@@ -203,7 +212,7 @@ class YouTubeAdapter:
                         if resp["status"] == 200 and resp["body"].strip():
                             return {"source": source_name, "text": resp["body"]}
             # info ok but no tracks — try next client
-            last_err = f"{','.join(clients)}:no_tracks"
+            last_err = f"{tag}:no_tracks"
         return {"source": "none", "text": "", "error": last_err or "all_clients_failed"}
 
     def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:
