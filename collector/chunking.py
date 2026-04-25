@@ -43,10 +43,15 @@ def reduce_outputs(outputs: list[dict]) -> dict:
     - summary: concat top snippets then trim to 280 chars.
     - rules: flat de-dup preserving order.
     - tags: union, cap 5.
+    - notes_md: concatenate per-chunk markdown notes with chunk separators
+      so the final vault note retains full chunk-level context (the
+      "knowledge library" use case — we don't want to throw away the
+      detailed prose just because the transcript was long enough to chunk).
     """
     summary_parts: list[str] = []
     rules: list[str] = []
     tags: list[str] = []
+    notes_parts: list[str] = []
     seen_rules: set[str] = set()
     seen_tags: set[str] = set()
     for o in outputs:
@@ -63,9 +68,18 @@ def reduce_outputs(outputs: list[dict]) -> dict:
                 seen_tags.add(t)
                 if len(tags) >= 5:
                     break
+        n = (o.get("notes_md") or "").strip()
+        if n:
+            notes_parts.append(n)
     combined_summary = " ".join(summary_parts)
     # Trim keeping sentence boundaries when possible
     if len(combined_summary) > 280:
         cut = combined_summary.rfind(".", 0, 280)
         combined_summary = combined_summary[: cut + 1 if cut > 50 else 280].strip()
-    return {"summary": combined_summary, "rules": rules, "tags": tags[:5]}
+    combined_notes = "\n\n".join(notes_parts)
+    return {
+        "summary": combined_summary,
+        "rules": rules,
+        "tags": tags[:5],
+        "notes_md": combined_notes,
+    }

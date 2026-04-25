@@ -78,6 +78,7 @@ def new_payload(
         "summary": "",
         "rules": [],
         "tags": [],
+        "notes_md": "",
         "history": [],
     }
 

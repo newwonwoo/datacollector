@@ -151,6 +151,7 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
             payload["summary"] = out.get("summary", "")
             payload["rules"] = list(out.get("rules", []))
             payload["tags"] = list(out.get("tags", []))[:5]
+            payload["notes_md"] = out.get("notes_md", "")
             payload["llm_context"]["input_tokens"] = len(transcript)
             payload["llm_context"]["output_tokens"] = len(payload["summary"]) + sum(
                 len(r) for r in payload["rules"]

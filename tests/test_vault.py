@@ -100,3 +100,51 @@ def test_pipeline_skips_vault_when_disabled(tmp_path):
     p = new_payload(video_id="NOVAULT0001", run_id="rv2")
     run_pipeline(p, services, store, logger, use_lock=False, vault_root=None)
     assert not vault.exists()
+
+
+def test_render_note_includes_notes_md_when_present():
+    """When the LLM emits a detailed markdown note, the vault file should
+    surface it under '## 상세 노트' so users browsing Obsidian see the
+    full knowledge-library content, not just summary + rules."""
+    from collector.payload import new_payload
+    from collector.vault import render_note
+
+    p = new_payload(video_id="VIDNOTE0001", run_id="rn", title="자세한 노트")
+    p["summary"] = "한 줄 요약"
+    p["rules"] = ["규칙 하나"]
+    p["tags"] = ["tag1"]
+    p["notes_md"] = "## 핵심\n- 항목 A\n- 항목 B\n\n## 인용\n> 화자의 말"
+
+    out = render_note(p)
+    assert "## 상세 노트" in out
+    assert "## 핵심" in out
+    assert "항목 A" in out
+    assert "화자의 말" in out
+
+
+def test_render_note_omits_notes_section_when_empty():
+    from collector.payload import new_payload
+    from collector.vault import render_note
+
+    p = new_payload(video_id="VIDNOTE0002", run_id="rn")
+    p["summary"] = "요약"
+    p["notes_md"] = ""
+    out = render_note(p)
+    assert "## 상세 노트" not in out
+
+
+def test_reduce_outputs_combines_notes_md():
+    """When a long transcript is chunked, each chunk's notes_md must end
+    up in the final reduced output — otherwise the knowledge-library
+    intent gets thrown away on long videos."""
+    from collector.chunking import reduce_outputs
+
+    chunk_outs = [
+        {"summary": "s1", "rules": ["r1"], "tags": ["t1"],
+         "notes_md": "## 1부\n첫 번째 청크"},
+        {"summary": "s2", "rules": ["r2"], "tags": ["t2"],
+         "notes_md": "## 2부\n두 번째 청크"},
+    ]
+    reduced = reduce_outputs(chunk_outs)
+    assert "1부" in reduced["notes_md"]
+    assert "2부" in reduced["notes_md"]

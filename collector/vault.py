@@ -59,8 +59,11 @@ def render_note(payload: dict[str, Any]) -> str:
         "## 요약",
         p.get("summary") or "(요약 없음)",
         "",
-        "## 규칙",
     ]
+    notes_md = (p.get("notes_md") or "").strip()
+    if notes_md:
+        lines += ["## 상세 노트", notes_md, ""]
+    lines += ["## 규칙"]
     if rules:
         for i, r in enumerate(rules, 1):
             lines.append(f"{i}. {r}")

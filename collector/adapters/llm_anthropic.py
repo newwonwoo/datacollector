@@ -13,8 +13,9 @@ from ..services import MockError
 SYSTEM_PROMPT = (
     "너는 한국어 유튜브 자막에서 영상의 핵심 지식을 JSON으로 추출한다. "
     "도메인은 영상 내용에 맞춘다 — 미리 가정하지 말 것. "
-    "반드시 다음 스키마만 출력한다: {\"summary\": str, \"rules\": [str], \"tags\": [str]}. "
-    "영상에 없는 도메인의 규칙을 끼워넣지 말 것. 다른 설명/마크다운/줄글 금지."
+    "반드시 다음 스키마만 출력한다: {\"summary\": str, \"rules\": [str], \"tags\": [str], \"notes_md\": str}. "
+    "notes_md 는 영상 전체 맥락을 마크다운 (## 소제목, 목록, 인용) 으로 상세 정리. "
+    "영상에 없는 도메인의 규칙을 끼워넣지 말 것. 출력은 유효한 JSON 한 개만, 다른 설명/줄글/코드펜스 금지."
 )
 
 
@@ -81,4 +82,5 @@ class AnthropicAdapter:
         if not isinstance(out, dict) or "summary" not in out or "rules" not in out:
             raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", f"missing keys")
         out.setdefault("tags", [])
+        out.setdefault("notes_md", "")
         return out
