@@ -239,6 +239,35 @@ def run_query(
         payloads, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
     )
 
+    # Pre-COLLECT dedup (G-15-related: don't waste caption fetches on
+    # already-known videos — saves bot-score, time, and Gemini quota).
+    # Pipeline-level Rule C still runs for transcript-change detection
+    # on records we DO process; this filter just skips ones we've already
+    # processed at all (active or archived).
+    pre_dedup = len(payloads)
+    seen: set[str] = set()
+    deduped: list = []
+    for p in payloads:
+        sk = p["source_key"]
+        if sk in seen:  # de-dup within the same search response
+            continue
+        if store.get(sk) is not None:  # already in store from prior run
+            continue
+        seen.add(sk)
+        deduped.append(p)
+    skipped_duplicates = pre_dedup - len(deduped)
+    if skipped_duplicates:
+        logger.log(
+            entity_type="run",
+            entity_id=run_id,
+            from_status=None,
+            to_status="dedup_skipped",
+            run_id=run_id,
+            reason=f"{skipped_duplicates} already-processed",
+            metrics={"skipped": skipped_duplicates, "kept": len(deduped)},
+        )
+    payloads = deduped
+
     per_video_status = []
     processed_payloads: list = []
     for payload in payloads:
@@ -268,6 +297,8 @@ def run_query(
         "mode": mode,
         "run_id": run_id,
         "candidates": len(candidates),
+        "skipped_duplicates": skipped_duplicates,
+        "processed": len(payloads),
         "promoted": sum(1 for r in per_video_status if r["record_status"] == "promoted"),
         "inferred": sum(1 for r in per_video_status if r["record_status"] == "reviewed_inferred"),
         "unverified": sum(1 for r in per_video_status if r["record_status"] == "reviewed_unverified"),
