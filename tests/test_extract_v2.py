@@ -59,14 +59,27 @@ def test_reduce_outputs_tie_yields_mixed():
     assert out["content_type"] == "mixed"
 
 
-def test_reduce_outputs_min_confidence():
+def test_reduce_outputs_majority_confidence():
+    """A single 'low' chunk shouldn't sink an otherwise-clear record.
+    Reduce takes the mode (majority) instead of the minimum."""
     chunks = [
         {"summary": "a", "rules": [], "llm_confidence": "high"},
-        {"summary": "b", "rules": [], "llm_confidence": "low"},
-        {"summary": "c", "rules": [], "llm_confidence": "medium"},
+        {"summary": "b", "rules": [], "llm_confidence": "high"},
+        {"summary": "c", "rules": [], "llm_confidence": "low"},
     ]
     out = reduce_outputs(chunks)
-    assert out["llm_confidence"] == "low"
+    assert out["llm_confidence"] == "high"
+
+
+def test_reduce_outputs_confidence_tie_breaks_to_higher_rank():
+    """1-1-1 split → tie-break to higher rank so review can promote."""
+    chunks = [
+        {"summary": "a", "rules": [], "llm_confidence": "high"},
+        {"summary": "b", "rules": [], "llm_confidence": "medium"},
+        {"summary": "c", "rules": [], "llm_confidence": "low"},
+    ]
+    out = reduce_outputs(chunks)
+    assert out["llm_confidence"] == "high"
 
 
 def test_reduce_outputs_dedups_v2_lists():
@@ -304,3 +317,30 @@ def test_chunk_default_size_fits_groq_8b():
     pieces = chunk(body)
     assert len(pieces) >= 2
     assert all(len(p) <= CHUNK_CHARS + 200 for p in pieces)  # +200 break-window slack
+
+
+def test_review_substantial_content_overrides_low_llm_confidence(tmp_path):
+    """When the merged record has rich substance (≥3 substantive items
+    OR ≥1500 chars of notes), `llm_confidence='low'` no longer blocks
+    the auto-confirm path. This matches the real-user case where every
+    chunked transcript landed at 'low' (a per-chunk artifact) but the
+    aggregated record had multiple rules + knowledge + examples."""
+    store = JSONStore(root=tmp_path / "ds")
+    logger = EventLogger()
+    p = _payload("RICHLOW0001")
+    services = build_mock_services(
+        captions_map={"RICHLOW0001": {"source": "manual", "text": "text"}},
+        llm_script=[{
+            "summary": _LONG,
+            "rules": ["r1", "r2"],
+            "knowledge": ["k1"],
+            "examples": [],
+            "tags": ["t"],
+            "llm_confidence": "low",
+            "notes_md": "## h\n" + ("자세한 본문 " * 200),
+        }],
+        similarity=0.75,
+    )
+    run_pipeline(p, services, store, logger, use_lock=False)
+    assert p["confidence"] == "confirmed"
+    assert p["record_status"] == "promoted"

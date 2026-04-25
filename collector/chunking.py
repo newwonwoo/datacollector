@@ -62,9 +62,8 @@ def reduce_outputs(outputs: list[dict]) -> dict:
     merged_lists: dict[str, list] = {f: [] for f in list_fields}
     seen: dict[str, set] = {f: set() for f in list_fields}
     type_votes: dict[str, int] = {}
+    confidence_votes: dict[str, int] = {}
     confidence_rank = {"low": 0, "medium": 1, "high": 2}
-    min_conf_rank: int | None = None
-    min_conf_label = ""
 
     for o in outputs:
         s = (o.get("summary") or "").strip()
@@ -83,10 +82,7 @@ def reduce_outputs(outputs: list[dict]) -> dict:
             type_votes[ct] = type_votes.get(ct, 0) + 1
         lc = (o.get("llm_confidence") or "").strip().lower()
         if lc in confidence_rank:
-            r = confidence_rank[lc]
-            if min_conf_rank is None or r < min_conf_rank:
-                min_conf_rank = r
-                min_conf_label = lc
+            confidence_votes[lc] = confidence_votes.get(lc, 0) + 1
 
     combined_summary = " ".join(summary_parts)
     if len(combined_summary) > 280:
@@ -103,6 +99,21 @@ def reduce_outputs(outputs: list[dict]) -> dict:
         if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
             content_type = "mixed"
 
+    # llm_confidence: majority (mode), tie-break by HIGHER confidence so a
+    # 3-way "high/medium/low" 1-1-1 split lands on 'high'. The previous
+    # min-based reduce was over-pessimistic — a single chunk that the LLM
+    # flagged "low" (often just because the chunk lacks full-video
+    # context) sank the whole record's confidence.
+    if not confidence_votes:
+        llm_confidence_out = ""
+    else:
+        ranked_c = sorted(
+            confidence_votes.items(),
+            key=lambda kv: (kv[1], confidence_rank[kv[0]]),
+            reverse=True,
+        )
+        llm_confidence_out = ranked_c[0][0]
+
     return {
         "summary": combined_summary,
         "rules": merged_lists["rules"],
@@ -113,5 +124,5 @@ def reduce_outputs(outputs: list[dict]) -> dict:
         "examples": merged_lists["examples"],
         "claims": merged_lists["claims"],
         "unclear": merged_lists["unclear"],
-        "llm_confidence": min_conf_label,
+        "llm_confidence": llm_confidence_out,
     }

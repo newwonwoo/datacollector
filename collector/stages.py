@@ -297,15 +297,25 @@ def stage_review(payload: dict, services: Services, logger: EventLogger) -> dict
     # Substance gate: any v2 substance bucket OR a meaningful notes body.
     has_substance = bool(rules or knowledge or examples) or len(notes_md) >= 150
 
+    # "Substantial" content overrides a `low` LLM self-rating. The model
+    # often emits 'low' for individual chunks because each chunk is by
+    # definition only a slice of the full video, not because the
+    # extracted material is actually noisy. When the merged record has
+    # ≥3 substantive items OR a long notes body we trust it.
+    substantial = (
+        len(rules) + len(knowledge) + len(examples) >= 3
+        or len(notes_md) >= 1500
+    )
+
     # The LLM's own confidence acts as a second signal:
-    # - 'low'   → never auto-confirm (model itself flagged the chunk noisy)
-    # - 'high'  → relax the cos threshold by 0.05 (already-clear chunk)
+    # - 'low' (and not substantial) → never auto-confirm
+    # - 'high'                      → relax the cos threshold by 0.05
     cos_confirm = 0.60
     cos_inferred = 0.50
     if llm_conf == "high":
         cos_confirm  -= 0.05
         cos_inferred -= 0.05
-    block_confirm = (llm_conf == "low")
+    block_confirm = (llm_conf == "low") and not substantial
 
     metrics = {
         "cosine": cos,
