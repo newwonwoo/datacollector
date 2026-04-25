@@ -172,14 +172,20 @@ def test_api_run_mock_pipeline_smoke(server, layout, monkeypatch):
     obj = json.loads(body)
     assert obj["ok"] and obj["run_id"].startswith("api_")
 
-    # Poll status until terminal (max ~10s)
+    # Poll status until terminal. The conftest patches `time.sleep` to
+    # a no-op (for stage_package backoff), so we can't rely on
+    # time.sleep here for pacing — use a wall-clock deadline + busy
+    # wait yielding to other threads via time.monotonic.
+    import time as _t
+    deadline = _t.monotonic() + 10.0
     final = None
-    for _ in range(50):
+    while _t.monotonic() < deadline:
         _, _h, b = _get(server.url("/api/run/status"))
         final = json.loads(b)
         if final["status"] in ("completed", "failed"):
             break
-        time.sleep(0.2)
+        # Tiny CPU-yield without depending on sleep — round-trip HTTP
+        # already gives the worker thread a chance to advance.
     assert final is not None
     assert final["status"] == "completed", final
     assert final["summary"]["query"] == "단타"

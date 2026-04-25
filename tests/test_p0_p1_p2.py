@@ -170,17 +170,46 @@ def test_extract_failure_quarantines_as_invalid(tmp_path):
 
 
 def test_normalize_failure_quarantines_as_invalid(tmp_path):
+    """Empty rules + empty notes_md + a too-short summary → invalid.
+
+    The original gate was 'rules empty == invalid'; we relaxed it for the
+    knowledge-library case where a video legitimately has no actionable
+    rules but rich notes_md. This test now exercises the harder failure
+    where there's nothing to archive at all.
+    """
     store = JSONStore(root=tmp_path / "ds")
     logger = EventLogger()
     p = _payload("NORMFAIL001")
     services = build_mock_services(
         captions_map={"NORMFAIL001": {"source": "manual", "text": "text"}},
-        # Empty rules → SEMANTIC_EMPTY_RULES
-        llm_script=[{"summary": _LONG_SUMMARY, "rules": [], "tags": []}],
+        # No rules, no notes, summary too short to carry information →
+        # SEMANTIC_EMPTY_RULES quarantine.
+        llm_script=[{"summary": "짧음", "rules": [], "tags": [], "notes_md": ""}],
     )
     run_pipeline(p, services, store, logger, use_lock=False)
     assert p["record_status"] == "invalid"
     assert p["failure_reason_code"] == "SEMANTIC_EMPTY_RULES"
+
+
+def test_normalize_passes_when_rules_empty_but_notes_rich(tmp_path):
+    """Knowledge-library case: empty rules but substantial notes_md → pass."""
+    store = JSONStore(root=tmp_path / "ds")
+    logger = EventLogger()
+    p = _payload("NORMPASS001")
+    services = build_mock_services(
+        captions_map={"NORMPASS001": {"source": "manual", "text": "text"}},
+        llm_script=[{
+            "summary": _LONG_SUMMARY,
+            "rules": [],
+            "tags": ["t1"],
+            "notes_md": "## 핵심\n" + ("자세한 마크다운 노트 본문 " * 20),
+        }],
+    )
+    run_pipeline(p, services, store, logger, use_lock=False)
+    # Either reviewed_* (mock similarity ≥ 0.5) or normalized — anything
+    # but invalid means the stage didn't quarantine on empty rules.
+    assert p["record_status"] != "invalid"
+    assert p.get("notes_md", "").startswith("## 핵심")
 
 
 # ============== P1-b Soft filter ==============

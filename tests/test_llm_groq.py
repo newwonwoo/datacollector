@@ -124,6 +124,10 @@ def test_groq_attempt_1_uses_reprompt(monkeypatch):
     assert seen_user["content"] != "ORIGINAL"  # reprompt prefix added
 
 
+def _adapter_names(services):
+    return [a.__class__.__name__ for a in services.llm_extract.adapters]
+
+
 def test_real_services_picks_groq_when_only_groq_set(monkeypatch):
     """Auto-pick fallback chain: YouTube + only GROQ_API_KEY → use Groq."""
     monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
@@ -134,8 +138,7 @@ def test_real_services_picks_groq_when_only_groq_set(monkeypatch):
     from collector.cli.run import _real_services_or_none
     services = _real_services_or_none()
     assert services is not None
-    # The bound method should belong to GroqAdapter
-    assert services.llm_extract.__self__.__class__.__name__ == "GroqAdapter"
+    assert _adapter_names(services) == ["GroqAdapter"]
 
 
 def test_real_services_explicit_llm_choice_groq(monkeypatch):
@@ -146,7 +149,77 @@ def test_real_services_explicit_llm_choice_groq(monkeypatch):
 
     from collector.cli.run import _real_services_or_none
     services = _real_services_or_none(llm_choice="groq")
-    assert services.llm_extract.__self__.__class__.__name__ == "GroqAdapter"
+    # Explicit choice → exactly one adapter, no fallback.
+    assert _adapter_names(services) == ["GroqAdapter"]
 
     services2 = _real_services_or_none(llm_choice="gemini")
-    assert services2.llm_extract.__self__.__class__.__name__ == "GeminiAdapter"
+    assert _adapter_names(services2) == ["GeminiAdapter"]
+
+
+def test_real_services_auto_chain_orders_gemini_then_groq(monkeypatch):
+    """Without --llm, auto-chain so a 429 on Gemini falls through to Groq."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIza_fake")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("COLLECTOR_LLM", raising=False)
+
+    from collector.cli.run import _real_services_or_none
+    services = _real_services_or_none()
+    assert _adapter_names(services) == ["GeminiAdapter", "GroqAdapter"]
+
+
+def test_llm_chain_falls_through_on_429(monkeypatch):
+    """A 429 from the first adapter must hand the call to the second."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIza_fake")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    from collector.cli.run import _real_services_or_none
+    services = _real_services_or_none()
+    chain = services.llm_extract.adapters
+
+    def gemini_raises(*a, **kw):
+        raise MockError("HTTP_429", "quota")
+
+    expected = {"summary": "ok", "rules": [], "tags": [], "notes_md": ""}
+
+    def groq_returns(*a, **kw):
+        return expected
+
+    chain[0].extract = gemini_raises
+    chain[1].extract = groq_returns
+
+    out = services.llm_extract("transcript", 0)
+    assert out == expected
+
+
+def test_llm_chain_does_not_fallback_on_schema_fail(monkeypatch):
+    """Schema/semantic errors stay on the same adapter — falling through
+    on those would mask a malformed prompt or buggy adapter response."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIza_fake")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    from collector.cli.run import _real_services_or_none
+    services = _real_services_or_none()
+    chain = services.llm_extract.adapters
+
+    def gemini_raises(*a, **kw):
+        raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", "broken")
+
+    groq_called = []
+
+    def groq_returns(*a, **kw):
+        groq_called.append(True)
+        return {"summary": "ok", "rules": [], "tags": [], "notes_md": ""}
+
+    chain[0].extract = gemini_raises
+    chain[1].extract = groq_returns
+
+    with pytest.raises(MockError) as ei:
+        services.llm_extract("transcript", 0)
+    assert ei.value.code == "SEMANTIC_JSON_SCHEMA_FAIL"
+    assert groq_called == []  # never reached

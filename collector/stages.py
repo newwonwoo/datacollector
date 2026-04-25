@@ -176,21 +176,37 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
 def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "normalize", "started", logger)
     rules = payload.get("rules") or []
-    if not rules:
-        err = StageFail("SEMANTIC_EMPTY_RULES", "no rules")
-        _fail(payload, "normalize", err, logger)
-        _set_record(payload, "invalid", logger, reason=err.code)
-        raise err
+    notes_md = (payload.get("notes_md") or "").strip()
     summary = payload.get("summary") or ""
-    # P2-c: summary length check (50~300 chars)
-    if len(summary) < 50 or len(summary) > 300:
-        err = StageFail("SEMANTIC_SUMMARY_LENGTH", f"len={len(summary)}")
+
+    # Strip forbidden openers ("이 영상은", "전반적으로") instead of failing
+    # the whole record on them — the prompt already discourages them, so
+    # when one slips through we clean it up.
+    forbidden = ["이 영상은", "전반적으로"]
+    cleaned = summary
+    for w in forbidden:
+        cleaned = cleaned.replace(w, "")
+    cleaned = cleaned.strip(" ,.　")
+    if cleaned != summary:
+        payload["summary"] = cleaned
+        summary = cleaned
+
+    # Knowledge-library content gate: require *some* substance, not specifically
+    # rules. A video with rich notes_md but zero actionable rules (e.g., a Saju
+    # explanation, a documentary) is still valuable to archive. We fail only
+    # when BOTH rules and notes_md are empty AND the summary is too short to
+    # carry any information on its own.
+    if not rules and len(notes_md) < 80 and len(summary) < 30:
+        err = StageFail("SEMANTIC_EMPTY_RULES", "no rules, no notes, no summary")
         _fail(payload, "normalize", err, logger)
         _set_record(payload, "invalid", logger, reason=err.code)
         raise err
-    forbidden = ["이 영상은", "전반적으로"]
-    if any(w in summary for w in forbidden):
-        err = StageFail("SEMANTIC_FORBIDDEN_WORD", "forbidden")
+
+    # Summary length check, relaxed from the original 50–300 (LLMs commonly
+    # land between 30 and 500 chars). Cleanup runs before the check so the
+    # forbidden-opener strip doesn't accidentally drop us under the floor.
+    if len(summary) < 30 or len(summary) > 500:
+        err = StageFail("SEMANTIC_SUMMARY_LENGTH", f"len={len(summary)}")
         _fail(payload, "normalize", err, logger)
         _set_record(payload, "invalid", logger, reason=err.code)
         raise err
@@ -204,11 +220,20 @@ def stage_review(payload: dict, services: Services, logger: EventLogger) -> dict
     _set_stage(payload, "review", "started", logger)
     cos = services.semantic_similarity(payload.get("transcript", ""), payload.get("summary", ""))
     rules = payload.get("rules") or []
-    if cos >= 0.60 and len(rules) >= 1 and payload.get("retry_count", 0) <= 1:
+    notes_md = (payload.get("notes_md") or "").strip()
+    # Substance gate: either at least one extracted rule, OR a meaningful
+    # markdown note (≥150 chars). The knowledge-library use case fails the
+    # rules-only criterion for explanatory videos that legitimately have no
+    # actionable rules — yet the notes_md still archives the value.
+    has_substance = bool(rules) or len(notes_md) >= 150
+    if cos >= 0.60 and has_substance and payload.get("retry_count", 0) <= 1:
         payload["confidence"] = "confirmed"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_confirmed", logger, metrics={"cosine": cos, "rules": len(rules)})
-    elif cos >= 0.50 and len(rules) >= 1:
+        _set_record(
+            payload, "reviewed_confirmed", logger,
+            metrics={"cosine": cos, "rules": len(rules), "notes_chars": len(notes_md)},
+        )
+    elif cos >= 0.50 and has_substance:
         payload["confidence"] = "inferred"
         payload["reviewer"] = "auto"
         _set_record(payload, "reviewed_inferred", logger, metrics={"cosine": cos})

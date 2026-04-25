@@ -49,7 +49,6 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     yt = YouTubeAdapter(yt_key)
 
     want = (llm_choice or os.environ.get("COLLECTOR_LLM", "")).lower()
-    llm = None
 
     def _make(name: str):
         if name == "gemini" and goog_key:
@@ -63,22 +62,59 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
             return AnthropicAdapter(anth_key)
         return None
 
+    # Build the adapter chain. When the user explicitly forces a single
+    # provider via --llm/COLLECTOR_LLM we skip the fallback. Otherwise we
+    # collect every adapter whose key is set so a mid-run quota/auth
+    # failure on the primary one transparently rolls over to the next.
+    chain: list = []
     if want:
-        llm = _make(want)
-    if llm is None:
-        # Free-first auto-pick: gemini → groq → anthropic
+        a = _make(want)
+        if a is not None:
+            chain.append(a)
+    else:
         for name in ("gemini", "groq", "anthropic"):
-            llm = _make(name)
-            if llm is not None:
-                break
-    if llm is None:
+            a = _make(name)
+            if a is not None:
+                chain.append(a)
+    if not chain:
         return None
+
+    def llm_extract(transcript: str, attempt: int) -> dict:
+        """Try each adapter in order; on quota/expired errors fall through.
+
+        Errors that point at THIS adapter — HTTP_429, LLM_HTTP_400 (Gemini's
+        signal for "API key expired"), HTTP_5XX — trigger a fallback to the
+        next adapter. Schema/semantic errors mean the model answered, so we
+        re-raise immediately (the pipeline's own retry layer handles them).
+        """
+        ROLLOVER_CODES = {"HTTP_429", "HTTP_5XX", "LLM_HTTP_400", "LLM_HTTP_401", "LLM_HTTP_403"}
+        last_err = None
+        for i, adapter in enumerate(chain):
+            try:
+                return adapter.extract(transcript, attempt)
+            except MockError as e:
+                last_err = e
+                if e.code in ROLLOVER_CODES and i < len(chain) - 1:
+                    sys.stderr.write(
+                        f"[llm] {adapter.__class__.__name__} {e.code} → fallback to "
+                        f"{chain[i+1].__class__.__name__}\n"
+                    )
+                    continue
+                raise
+        # Exhausted chain — surface the last error
+        if last_err is not None:
+            raise last_err
+        raise MockError("LLM_NO_PROVIDER", "no LLM adapter available")
+
+    # Expose the chain on the closure so tests / introspection can see the
+    # adapter sequence (closure is otherwise opaque).
+    llm_extract.adapters = chain  # type: ignore[attr-defined]
 
     return Services(
         youtube_search=yt.search,
         youtube_captions=yt.captions,
         youtube_video_alive=yt.video_alive,
-        llm_extract=llm.extract,
+        llm_extract=llm_extract,
         semantic_similarity=lambda s, t: 0.75,
         git_sync=lambda p: None,
     )
