@@ -854,6 +854,9 @@ function _hasAnyLLM(){
 async function runQueryLocal(q, c){
   const btn = document.getElementById('run-btn');
   btn.disabled = true; btn.textContent = '요청 중…';
+  // Visually reset the pipeline diagram the moment the user clicks
+  // so they don't see the previous run's stale state.
+  resetPipelineDiagram();
   try {
     const resp = await fetch('/api/run', {
       method: 'POST',
@@ -1364,6 +1367,29 @@ function updatePipelineDiagram(valid){
 }
 
 const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
+
+function resetPipelineDiagram(){
+  // Wipe every stage card back to the '대기' (idle) look. Called on
+  // (a) initial dashboard load — so a refresh after a finished run
+  //     doesn't show the previous progress as if it were live, and
+  // (b) the moment the user clicks 실행 — so a new run replaces the
+  //     last one's badges immediately instead of after the first poll.
+  for (const st of STAGE_ORDER){
+    const node = document.querySelector(`.stage[data-stage="${st}"]`);
+    if (!node) continue;
+    node.className = 'stage';
+    const c = node.querySelector('.stage-count'); if (c) c.textContent = '—';
+    const s = node.querySelector('.stage-sub');   if (s) s.textContent = '대기';
+    const bar = node.querySelector('.stage-bar i');
+    if (bar){ bar.style.width = '0%'; bar.classList.remove('shimmer'); }
+  }
+  for (const st of STAGE_ORDER){
+    const a = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
+    if (a) a.className = 'stage-arrow';
+  }
+  const lbl = document.getElementById('run-label');
+  if (lbl) lbl.innerHTML = '<span>최근 run: —</span>';
+}
 
 function updatePipelineFromStatus(detail, activeGARun){
   if (!detail || !detail.per_stage) return;
