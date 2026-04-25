@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from ..prompt_loader import load_prompt
 from ..services import MockError
+from ._llm_http import llm_http as _default_http
 
 
 SYSTEM_PROMPT = (
@@ -27,23 +28,7 @@ SYSTEM_PROMPT = (
 )
 
 
-_BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
-
-
-def _default_http(method: str, url: str, *, headers: dict | None = None, data: bytes | None = None) -> dict:
-    h = {"User-Agent": _BROWSER_UA, "Accept": "application/json"}
-    if headers:
-        h.update(headers)
-    req = urllib.request.Request(url, method=method, headers=h, data=data)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return {"status": resp.status, "body": resp.read().decode("utf-8")}
-    except urllib.error.HTTPError as e:
-        return {"status": e.code, "body": e.read().decode("utf-8", "replace")}
+# _default_http is provided by ._llm_http (curl_cffi-backed when available).
 
 
 class GroqAdapter:
