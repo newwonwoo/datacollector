@@ -37,6 +37,17 @@ SYSTEM_PROMPT = (
 class GroqAdapter:
     URL = "https://api.groq.com/openai/v1/chat/completions"
 
+    # Per-model TPM (tokens per minute) on the Groq free tier, as char
+    # budget (≈ 0.25 tokens/char). The chain picks the smallest of all
+    # configured adapters' values when chunking, so a single transcript
+    # is split conservatively enough that every model in the chain can
+    # handle each chunk.
+    _MODEL_MAX_CHARS = {
+        "llama-3.3-70b-versatile": 12_000,   # 12k TPM → ~3k tokens safely
+        "llama-3.1-8b-instant":     4_500,   # 6k TPM (tight) → ~1.1k tokens
+        "mixtral-8x7b-32768":      20_000,
+    }
+
     def __init__(
         self,
         api_key: str,
@@ -49,6 +60,7 @@ class GroqAdapter:
         self.prompt_version = prompt_version
         self.http = http
         self._prompts = load_prompt(prompt_version)
+        self.max_chars_per_request = self._MODEL_MAX_CHARS.get(model, 4_500)
 
     def extract(self, transcript: str, attempt: int) -> dict[str, Any]:
         if attempt == 0:

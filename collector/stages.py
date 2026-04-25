@@ -124,6 +124,27 @@ def stage_collect(payload: dict, services: Services, logger: EventLogger) -> dic
     return payload
 
 
+def _smallest_chain_max_chars(services: Services) -> int | None:
+    """Return the smallest `max_chars_per_request` across the LLM chain
+    that backs services.llm_extract, or None if introspection isn't
+    possible (mock services, single bound method, etc.).
+
+    The chain is exposed by run.py's llm_extract closure as a `.adapters`
+    attribute (a list of adapter instances). Each adapter exposes
+    `max_chars_per_request`. Tests using bare lambdas pass through.
+    """
+    fn = getattr(services, "llm_extract", None)
+    adapters = getattr(fn, "adapters", None)
+    if not adapters:
+        return None
+    sizes = [
+        getattr(a, "max_chars_per_request", 0)
+        for a in adapters
+    ]
+    sizes = [s for s in sizes if s and s > 0]
+    return min(sizes) if sizes else None
+
+
 def _call_llm_once(payload: dict, services: Services, text: str, attempt: int) -> dict:
     out = services.llm_extract(text, attempt)
     if not isinstance(out, dict) or "summary" not in out or "rules" not in out:
@@ -135,8 +156,22 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
     _set_stage(payload, "extract", "started", logger)
     transcript = payload["transcript"]
 
-    # P4-1: long-transcript map-reduce
-    chunks = chunk(transcript) if should_chunk(transcript) else [transcript]
+    # P4-1: long-transcript map-reduce. Chunk size is driven by the
+    # smallest adapter in the chain (e.g., Groq llama-3.1-8b-instant has
+    # a 6k TPM cap → ~4500 chars/request). Falling back to the module
+    # default lets unit tests with mock services keep their existing
+    # large-chunk semantics.
+    chain_max = _smallest_chain_max_chars(services)
+    if chain_max:
+        threshold = chain_max
+        chunk_size = max(1_000, chain_max - 500)  # leave headroom for prompt
+        chunks = (
+            chunk(transcript, chunk_chars=chunk_size)
+            if should_chunk(transcript, threshold=threshold)
+            else [transcript]
+        )
+    else:
+        chunks = chunk(transcript) if should_chunk(transcript) else [transcript]
     reason_suffix = f"chunks_{len(chunks)}" if len(chunks) > 1 else "single"
 
     attempt = 0

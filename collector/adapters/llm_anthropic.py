@@ -41,6 +41,8 @@ class AnthropicAdapter:
         self.prompt_version = prompt_version
         self.http = http
         self._prompts = load_prompt(prompt_version)
+        # Claude Sonnet has 200k-token context; same conservatism as Gemini.
+        self.max_chars_per_request = 100_000
 
     def extract(self, transcript: str, attempt: int) -> dict[str, Any]:
         if attempt == 0:

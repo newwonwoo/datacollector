@@ -1,12 +1,21 @@
 """Long-transcript chunking (Master_02 §5 — map-reduce 분석 전략).
 
-Approximates tokens as 0.25 token per char for Korean-heavy text.
+Approximates tokens as 0.25 token per char for Korean-heavy text (so a
+4500-char chunk ≈ 1100 tokens, fitting even small models like
+llama-3.1-8b-instant whose per-minute cap is 6k tokens).
+
+Defaults are conservative on purpose — they fit every adapter we ship.
+Callers that know they're talking to a wider-context model (Gemini,
+Claude) can pass larger `chunk_chars` directly.
 """
 from __future__ import annotations
 
-MAX_CHARS_SINGLE = 40_000       # ~10k tokens — still safe for Claude 200k / Gemini 1M
-CHUNK_CHARS = 30_000
-OVERLAP_CHARS = 500
+# Conservative defaults that fit ALL provider TPM caps in our chain
+# (Groq 8b's 6k TPM is the bottleneck). Exceeded by Gemini/Claude;
+# they just see more, smaller calls.
+MAX_CHARS_SINGLE = 6_000
+CHUNK_CHARS = 4_500
+OVERLAP_CHARS = 400
 
 
 def should_chunk(text: str, threshold: int = MAX_CHARS_SINGLE) -> bool:

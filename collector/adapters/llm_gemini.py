@@ -43,6 +43,10 @@ class GeminiAdapter:
         self.prompt_version = prompt_version
         self.http = http
         self._prompts = load_prompt(prompt_version)
+        # Gemini Flash supports 1M-token context; we cap at 100k chars
+        # per call mostly because round-trip latency goes up sharply on
+        # huge bodies and free-tier RPM (15) doesn't reward larger calls.
+        self.max_chars_per_request = 100_000
 
     def extract(self, transcript: str, attempt: int) -> dict[str, Any]:
         url = f"{self.BASE}/{self.model}:generateContent?key={urllib.parse.quote(self.api_key)}"

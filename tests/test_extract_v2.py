@@ -257,3 +257,50 @@ def test_llm_chain_falls_back_to_rule_based_after_all_quota(monkeypatch):
     assert out["llm_confidence"] == "low"
     assert out["content_type"] == "mixed"
     assert "단타" in out["notes_md"]
+
+
+# ---------- adapter-aware chunking ----------
+
+def test_adapter_max_chars_attribute_on_each():
+    from collector.adapters.llm_groq import GroqAdapter
+    from collector.adapters.llm_gemini import GeminiAdapter
+    from collector.adapters.llm_anthropic import AnthropicAdapter
+    g70 = GroqAdapter("k", model="llama-3.3-70b-versatile")
+    g8  = GroqAdapter("k", model="llama-3.1-8b-instant")
+    gm  = GeminiAdapter("k")
+    an  = AnthropicAdapter("k")
+    # 8b is the bottleneck — must be the smallest
+    assert g8.max_chars_per_request < g70.max_chars_per_request
+    assert g8.max_chars_per_request <= 5_000
+    assert gm.max_chars_per_request >= 50_000
+    assert an.max_chars_per_request >= 50_000
+
+
+def test_chain_uses_smallest_adapter_max_chars(monkeypatch):
+    """When the chain is gemini → groq-70b → groq-8b, chunking should
+    follow groq-8b (the smallest, ~4.5k)."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "yt_fake")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIza_fake")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("COLLECTOR_LLM", raising=False)
+
+    from collector.cli.run import _real_services_or_none
+    from collector.stages import _smallest_chain_max_chars
+    services = _real_services_or_none()
+    smallest = _smallest_chain_max_chars(services)
+    assert smallest is not None
+    assert smallest <= 5_000  # groq-8b's bucket
+
+
+def test_chunk_default_size_fits_groq_8b():
+    """The default chunking constants must fit even Groq llama-3.1-8b's
+    6k-TPM cap (so a 5500-char transcript splits into ≥2 chunks at the
+    default and each chunk is ≤ 4500 chars)."""
+    from collector.chunking import MAX_CHARS_SINGLE, CHUNK_CHARS, chunk
+    assert MAX_CHARS_SINGLE <= 6_000
+    assert CHUNK_CHARS <= 4_500
+    body = "한" * 5_500
+    pieces = chunk(body)
+    assert len(pieces) >= 2
+    assert all(len(p) <= CHUNK_CHARS + 200 for p in pieces)  # +200 break-window slack
