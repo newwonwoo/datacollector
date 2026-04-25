@@ -223,3 +223,34 @@ def test_llm_chain_does_not_fallback_on_schema_fail(monkeypatch):
         services.llm_extract("transcript", 0)
     assert ei.value.code == "SEMANTIC_JSON_SCHEMA_FAIL"
     assert groq_called == []  # never reached
+
+
+def test_normalize_schema_coerces_list_notes_md():
+    from collector.adapters.llm_groq import _normalize_schema
+    out = _normalize_schema({
+        "summary": "ok",
+        "rules": [],
+        "tags": [],
+        "notes_md": ["## 1부", "## 2부"],
+    })
+    assert isinstance(out["notes_md"], str)
+    assert "## 1부" in out["notes_md"] and "## 2부" in out["notes_md"]
+
+
+def test_normalize_schema_coerces_list_summary():
+    from collector.adapters.llm_groq import _normalize_schema
+    out = _normalize_schema({"summary": ["a", "b"], "rules": []})
+    assert isinstance(out["summary"], str)
+    assert "a" in out["summary"] and "b" in out["summary"]
+
+
+def test_normalize_schema_coerces_string_rules():
+    from collector.adapters.llm_groq import _normalize_schema
+    out = _normalize_schema({"summary": "s", "rules": "단일 규칙"})
+    assert out["rules"] == ["단일 규칙"]
+
+
+def test_normalize_schema_drops_empty_list_entries():
+    from collector.adapters.llm_groq import _normalize_schema
+    out = _normalize_schema({"summary": "s", "rules": ["valid", "", None, "  "]})
+    assert out["rules"] == ["valid"]

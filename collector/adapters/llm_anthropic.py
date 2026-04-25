@@ -93,4 +93,5 @@ class AnthropicAdapter:
             raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", f"missing keys")
         out.setdefault("tags", [])
         out.setdefault("notes_md", "")
-        return out
+        from .llm_groq import _normalize_schema
+        return _normalize_schema(out)

@@ -90,4 +90,6 @@ class GeminiAdapter:
             raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", "missing keys")
         out.setdefault("tags", [])
         out.setdefault("notes_md", "")
-        return out
+        # Coerce against type drift so downstream stages don't crash.
+        from .llm_groq import _normalize_schema
+        return _normalize_schema(out)

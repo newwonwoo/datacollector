@@ -175,9 +175,22 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
 
 def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "normalize", "started", logger)
+    # Defensive coercion: an upstream LLM/reduce step may have left a list
+    # where we expect a string (some models emit notes_md as ["…","…"]).
+    raw_notes = payload.get("notes_md") or ""
+    if isinstance(raw_notes, list):
+        raw_notes = "\n\n".join(str(x) for x in raw_notes if x)
+    notes_md = str(raw_notes).strip()
+    raw_summary = payload.get("summary") or ""
+    if isinstance(raw_summary, list):
+        raw_summary = " ".join(str(x) for x in raw_summary if x)
+    summary = str(raw_summary)
+    payload["summary"] = summary
+    payload["notes_md"] = notes_md
     rules = payload.get("rules") or []
-    notes_md = (payload.get("notes_md") or "").strip()
-    summary = payload.get("summary") or ""
+    if not isinstance(rules, list):
+        rules = [str(rules)]
+        payload["rules"] = rules
 
     # Strip forbidden openers ("이 영상은", "전반적으로") instead of failing
     # the whole record on them — the prompt already discourages them, so

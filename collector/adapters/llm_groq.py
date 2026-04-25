@@ -102,4 +102,38 @@ class GroqAdapter:
             raise MockError("SEMANTIC_JSON_SCHEMA_FAIL", "missing keys")
         out.setdefault("tags", [])
         out.setdefault("notes_md", "")
-        return out
+        # Defensive: LLMs occasionally return notes_md/summary as a list of
+        # strings (chunked output) or summary as a list. Coerce to string
+        # so downstream `.strip()` / length checks don't blow up.
+        return _normalize_schema(out)
+
+
+def _normalize_schema(out: dict) -> dict:
+    """Coerce JSON schema fields to expected primitive types.
+
+    LLMs sometimes emit list-of-strings or nested objects where we asked
+    for a string. We normalise rather than reject — a malformed-but-
+    recoverable answer is more useful than a fail.
+    """
+    def _to_str(v) -> str:
+        if isinstance(v, str):
+            return v
+        if isinstance(v, list):
+            return "\n\n".join(str(x) for x in v if x is not None)
+        if v is None:
+            return ""
+        return str(v)
+
+    def _to_list_of_str(v) -> list:
+        if isinstance(v, list):
+            return [str(x) for x in v if x is not None and str(x).strip()]
+        if isinstance(v, str):
+            # rare: LLM crammed multiple rules into one string
+            return [v] if v.strip() else []
+        return []
+
+    out["summary"] = _to_str(out.get("summary", ""))
+    out["rules"] = _to_list_of_str(out.get("rules", []))
+    out["tags"] = _to_list_of_str(out.get("tags", []))
+    out["notes_md"] = _to_str(out.get("notes_md", ""))
+    return out
