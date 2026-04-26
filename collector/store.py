@@ -39,6 +39,26 @@ class JSONStore:
         self.active: dict[str, dict[str, Any]] = {}
         self.archived: dict[str, dict[str, Any]] = {}
         self.dlq: list[dict[str, Any]] = []
+        # Load any pre-existing records from disk so cross-run dedup
+        # (run.py's pre-COLLECT filter, plus pipeline.py Rule A/B/C)
+        # actually sees prior history. New stores under tmp paths
+        # find no files and remain empty, which preserves test expectations.
+        if self.root and self.root.exists():
+            self._load_from_disk()
+
+    def _load_from_disk(self) -> None:
+        for p in self.root.rglob("*.json"):
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            sk = rec.get("source_key")
+            if not isinstance(sk, str) or not sk:
+                continue
+            if rec.get("archive_state") == "ARCHIVED":
+                self.archived[sk] = rec
+            else:
+                self.active[sk] = rec
 
     def dedup_rule(self, source_key: str, transcript_hash: str) -> str:
         """Return 'A' (new), 'B' (changed), or 'C' (duplicate).

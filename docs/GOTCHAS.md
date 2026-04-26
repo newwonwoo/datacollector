@@ -165,6 +165,108 @@ def foo(*, sleep_fn=None):
 
 ---
 
+## G-17. Windows PowerShell 5.1 + 비ASCII 파일 = 무조건 깨짐
+### 증상
+- `.ps1` / `.env` / `.txt` 파일에 한글이 들어있고 해당 파일이 UTF-8 (BOM 없음) 으로 저장된 경우, PowerShell 5.1 (Win10/11 기본) 이 파일을 시스템 codepage (한국=CP949) 로 디코드 → 한글이 mojibake 가 되고, 거기에 `\` 나 `"` 가 들어있으면 파서가 "unexpected token / unterminated string" 으로 죽음.
+- `Add-Content -Path .env -Value "..."` 도 기본 인코딩 문제로 옛날 줄과 새 줄 인코딩이 섞여서 read 시 에러.
+- `Get-Content` 로 파일 본문을 보려고 하면 한글이 다 깨져 보이는 것도 같은 원인 (파일은 멀쩡, display 만 깨짐).
+### 원인
+- Windows PowerShell 5.1 기본 인코딩 = system codepage. UTF-8 BOM 없으면 자동 감지 실패. (PowerShell 7+ / `pwsh` 는 UTF-8 기본.)
+- 우리 `Write` 툴은 BOM 없는 UTF-8 만 출력.
+### 예방 (앞으로 .ps1/.bat/.cmd 작성 시)
+1. **모든 사용자 보이는 텍스트(Write-Host, echo, REM 주석)를 ASCII-only 로 작성.** 한글 메시지 필요하면 별도 .md 또는 콘솔 외 위치로.
+2. 또는 파일 첫 바이트에 UTF-8 BOM 명시 (`﻿`) — 이건 우리 Write 툴로 못 함.
+3. `Add-Content` / `Set-Content` 는 기본 인코딩 신뢰하지 말고 `-Encoding UTF8` 명시.
+4. `Get-Content` 로 한글 파일 읽을 땐 `-Encoding UTF8` 항상 붙임.
+### 같은 실수 이력
+- `.env` 추가 시 UTF-16 mojibake (`COLLECTOR_YT_COOKIES_FILE` 변수명 자체가 두 번 적힘 사건)
+- `data_store/*.json` 한글 표시할 때 mojibake 보고 사용자가 "파일 깨졌다" 오해
+- `install_desktop_shortcut.ps1` 한글 메시지 → 파서 에러 (이번 세션)
+### 대응 완료?
+- ✅ install_desktop_shortcut.ps1 ASCII-only 로 재작성
+- ✅ G-17 영구 기록 (다음 세션 Claude 반복 방지용)
+
+---
+
+## G-16. transcript 가 raw json3/vtt 로 저장되어 LLM 토큰을 5–10배 태움
+### 증상
+- `data_store/.../youtube__*.json` 의 `transcript` 필드에 `{"wireMagic":"pb3","events":[{"segs":[{"utf8":"..."}]}]}` 같은 구조형 JSON 통째.
+- Gemini extract 단계가 `cost_usd: $33` 등 비정상적으로 높음. 일일 quota 즉시 소진. 추출 정확도도 떨어짐.
+### 원인
+- `_captions_via_ytdlp_lib` 가 yt-dlp 가 알려준 caption track URL 의 응답 body 를 **포맷 변환 없이** 그대로 `transcript` 로 저장.
+- 그 응답이 json3/vtt/srv3 등 구조형 포맷이면 통째로 LLM 입력으로 들어감.
+### 예방 (구현됨)
+- `_captions_to_plain_text(body, ext)` 헬퍼가 json3/vtt/srt/srv*/ttml 모두 plain text 로 변환.
+- json3 트랙이 있으면 우선 선택 (가장 깔끔한 변환).
+- timedtext direct 도 `fmt=srv3` → `fmt=json3` 로 변경.
+### 대응 완료?
+- ✅ json3/vtt/xml 파서 추가 + 트랙 우선순위 (json3 first)
+- ✅ 테스트 3개 (json3 strip / vtt strip / 우선순위)
+- ❌ 이미 저장된 raw json3 레코드 정리 — 사용자가 `data_store/` 비우거나, 무시하고 새 run 으로 덮어씀
+
+---
+
+## G-15. residential IP 임에도 YouTube 가 자막 fetch 를 throttle (HTTP 429)
+### 증상
+- `cookies.txt` + `curl_cffi` 다 갖췄는데도 timedtext URL 페치에서 HTTP 429
+- 심지어 `dQw4w9WgXcQ` (Rick Astley) 같은 무난한 영상에서도 429
+- VPN/핫스팟으로 IP 갈면 즉시 풀림 → 봇 탐지지 영상 단위 차단 아님
+### 원인 (4종 누적)
+1. **`_default_http` 가 헤더 없이 호출** — 기본 UA 가 `Python-urllib/3.x`. anti-bot 시스템에 즉시 잡힘.
+2. **Referer / Accept-Language / Cookie 없음** — 브라우저 트래픽 시그니처와 너무 다름.
+3. **재시도 폭주** — yt-dlp player_client 6 + ytapi 1 + timedtext direct 4 = 영상 1개당 최대 11회. 실패 run 4~5번 누적 시 200회+.
+4. **caption URL fetch 에는 cookies.txt 가 안 붙음** — yt-dlp 어 player API 호출 때만 cookiefile 전달. 그 다음 우리가 직접 받는 timedtext URL 호출은 익명 → 세션 끊김.
+### 예방 (구현됨)
+- `_default_http` 가 항상 진짜 Chrome UA 송신, youtube/googlevideo/ytimg 호스트엔 Referer + Accept-Language 추가.
+- `_build_opener_with_cookies()` 가 `MozillaCookieJar` 로 `cookies.txt` 파싱하여 youtube 호스트 호출에 자동 첨부.
+- `client_sets` 6 → 3 (`None`, `android_vr`, `ios+tv_embedded`) 로 축소.
+- `captions()` 각 호출 전 0.25~0.6초 jitter (`COLLECTOR_YT_NO_JITTER=1` 로 끌 수 있음 — 테스트용).
+### 운영 가이드
+- 한 번 throttle 걸리면 같은 IP 에서 풀릴 때까지 수 시간 소요 가능. **Cloudflare WARP** 같은 무료 VPN 으로 IP 갈면 즉시 풀림.
+- cookies.txt 는 만료되니 막힐 때 다시 export.
+### 대응 완료?
+- ✅ 4가지 mitigation 어댑터 구현
+- ✅ G-15 영구 기록
+
+---
+
+## G-13. YouTube 자막 수집이 GitHub Actions에서 전멸 (403/Forbidden)
+### 증상
+- 대시보드에서 실행 → `collect` 스테이지에서 전부 `YT_NO_TRANSCRIPT` / `HTTP_403`
+- 같은 키·같은 코드로 로컬(가정망)에서 돌리면 정상
+### 원인
+- YouTube가 2024~2026년에 걸쳐 AWS/GCP/Azure/GitHub Actions 등 cloud provider IP 블록에 대해
+  timedtext·yt-dlp·youtube-transcript-api 접근을 공격적으로 차단.
+- YOUTUBE_API_KEY(Data API v3)는 메타데이터만 받고, 실제 자막은 캡션 다운로드 경로라
+  API 키로 우회 불가.
+### 예방
+- 기본 실행 경로를 **로컬 웹앱**(`collector app`)으로 명시. GH Actions는 스케줄링·백업용으로만.
+- 초기 설정 마법사(`docs/index.html`)에서 API 키 2개를 브라우저로 받아 `.env` 저장 → 즉시 사용.
+### 대응 완료?
+- ✅ `/api/run` 로컬 엔드포인트, 로컬 모드 감지, 초기 설정 마법사 (커밋 TBD)
+- ✅ USER_MANUAL §0 로컬 웹앱 모드를 기본 사용법으로 전면 배치
+- ❌ Residential proxy / OAuth YouTube Captions API 통합 — 스코프 밖
+
+---
+
+## G-14. 웹 UI에서 받은 API 키를 안전하게 저장/재사용
+### 증상
+- 유저가 매번 터미널에서 `.env` 손으로 편집 → 오타, 플레이스홀더 그대로 두기(G-01 재발)
+### 원인
+- `.env` 편집은 터미널/에디터 사용 능력 전제. 모바일·초보 유저에겐 큰 장벽.
+### 예방
+- `POST /api/config` 엔드포인트 — body에 받은 키를 `collector/env_io.merge_env()`로 병합 저장.
+  - 기존 `.env`의 주석·다른 키를 보존 (re-entry 가능).
+  - `os.environ`에도 반영하여 재시작 없이 즉시 `/api/run` 이 실제 어댑터 사용.
+- `GET /api/config` 는 **key 값을 절대 반환하지 않고** `has_*` 플래그만. 로그에도 마스킹.
+- 서버 바인딩은 `127.0.0.1` 고정 — LAN 노출 금지.
+### 대응 완료?
+- ✅ `collector/env_io.py` + `tests/test_env_io.py` (플레이스홀더 감지 포함)
+- ✅ `collector/cli/api_handler.py` + `tests/test_app_api.py` (directory traversal 차단 검증 포함)
+- ✅ 브라우저 쪽은 저장 후 즉시 input 값 지움 (DOM에도 남지 않음)
+
+---
+
 ## 시스템적 개선 요구
 
 이 파일이 **다음 세션의 Claude에게도 읽히려면**:

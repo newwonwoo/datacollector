@@ -181,7 +181,7 @@ def test_gemini() -> TestResult:
 
     def call():
         url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-               f"gemini-1.5-flash:generateContent?key={urllib.parse.quote(key)}")
+               f"gemini-2.5-flash:generateContent?key={urllib.parse.quote(key)}")
         req = urllib.request.Request(
             url, method="POST",
             headers={"Content-Type": "application/json"},

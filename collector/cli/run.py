@@ -25,15 +25,70 @@ from ..services import MockError, Services, build_mock_services
 from ..store import JSONStore
 
 
-def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
-    """Build real adapters honoring the free-tier default (Gemini Flash).
+def _rule_based_extract(transcript: str, last_code: str) -> dict:
+    """Minimal payload built from the transcript when every LLM is
+    quota-exhausted. Schema-shaped so downstream stages don't crash.
 
-    - Gemini 1.5 Flash: 무료 티어 (15 RPM / 1500 RPD). 기본값.
-    - YouTube Data API v3: 무료 티어 (10,000 quota units/day).
-    - Anthropic Claude: 유료. `--llm anthropic` 또는 COLLECTOR_LLM=anthropic로만 선택.
+    summary: first ~250 chars of transcript (trimmed at sentence boundary
+        when possible).
+    notes_md: full transcript wrapped in a fenced quote so vault still
+        archives the raw text.
+    tags: extracted via collector.clickbait.extract_nouns on the
+        transcript (no LLM, regex over Korean noun-shaped tokens).
+    llm_confidence: "low" so review never auto-confirms it.
+    content_type: "mixed" — we don't know.
+    A note in `unclear` records why this fallback fired so re-extraction
+    later (after quota reset) is easy to identify.
+    """
+    from ..clickbait import extract_nouns
+
+    text = (transcript or "").strip()
+    if not text:
+        summary = "자막이 비어있어 추출할 내용이 없음. (룰베이스 폴백 — 데이터 보존용 placeholder)"
+    else:
+        snippet = text[:300]
+        cut = max(snippet.rfind("."), snippet.rfind("。"), snippet.rfind("?"),
+                  snippet.rfind("!"))
+        if cut >= 50:
+            summary = snippet[: cut + 1].strip()
+        else:
+            summary = snippet[:250].strip()
+        if len(summary) < 30:
+            summary = (summary + " — 자막 일부").strip()
+
+    tags = [n.lower() for n in extract_nouns(text, top_n=5) if n][:5]
+    return {
+        "summary": summary,
+        "content_type": "mixed",
+        "knowledge": [],
+        "rules": [],
+        "examples": [],
+        "claims": [],
+        "unclear": [
+            f"LLM 전체 chain 이 {last_code} 로 quota 소진되어 룰베이스 폴백 적용. "
+            "quota 리셋 후 재추출 권장."
+        ],
+        "tags": tags,
+        "llm_confidence": "low",
+        "notes_md": text,
+    }
+
+
+def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
+    """Build real adapters with a free-tier-friendly LLM fallback chain.
+
+    LLM priority — picked from env keys + an optional `llm_choice`:
+      gemini  : Gemini 2.5 Flash    (1500 RPD / 15 RPM, project-wide)
+      groq    : Llama 3.3 70B       (separate RPD pool, very fast)
+      anthropic: Claude (paid)
+
+    Default order if `llm_choice` is None: gemini → groq → anthropic, taking
+    the first one whose key is set. Explicit `--llm <name>` forces one.
+    YouTube Data API v3: free tier (10k quota units/day).
     """
     yt_key = os.environ.get("YOUTUBE_API_KEY")
     goog_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    groq_key = os.environ.get("GROQ_API_KEY")
     anth_key = os.environ.get("ANTHROPIC_API_KEY")
 
     if not yt_key:
@@ -42,28 +97,98 @@ def _real_services_or_none(llm_choice: str | None = None) -> Services | None:
     from ..adapters.youtube import YouTubeAdapter
     yt = YouTubeAdapter(yt_key)
 
-    want = (llm_choice or os.environ.get("COLLECTOR_LLM", "gemini")).lower()
-    llm = None
-    if want == "gemini" and goog_key:
-        from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
-    elif want == "anthropic" and anth_key:
-        from ..adapters.llm_anthropic import AnthropicAdapter
-        llm = AnthropicAdapter(anth_key)
-    elif goog_key:  # safe fallback to free-tier
-        from ..adapters.llm_gemini import GeminiAdapter
-        llm = GeminiAdapter(goog_key, model="gemini-1.5-flash")
-    elif anth_key:
-        from ..adapters.llm_anthropic import AnthropicAdapter
-        llm = AnthropicAdapter(anth_key)
+    want = (llm_choice or os.environ.get("COLLECTOR_LLM", "")).lower()
+
+    def _make(name: str):
+        if name == "gemini" and goog_key:
+            from ..adapters.llm_gemini import GeminiAdapter
+            return [GeminiAdapter(goog_key, model="gemini-2.5-flash")]
+        if name == "groq" and groq_key:
+            from ..adapters.llm_groq import GroqAdapter
+            # Two adapters in the same provider: the quality model first
+            # (lower TPD on Groq free tier — 100k for llama-3.3-70b), then
+            # a smaller, higher-TPD bulk model so a daily-cap 429 on the
+            # primary just falls through to the secondary instead of the
+            # whole run dying.
+            return [
+                GroqAdapter(groq_key, model="llama-3.3-70b-versatile"),
+                GroqAdapter(groq_key, model="llama-3.1-8b-instant"),
+            ]
+        if name == "anthropic" and anth_key:
+            from ..adapters.llm_anthropic import AnthropicAdapter
+            return [AnthropicAdapter(anth_key)]
+        return []
+
+    # Build the adapter chain. When the user explicitly forces a single
+    # provider via --llm/COLLECTOR_LLM we still expand it into one or more
+    # adapters (e.g., 'groq' yields two models). Otherwise we collect
+    # every provider whose key is set so a mid-run quota/auth failure on
+    # the primary one transparently rolls over to the next.
+    chain: list = []
+    if want:
+        chain.extend(_make(want))
     else:
+        for name in ("gemini", "groq", "anthropic"):
+            chain.extend(_make(name))
+    if not chain:
         return None
+
+    def llm_extract(transcript: str, attempt: int) -> dict:
+        """Try each adapter in order; on quota/expired errors fall through.
+
+        Errors that point at THIS adapter — HTTP_429, LLM_HTTP_400 (Gemini's
+        signal for "API key expired"), HTTP_5XX — trigger a fallback to the
+        next adapter. Schema/semantic errors mean the model answered, so we
+        re-raise immediately (the pipeline's own retry layer handles them).
+
+        After the chain is exhausted with quota-class errors only, emit a
+        rule-based minimal payload from the transcript itself instead of
+        failing — data is preserved and a later run (after quota reset)
+        can re-extract the same source_key.
+        """
+        ROLLOVER_CODES = {
+            "HTTP_429", "HTTP_5XX",
+            "LLM_HTTP_400", "LLM_HTTP_401", "LLM_HTTP_403",
+            "LLM_HTTP_413",  # request too large for the current model's TPM
+        }
+        last_err = None
+        all_quota = True
+        for i, adapter in enumerate(chain):
+            try:
+                return adapter.extract(transcript, attempt)
+            except MockError as e:
+                last_err = e
+                if e.code in ROLLOVER_CODES:
+                    if i < len(chain) - 1:
+                        sys.stderr.write(
+                            f"[llm] {adapter.__class__.__name__} {e.code} → fallback to "
+                            f"{chain[i+1].__class__.__name__}\n"
+                        )
+                    continue
+                all_quota = False
+                raise
+        # Chain exhausted. If every failure was quota-class, emit a
+        # rule-based minimal extraction so the record is preserved
+        # rather than marked invalid.
+        if all_quota and last_err is not None and last_err.code in ROLLOVER_CODES:
+            sys.stderr.write(
+                f"[llm] all adapters quota-exhausted ({last_err.code}); "
+                f"using rule-based fallback to preserve transcript\n"
+            )
+            return _rule_based_extract(transcript, last_err.code)
+        if last_err is not None:
+            raise last_err
+        raise MockError("LLM_NO_PROVIDER", "no LLM adapter available")
+
+    # Expose the chain on the closure so tests / introspection can see the
+    # adapter sequence (closure is otherwise opaque).
+    llm_extract.adapters = chain  # type: ignore[attr-defined]
 
     return Services(
         youtube_search=yt.search,
         youtube_captions=yt.captions,
         youtube_video_alive=yt.video_alive,
-        llm_extract=llm.extract,
+        llm_extract=llm_extract,
         semantic_similarity=lambda s, t: 0.75,
         git_sync=lambda p: None,
     )
@@ -181,6 +306,8 @@ def run_query(
     logs_root: Path = Path("logs"),
     llm_choice: str | None = None,
     target_channel_id: str | None = None,
+    min_views: int = 0,
+    min_subscribers: int = 0,
 ) -> dict:
     """Run the pipeline for `query`. Returns a summary dict.
 
@@ -199,23 +326,51 @@ def run_query(
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
-        # Ask the adapter for as many as `count` (adapter paginates internally).
+        # Oversample so that after pre-COLLECT dedup we still have ~`count`
+        # genuinely new videos. YouTube search pagination is paid quota
+        # (100 units/page) so we cap the multiplier at 3× — enough for the
+        # common case of "most top results already in store" without
+        # blowing through 10k daily units.
         q_dict = q_obj.to_dict()
-        q_dict["max_results"] = count
+        q_dict["max_results"] = max(count * 3, count)
         try:
-            candidates = services.youtube_search(q_dict)[:count]
+            candidates = services.youtube_search(q_dict)
         except Exception:
             candidates = []
         # P4-5: fallback query on empty result (Master_02 §1)
         if not candidates:
             fb = fallback_query(query)
             fb_dict = fb.to_dict()
-            fb_dict["max_results"] = count
+            fb_dict["max_results"] = max(count * 3, count)
             try:
-                candidates = services.youtube_search(fb_dict)[:count]
+                candidates = services.youtube_search(fb_dict)
             except Exception:
                 candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
+
+        # Quality filter: enrich with view/subscriber counts and drop
+        # anything below user-supplied thresholds. Cheap (1 unit per 50
+        # video IDs + 1 unit per 50 channel IDs).
+        if candidates and (min_views > 0 or min_subscribers > 0):
+            try:
+                from ..adapters.youtube import YouTubeAdapter
+                yt_key = os.environ.get("YOUTUBE_API_KEY")
+                if yt_key:
+                    YouTubeAdapter(yt_key).enrich_stats(candidates)
+                    before = len(candidates)
+                    candidates = [
+                        c for c in candidates
+                        if c.get("view_count", 0) >= min_views
+                        and c.get("subscriber_count", 0) >= min_subscribers
+                    ]
+                    logger.log(
+                        entity_type="run", entity_id="pre_filter",
+                        from_status=None, to_status="quality_filtered",
+                        reason=f"min_views={min_views} min_subs={min_subscribers}",
+                        metrics={"before": before, "after": len(candidates)},
+                    )
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"[run] quality filter skipped: {e}\n")
     else:
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)
@@ -238,6 +393,51 @@ def run_query(
     payloads = sort_queue(
         payloads, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
     )
+
+    # Pre-COLLECT dedup (G-15-related: don't waste caption fetches on
+    # already-known videos — saves bot-score, time, and Gemini quota).
+    # Pipeline-level Rule C still runs for transcript-change detection on
+    # records we DO process; this filter just skips ones we've already
+    # *successfully* processed. Records previously left in `invalid`,
+    # `collected`, `extracted`, or `normalized` are retried — those failed
+    # mid-pipeline (e.g., a transient LLM_HTTP_404 or stale model name)
+    # and silently skipping them forever surprises the user.
+    SUCCESS_STATES = {
+        "promoted",
+        "reviewed_confirmed",
+        "reviewed_inferred",
+        "reviewed_unverified",
+        "reviewed_rejected",
+    }
+    pre_dedup = len(payloads)
+    seen: set[str] = set()
+    deduped: list = []
+    for p in payloads:
+        sk = p["source_key"]
+        if sk in seen:  # de-dup within the same search response
+            continue
+        existing = store.get(sk)
+        if existing is not None and existing.get("record_status") in SUCCESS_STATES:
+            continue
+        seen.add(sk)
+        deduped.append(p)
+    # User asked for `count` NEW videos — keep at most that many from the
+    # oversampled batch. (The oversample factor is set in the YouTube
+    # search call above.)
+    if len(deduped) > count:
+        deduped = deduped[:count]
+    skipped_duplicates = pre_dedup - len(deduped)
+    if skipped_duplicates:
+        logger.log(
+            entity_type="run",
+            entity_id=run_id,
+            from_status=None,
+            to_status="dedup_skipped",
+            run_id=run_id,
+            reason=f"{skipped_duplicates} already-processed",
+            metrics={"skipped": skipped_duplicates, "kept": len(deduped)},
+        )
+    payloads = deduped
 
     per_video_status = []
     processed_payloads: list = []
@@ -267,7 +467,10 @@ def run_query(
         "query": query,
         "mode": mode,
         "run_id": run_id,
+        "requested_count": count,
         "candidates": len(candidates),
+        "skipped_duplicates": skipped_duplicates,
+        "processed": len(payloads),
         "promoted": sum(1 for r in per_video_status if r["record_status"] == "promoted"),
         "inferred": sum(1 for r in per_video_status if r["record_status"] == "reviewed_inferred"),
         "unverified": sum(1 for r in per_video_status if r["record_status"] == "reviewed_unverified"),
@@ -285,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--count", type=int, default=10, help="후보 영상 수 (기본 10, 상한 없음 — YouTube 쿼터 주의)")
     ap.add_argument("--data-store", default="data_store")
     ap.add_argument("--logs", default="logs")
-    ap.add_argument("--llm", choices=["gemini", "anthropic"], default=None,
+    ap.add_argument("--llm", choices=["gemini", "groq", "anthropic"], default=None,
                     help="LLM 선택 (기본: gemini 무료 티어)")
     ap.add_argument("--target-channel", default=None,
                     help="Fast-Track 대상 channel_id (지정 시 해당 채널 우선)")
