@@ -1,60 +1,60 @@
 {
-  "timestamp": "2026-04-28T22:06:52Z",
+  "timestamp": "2026-04-29T22:07:17Z",
   "results": [
     {
       "name": "YouTube Data API v3",
       "ok": true,
       "detail": "search returned 3 items",
-      "duration_ms": 461,
+      "duration_ms": 334,
       "skip": false
     },
     {
       "name": "youtube-transcript-api",
       "ok": true,
       "detail": "dQw4w9WgXcQ: 6 transcript(s) available",
-      "duration_ms": 1592,
+      "duration_ms": 1136,
       "skip": false
     },
     {
       "name": "yt-dlp (ios,tv_embedded)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2282,
+      "duration_ms": 3096,
       "skip": false
     },
     {
       "name": "yt-dlp (android)",
       "ok": true,
       "detail": "dQw4w9WgXcQ: auto=937 manual=5",
-      "duration_ms": 2208,
+      "duration_ms": 2761,
       "skip": false
     },
     {
       "name": "yt-dlp (web,web_creator)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Please sign in. Use --cookies-from-browser or --cookies for the authentication. See  https",
-      "duration_ms": 3817,
+      "duration_ms": 3734,
       "skip": false
     },
     {
       "name": "yt-dlp (mweb)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2167,
+      "duration_ms": 3494,
       "skip": false
     },
     {
       "name": "timedtext direct",
       "ok": false,
       "detail": "all empty",
-      "duration_ms": 206,
+      "duration_ms": 259,
       "skip": false
     },
     {
       "name": "Gemini 1.5 Flash",
       "ok": false,
       "detail": "HTTP 400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key expired. Please renew the API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc",
-      "duration_ms": 167,
+      "duration_ms": 214,
       "skip": false
     },
     {
