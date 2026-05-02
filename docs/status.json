@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-05-01T21:59:23Z",
+  "updated_at": "2026-05-02T21:53:32Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_359b60445e95",
-    "run_id": "run_b03b178b",
+    "event_id": "evt_6008eb579f75",
+    "run_id": "run_68220d42",
     "entity_type": "run",
-    "entity_id": "run_b03b178b",
+    "entity_id": "run_68220d42",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_b03b178b.json",
+    "reason": "runs/run_68220d42.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-05-01T21:59:22Z"
+    "recorded_at": "2026-05-02T21:53:32Z"
   },
   "latest_run_detail": {
-    "run_id": "run_b03b178b",
-    "started_at": "2026-05-01T21:58:51Z",
-    "ended_at": "2026-05-01T21:59:22Z",
+    "run_id": "run_68220d42",
+    "started_at": "2026-05-02T21:53:07Z",
+    "ended_at": "2026-05-02T21:53:32Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-05-01T21:58:51Z",
-        "ended_at": "2026-05-01T21:59:16Z"
+        "started_at": "2026-05-02T21:53:07Z",
+        "ended_at": "2026-05-02T21:53:27Z"
       },
       "collect": {
         "status": "failed",
@@ -67,16 +67,16 @@
         "failure_reasons": {
           "YT_NO_TRANSCRIPT": 5
         },
-        "started_at": "2026-05-01T21:58:51Z",
-        "ended_at": "2026-05-01T21:59:22Z",
+        "started_at": "2026-05-02T21:53:07Z",
+        "ended_at": "2026-05-02T21:53:32Z",
         "reason": "YT_NO_TRANSCRIPT",
-        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
+        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty"
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
         ]
       },
       "extract": {
