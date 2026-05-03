@@ -230,6 +230,14 @@ def tool_synthesize(args: dict) -> dict:
     return synthesize(args["ideas"], args["research_results"])
 
 
+def tool_design_spec(args: dict) -> dict:
+    from ..workflows import design_spec
+    # Pull vault records from disk so the spec is grounded in the
+    # extracted knowledge/rules — same data the dashboard sees.
+    vault_records = _read_payloads()
+    return design_spec(args["best_idea"], args.get("research_results") or [], vault_records)
+
+
 def tool_export_notebook(args: dict) -> dict:
     from ..workflows import export_notebook
     path = export_notebook(
@@ -340,6 +348,24 @@ _TOOLS: dict[str, dict[str, Any]] = {
                 "research_results": {"type": "array"},
             },
             "required": ["ideas", "research_results"],
+        },
+    },
+    "design_spec": {
+        "fn": tool_design_spec,
+        "description": (
+            "Generate a one-page product design spec (markdown) for the chosen "
+            "idea, grounded in vault knowledge/rules. MVP is NotebookLM-based "
+            "and all stack recommendations default to free tier. Single cheap-LLM call."
+        ),
+        "schema": {
+            "type": "object",
+            "properties": {
+                "best_idea": {"type": "object",
+                              "description": "{idea, rationale, search_keywords[], target_audience}"},
+                "research_results": {"type": "array",
+                                     "description": "research_batch output (used to identify the idea's keywords)"},
+            },
+            "required": ["best_idea"],
         },
     },
     "export_notebook": {

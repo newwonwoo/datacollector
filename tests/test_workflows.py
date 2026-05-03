@@ -343,3 +343,83 @@ def test_mcp_resources_read(tmp_path, monkeypatch):
                   {"uri": "vault://strategies/youtube__VID7"})
     assert out["contents"][0]["text"] == "# hello"
     assert out["contents"][0]["mimeType"] == "text/markdown"
+
+
+# -------- design_spec --------
+
+def test_design_spec_returns_title_and_markdown(monkeypatch):
+    captured = {}
+
+    def fake_call(prompt, *, expect_json=True, max_tokens_hint=4000):
+        captured["prompt"] = prompt
+        return {
+            "title": "사주 결혼 매칭 노트북",
+            "spec_md": (
+                "## 한 줄 정의\nNotebookLM 기반 사주 결혼 궁합 큐레이션\n\n"
+                "## 스택 (환경 분석)\n- LLM: Gemini Flash (무료)\n"
+                "- 인터페이스: NotebookLM (무료)\n"
+            ),
+        }
+
+    import collector.workflows._spec as _sp
+    monkeypatch.setattr(_sp, "call_workflow_llm", fake_call)
+    best = {
+        "idea": "사주 결혼 매칭 노트북",
+        "rationale": "수요 큼",
+        "search_keywords": ["사주 결혼", "명리 궁합"],
+        "target_audience": "20-40대",
+    }
+    research = [
+        {"query": "사주 결혼", "promoted": 5,
+         "per_video": [{"video_id": "V1", "record_status": "promoted"}]},
+    ]
+    vault = [{
+        "video_id": "V1", "record_status": "promoted",
+        "summary": "결혼 궁합 핵심", "knowledge": ["오행 상생"],
+        "rules": ["배우자 사주 비교"], "examples": [], "claims": [],
+        "tags": ["사주"], "channel_id": "C1",
+    }]
+    out = _sp.design_spec(best, research, vault)
+    assert out["title"] == "사주 결혼 매칭 노트북"
+    assert "## 한 줄 정의" in out["spec_md"]
+    # Prompt must include the gathered evidence
+    assert "오행 상생" in captured["prompt"]
+    assert "MVP" in captured["prompt"] and "NotebookLM" in captured["prompt"]
+    assert "무료" in captured["prompt"]
+
+
+def test_design_spec_handles_empty_idea(monkeypatch):
+    import collector.workflows._spec as _sp
+    out = _sp.design_spec({}, [], [])
+    assert "(empty)" in out["title"] or out["title"] == "(empty)"
+
+
+def test_design_spec_falls_back_to_all_results_when_keywords_dont_match(monkeypatch):
+    """If the idea's search_keywords don't appear in research_results
+    (e.g., user passed a one-off best_idea), still produce a spec from
+    whatever research is provided."""
+    import collector.workflows._spec as _sp
+    captured = {}
+
+    def fake_call(prompt, *, expect_json=True, max_tokens_hint=4000):
+        captured["prompt"] = prompt
+        return {"title": "X", "spec_md": "## 한 줄 정의\nok"}
+
+    monkeypatch.setattr(_sp, "call_workflow_llm", fake_call)
+    out = _sp.design_spec(
+        {"idea": "X", "search_keywords": ["something_unmatched"]},
+        [{"query": "totally_other", "promoted": 1,
+          "per_video": [{"video_id": "VX", "record_status": "promoted"}]}],
+        [{"video_id": "VX", "record_status": "promoted",
+          "summary": "ok", "knowledge": ["k"]}],
+    )
+    assert out["spec_md"]
+    # Evidence still made it in via the all-results fallback
+    assert "k" in captured["prompt"]
+
+
+def test_mcp_design_spec_tool_present():
+    from collector.cli.mcp_server import _TOOLS
+    assert "design_spec" in _TOOLS
+    schema = _TOOLS["design_spec"]["schema"]
+    assert "best_idea" in schema.get("required", [])

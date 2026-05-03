@@ -22,5 +22,9 @@ from .brainstorm import brainstorm_topics
 from .export import export_notebook
 from ._batch import research_batch
 from ._synth import synthesize
+from ._spec import design_spec
 
-__all__ = ["brainstorm_topics", "research_batch", "synthesize", "export_notebook"]
+__all__ = [
+    "brainstorm_topics", "research_batch", "synthesize",
+    "design_spec", "export_notebook",
+]

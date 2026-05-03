@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..workflows import (
     brainstorm_topics,
+    design_spec,
     export_notebook,
     research_batch,
     synthesize,
@@ -113,6 +114,45 @@ def _cmd_synthesize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_design(args: argparse.Namespace) -> int:
+    ideas_body = json.loads(Path(args.ideas_file).read_text(encoding="utf-8"))
+    ideas = ideas_body.get("ideas") if isinstance(ideas_body, dict) else ideas_body
+    research_body = json.loads(Path(args.research_file).read_text(encoding="utf-8"))
+    research = research_body.get("results") if isinstance(research_body, dict) else research_body
+
+    if args.synth_file:
+        syn = json.loads(Path(args.synth_file).read_text(encoding="utf-8"))
+        idx = syn.get("best_idea_index", 0)
+    else:
+        idx = args.best_index
+
+    if not (0 <= idx < len(ideas)):
+        print(f"best_idea_index {idx} out of range (0..{len(ideas)-1})", file=sys.stderr)
+        return 2
+    best = ideas[idx]
+
+    vault_records: list = []
+    ds = Path(args.data_store)
+    if ds.exists():
+        for p in ds.rglob("*.json"):
+            try:
+                vault_records.append(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+
+    out = design_spec(best, research, vault_records)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.json:
+        out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        # Save the markdown body directly
+        body = f"# {out['title']}\n\n{out['spec_md']}\n"
+        out_path.write_text(body, encoding="utf-8")
+    print(str(out_path))
+    return 0
+
+
 def _cmd_export(args: argparse.Namespace) -> int:
     path = export_notebook(
         data_store_root=Path(args.data_store),
@@ -172,7 +212,27 @@ def _cmd_full(args: argparse.Namespace) -> int:
     if 0 <= best_idx < len(ideas):
         print(f"[full] best idea = #{best_idx} '{ideas[best_idx]['idea']}'", file=sys.stderr)
 
-    print("[full] step 4/4 export", file=sys.stderr)
+    if 0 <= best_idx < len(ideas):
+        print(f"[full] step 4/5 design_spec for best idea", file=sys.stderr)
+        vault_records: list = []
+        ds = Path(args.data_store)
+        if ds.exists():
+            for p in ds.rglob("*.json"):
+                try:
+                    vault_records.append(json.loads(p.read_text(encoding="utf-8")))
+                except Exception:
+                    continue
+        try:
+            spec = design_spec(ideas[best_idx], research, vault_records)
+            spec_path = out_dir / f"step4_spec_{best_idx}.md"
+            spec_path.write_text(
+                f"# {spec['title']}\n\n{spec['spec_md']}\n", encoding="utf-8"
+            )
+            print(f"[full] design spec → {spec_path}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] design_spec failed (skipped): {e}", file=sys.stderr)
+
+    print("[full] step 5/5 export NotebookLM bundle", file=sys.stderr)
     md_path = export_notebook(
         data_store_root=Path(args.data_store),
         out_dir=out_dir,
@@ -213,6 +273,18 @@ def main(argv: list[str] | None = None) -> int:
     p_s.add_argument("--research-file", required=True)
     p_s.add_argument("--out", default="")
 
+    p_d = sub.add_parser("design", help="generate a design spec markdown for the chosen idea")
+    p_d.add_argument("--ideas-file", required=True)
+    p_d.add_argument("--research-file", required=True)
+    p_d.add_argument("--synth-file", default="",
+                     help="step3_synthesize.json — picks best_idea_index from there")
+    p_d.add_argument("--best-index", type=int, default=0,
+                     help="alternative to --synth-file: directly pick by index")
+    p_d.add_argument("--data-store", default="data_store")
+    p_d.add_argument("--out", default="exports/spec.md")
+    p_d.add_argument("--json", action="store_true",
+                     help="dump the raw {title, spec_md} JSON instead of pure markdown")
+
     p_e = sub.add_parser("export", help="combine vault notes → single .md for NotebookLM")
     p_e.add_argument("--data-store", default="data_store")
     p_e.add_argument("--out-dir", default="exports")
@@ -242,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         "brainstorm": _cmd_brainstorm,
         "research": _cmd_research,
         "synthesize": _cmd_synthesize,
+        "design": _cmd_design,
         "export": _cmd_export,
         "full": _cmd_full,
     }[args.cmd](args)

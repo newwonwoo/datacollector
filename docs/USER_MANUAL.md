@@ -68,6 +68,7 @@ collector workflow full --domain "사주" --count 10
 - `step1_ideas.json` — 아이디어 + 키워드
 - `step2_research.json` — 키워드별 run_query 결과
 - `step3_synthesize.json` — best 1개 + 점수표 + 다음 단계
+- `step4_spec_<idx>.md` — best 아이디어의 **제품 설계서** (NotebookLM 기반 MVP, 무료 티어 스택 분석 포함)
 - `notebook_<timestamp>_<도메인>.md` — NotebookLM 한 번 끌어 놓기용 합본
 
 부분 명령:
@@ -75,6 +76,7 @@ collector workflow full --domain "사주" --count 10
 collector workflow brainstorm --domain "사주" --count 10 --out ideas.json
 collector workflow research    --keywords-file ideas.json --concurrency 3
 collector workflow synthesize  --ideas-file ideas.json --research-file research.json
+collector workflow design      --ideas-file ideas.json --research-file research.json --synth-file step3.json --out spec.md
 collector workflow export      --channel UC... --content-type concept
 ```
 
