@@ -170,17 +170,46 @@ def test_extract_failure_quarantines_as_invalid(tmp_path):
 
 
 def test_normalize_failure_quarantines_as_invalid(tmp_path):
+    """Empty rules + empty notes_md + a too-short summary → invalid.
+
+    The original gate was 'rules empty == invalid'; we relaxed it for the
+    knowledge-library case where a video legitimately has no actionable
+    rules but rich notes_md. This test now exercises the harder failure
+    where there's nothing to archive at all.
+    """
     store = JSONStore(root=tmp_path / "ds")
     logger = EventLogger()
     p = _payload("NORMFAIL001")
     services = build_mock_services(
         captions_map={"NORMFAIL001": {"source": "manual", "text": "text"}},
-        # Empty rules → SEMANTIC_EMPTY_RULES
-        llm_script=[{"summary": _LONG_SUMMARY, "rules": [], "tags": []}],
+        # No rules, no notes, summary too short to carry information →
+        # SEMANTIC_EMPTY_RULES quarantine.
+        llm_script=[{"summary": "짧음", "rules": [], "tags": [], "notes_md": ""}],
     )
     run_pipeline(p, services, store, logger, use_lock=False)
     assert p["record_status"] == "invalid"
     assert p["failure_reason_code"] == "SEMANTIC_EMPTY_RULES"
+
+
+def test_normalize_passes_when_rules_empty_but_notes_rich(tmp_path):
+    """Knowledge-library case: empty rules but substantial notes_md → pass."""
+    store = JSONStore(root=tmp_path / "ds")
+    logger = EventLogger()
+    p = _payload("NORMPASS001")
+    services = build_mock_services(
+        captions_map={"NORMPASS001": {"source": "manual", "text": "text"}},
+        llm_script=[{
+            "summary": _LONG_SUMMARY,
+            "rules": [],
+            "tags": ["t1"],
+            "notes_md": "## 핵심\n" + ("자세한 마크다운 노트 본문 " * 20),
+        }],
+    )
+    run_pipeline(p, services, store, logger, use_lock=False)
+    # Either reviewed_* (mock similarity ≥ 0.5) or normalized — anything
+    # but invalid means the stage didn't quarantine on empty rules.
+    assert p["record_status"] != "invalid"
+    assert p.get("notes_md", "").startswith("## 핵심")
 
 
 # ============== P1-b Soft filter ==============
@@ -322,3 +351,27 @@ def test_exp_backoff_calls_sleep_between_attempts(tmp_path, monkeypatch):
     # 5 retry intervals between 6 attempts (attempt 0..5)
     assert len(sleeps) == 5
     assert sleeps == [2.0, 4.0, 8.0, 16.0, 32.0]
+
+
+def test_normalize_handles_list_notes_md_and_summary(tmp_path):
+    """The LLM (Groq especially) sometimes returns notes_md/summary as a
+    list rather than a string. Stage normalize must coerce, not crash."""
+    store = JSONStore(root=tmp_path / "ds")
+    logger = EventLogger()
+    p = _payload("LISTPL00001")
+    services = build_mock_services(
+        captions_map={"LISTPL00001": {"source": "manual", "text": "text"}},
+        llm_script=[{
+            # Both fields as lists — what we saw in the real-user crash.
+            "summary": [_LONG_SUMMARY[:60], _LONG_SUMMARY[60:]],
+            "rules": ["r1"],
+            "tags": ["t1"],
+            "notes_md": ["## 1부\n첫 청크 본문", "## 2부\n두 청크 본문"],
+        }],
+    )
+    run_pipeline(p, services, store, logger, use_lock=False)
+    # Should NOT crash with AttributeError — record advances past normalize.
+    assert p["record_status"] != "invalid", p
+    assert isinstance(p["summary"], str)
+    assert isinstance(p["notes_md"], str)
+    assert "## 1부" in p["notes_md"] and "## 2부" in p["notes_md"]

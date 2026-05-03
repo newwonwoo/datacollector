@@ -8,6 +8,8 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <meta name="build" content="v2-live-pipeline" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
   <title>Collector — YouTube 지식 파이프라인</title>
   <style>
     :root {
@@ -463,10 +465,58 @@
       <span class="tag">YouTube 지식 파이프라인 · v10</span>
     </div>
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="mode-badge" class="pill" style="display:none"></span>
     <span id="mini-health" class="pill" style="display:none"></span>
     <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
   </span>
   </header>
+
+  <!-- 초기 설정 마법사 (로컬 모드에서 API 키 미설정 시만 표시) -->
+  <div id="setup-wizard" class="card" style="display:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.08)">
+    <div class="section-title" style="color:var(--accent)">🔑 초기 설정 필요 · 최초 1회</div>
+    <p class="desc" style="margin-top:4px">
+      아래에 API 키 2개를 붙여넣으면 이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다.
+      키는 <strong>브라우저 바깥으로 나가지 않으며</strong>, Git에도 커밋되지 않습니다.
+    </p>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">YouTube Data API v3 키</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-youtube" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>
+        → "API 키 만들기" · 무료 (10,000 units/day)
+      </p>
+    </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Gemini API 키 (LLM, 선택)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-gemini" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+        → "Create API key" · 무료 티어 (15 RPM / 1500 RPD)
+      </p>
+    </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Groq API 키 (LLM 대체, 선택)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-groq" type="password" placeholder="gsk_..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.groq.com/keys" target="_blank">Groq Console</a>
+        → "Create API Key" · 무료 (Llama 3.3 70B) · Gemini 와 별도 카운터
+      </p>
+    </div>
+    <p class="desc" style="margin-top:10px;font-size:12px;color:var(--text-2)">
+      Gemini · Groq 둘 중 하나만 있어도 동작합니다. 둘 다 있으면 Gemini 가 우선,
+      <code class="kbd">--llm groq</code> 또는 <code class="kbd">COLLECTOR_LLM=groq</code> 으로 강제 가능.
+    </p>
+    <div class="form-row" style="margin-top:16px">
+      <button onclick="saveKeys()">저장 후 시작 ▶</button>
+      <button class="ghost" onclick="hideWizard(true)">일단 닫기</button>
+    </div>
+  </div>
 
   <!-- 완료 배너 (동적 — 실행 성공/실패 알림, 새 이벤트만) -->
   <div id="banner-host"></div>
@@ -486,11 +536,21 @@
       <input id="count" type="number" value="10" min="1" max="200" title="수집 후보 영상 수 (최대 200)" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
     </div>
+    <div class="form-row" style="margin-top:8px;align-items:center">
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px">최소 조회수</label>
+      <input id="min-views" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 영상은 검색 단에서 제외 (0=필터 없음)"
+             style="max-width:140px" />
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:78px;margin-left:6px">최소 구독자수</label>
+      <input id="min-subs" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 채널의 영상은 제외 (0=필터 없음)"
+             style="max-width:140px" />
+    </div>
     <div id="run-busy" class="run-busy">
       <span class="dots"><span></span><span></span><span></span></span>
       <span id="run-busy-text">실행 중…</span>
     </div>
-    <p class="desc">
+    <p class="desc" id="run-desc">
       GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요.
       최초 1회만 <a href="#" onclick="document.getElementById('settings').open=true;return false;">토큰 설정</a>이 필요합니다.
     </p>
@@ -584,6 +644,16 @@
         <svg id="chart-fail" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
         <div class="legend" id="legend-fail"></div>
       </div>
+      <div class="chart-card">
+        <div class="ctitle">콘텐츠 타입 분포</div>
+        <svg id="chart-ctype" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-ctype"></div>
+      </div>
+      <div class="chart-card">
+        <div class="ctitle">LLM 자평 분포</div>
+        <svg id="chart-llmconf" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-llmconf"></div>
+      </div>
     </div>
     <!-- DLQ 재처리 버튼 -->
     <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -618,8 +688,22 @@
 
   <!-- 설정 -->
   <div class="card" style="margin-top: 20px;">
-    <details id="settings">
-      <summary>토큰 설정 (최초 1회)</summary>
+    <!-- 로컬 모드: API 키 (서버가 .env에 저장) -->
+    <details id="local-settings" style="display:none">
+      <summary>API 키 설정 (로컬)</summary>
+      <p class="desc" style="margin-top:0">
+        이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다. Git에는 커밋되지 않습니다.
+      </p>
+      <div id="local-key-status" style="margin:10px 0;display:flex;gap:14px;font-size:13px;color:var(--text-2)"></div>
+      <div class="form-row">
+        <button class="ghost" onclick="showWizard()">🔑 API 키 재설정</button>
+        <button class="ghost" onclick="fetchKeyState().then(s=>{if(s){localKeyState=s;renderLocalKeyStatus();toast('상태 새로고침');}})">↻ 상태 확인</button>
+      </div>
+    </details>
+
+    <!-- 클라우드 모드: PAT -->
+    <details id="settings" style="margin-top:14px">
+      <summary>토큰 설정 (최초 1회, 클라우드 모드)</summary>
       <p class="desc" style="margin-top:0">
         실행·상태조회 API에 GitHub Personal Access Token이 필요합니다.
         값은 <strong>이 브라우저에만 저장</strong>되고 서버로 전송되지 않습니다.
@@ -652,6 +736,14 @@ const OWNER = 'newwonwoo';
 const REPO  = 'datacollector';
 const WF    = 'collect.yml';
 const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+// ---- Local vs Cloud mode ----
+// Local mode: the UI is served by `collector app` on 127.0.0.1. The same
+// origin exposes /api/run and /api/config so no PAT is required and YouTube
+// is fetched from the user's residential IP (avoids GH Actions blocks).
+const isLocalMode = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(location.hostname);
+let localKeyState = { has_youtube: false, has_gemini: false, has_groq: false, has_anthropic: false };
+let __localRunPoll = null;
 
 // State: track which runs we've already announced so the banner doesn't spam
 let lastAnnouncedRun = null;
@@ -693,6 +785,11 @@ async function gh(path, opts={}){
 
 async function updateConn(){
   const el = document.getElementById('conn');
+  if (isLocalMode){
+    el.className = 'pill ok';
+    el.textContent = '● 로컬 서버';
+    return;
+  }
   if (!token()){
     el.className='pill warn'; el.innerHTML='<span class="dot"></span>토큰 필요'; return;
   }
@@ -704,11 +801,160 @@ async function updateConn(){
   } catch(e){ el.className='pill err'; el.textContent='● 네트워크 오류'; }
 }
 
+// ---- Local-mode helpers: API keys + pipeline run ----
+async function fetchKeyState(){
+  try {
+    const r = await fetch('/api/config', {cache: 'no-store'});
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e){ return null; }
+}
+
+function showWizard(){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = '';
+}
+function hideWizard(manual){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = 'none';
+  if (manual) sessionStorage.setItem('wizard_dismissed', '1');
+}
+
+async function saveKeys(){
+  const yt = (document.getElementById('setup-youtube').value || '').trim();
+  const gem = (document.getElementById('setup-gemini').value || '').trim();
+  const groqEl = document.getElementById('setup-groq');
+  const groq = groqEl ? (groqEl.value || '').trim() : '';
+  if (!yt && !gem && !groq) return toast('최소 1개 키를 입력하세요');
+  const body = {};
+  if (yt) body.youtube = yt;
+  if (gem) body.google = gem;
+  if (groq) body.groq = groq;
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    // Wipe inputs immediately — the value is now on disk.
+    document.getElementById('setup-youtube').value = '';
+    document.getElementById('setup-gemini').value = '';
+    if (groqEl) groqEl.value = '';
+    if (!r.ok){
+      const txt = await r.text();
+      return toast('저장 실패 ' + r.status + ': ' + txt.slice(0, 120));
+    }
+    const st = await r.json();
+    localKeyState = st;
+    toast('✓ 키 저장됨 (.env)');
+    renderLocalKeyStatus();
+    if (localKeyState.has_youtube && _hasAnyLLM()){
+      hideWizard(false);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+function renderLocalKeyStatus(){
+  const host = document.getElementById('local-key-status');
+  if (!host) return;
+  const mark = (ok) => ok ? '<span style="color:var(--ok)">✅</span>'
+                           : '<span style="color:var(--err)">❌</span>';
+  host.innerHTML = `
+    <span>${mark(localKeyState.has_youtube)} YouTube</span>
+    <span>${mark(localKeyState.has_gemini)} Gemini</span>
+    <span>${mark(localKeyState.has_groq)} Groq</span>
+    ${localKeyState.has_anthropic ? `<span>${mark(true)} Anthropic</span>` : ''}
+  `;
+}
+
+function _hasAnyLLM(){
+  return localKeyState.has_gemini || localKeyState.has_groq || localKeyState.has_anthropic;
+}
+
+async function runQueryLocal(q, c){
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  // Visually reset the pipeline diagram the moment the user clicks
+  // so they don't see the previous run's stale state.
+  resetPipelineDiagram();
+  try {
+    const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
+    const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        query: q,
+        count: parseInt(c, 10) || 10,
+        min_views: minViews,
+        min_subscribers: minSubs,
+      }),
+    });
+    if (resp.status === 202){
+      toast('✓ 로컬 실행 시작');
+      document.getElementById('query').value = '';
+      startLocalRunPolling();
+    } else if (resp.status === 409){
+      toast('이미 실행 중');
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '실행 ▶'; }
+}
+
+function startLocalRunPolling(){
+  if (__localRunPoll) clearInterval(__localRunPoll);
+  const busy = document.getElementById('run-busy');
+  const txt  = document.getElementById('run-busy-text');
+  if (busy) busy.classList.add('show');
+  __localRunPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/run/status', {cache: 'no-store'});
+      if (!r.ok) return;
+      const s = await r.json();
+      if (txt){
+        const base = `실행 중 · ${s.query || ''}`;
+        txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
+      }
+      if (s.status === 'completed' || s.status === 'failed' || s.status === 'idle'){
+        clearInterval(__localRunPoll);
+        __localRunPoll = null;
+        if (busy) busy.classList.remove('show');
+        if (s.status === 'completed'){
+          // Surface dedup stats so the user understands why "asked 10, got 1"
+          const sm = s.summary || {};
+          const ask = sm.requested_count;
+          const skip = sm.skipped_duplicates || 0;
+          const proc = sm.processed || 0;
+          let msg = '✅ 로컬 실행 완료';
+          if (ask !== undefined && skip > 0){
+            msg += ` (요청 ${ask} · 신규 ${proc} · 이미 처리됨 ${skip})`;
+          }
+          toast(msg);
+        } else if (s.status === 'failed'){
+          toast('❌ 실행 실패: ' + (s.error || ''));
+        }
+        loadLatest();
+        loadOpStrip();
+      }
+    } catch(_){}
+  }, 1500);
+}
+
 async function runQuery(){
   const q = document.getElementById('query').value.trim();
   const c = document.getElementById('count').value || '5';
   const btn = document.getElementById('run-btn');
   if (!q) return toast('검색어를 입력하세요');
+  if (isLocalMode){
+    if (!localKeyState.has_youtube || !_hasAnyLLM()){
+      showWizard();
+      return toast('API 키부터 등록하세요');
+    }
+    return runQueryLocal(q, c);
+  }
   if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
   if (__lastActiveGARun){
     if (!confirm(`이미 실행 중인 run이 있습니다 (${__lastActiveGARun.display_title || ''}).\n`+
@@ -812,39 +1058,64 @@ function announceCompletion(run){
 }
 
 async function loadLatest(){
-  const r = await gh('/contents/data_store');
   const host = document.getElementById('records');
   const kpi = document.getElementById('kpi');
 
-  if (!r.ok){
-    host.innerHTML = r.status===404
-      ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
-      : '<div class="empty">data_store/ 조회 실패</div>';
-    return;
-  }
-  const dirs = await r.json();
-  if (!Array.isArray(dirs) || !dirs.length){
-    host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
-  }
-  dirs.sort((a,b)=>b.name.localeCompare(a.name));
-  const r2 = await gh(`/contents/${dirs[0].path}`);
-  if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
-  const files = await r2.json();
-  const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
-
-  const records = await Promise.all(recent.map(async f => {
-    const cr = await gh(`/contents/${f.path}`);
-    if (!cr.ok) return null;
-    const cb = await cr.json();
+  // Local mode: read from the local server's /api/records — much faster
+  // than the GitHub Contents API and works for the user's own runs that
+  // are not yet pushed.
+  let valid = [];
+  let totalFiles = 0;
+  if (isLocalMode){
     try {
-      const raw = atob(cb.content.replace(/\n/g,''));
-      const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
-      const text = new TextDecoder('utf-8').decode(bytes);
-      return JSON.parse(text);
-    } catch(e){ return null; }
-  }));
+      const r = await fetch('/api/records?limit=50', {cache: 'no-store'});
+      if (!r.ok){
+        host.innerHTML = '<div class="empty">/api/records 조회 실패 ('+r.status+')</div>';
+        return;
+      }
+      const body = await r.json();
+      valid = (body.records || []).filter(Boolean);
+      totalFiles = body.total_files || valid.length;
+    } catch(e){
+      host.innerHTML = '<div class="empty">로컬 records 로드 실패: '+e.message+'</div>';
+      return;
+    }
+  } else {
+    const r = await gh('/contents/data_store');
+    if (!r.ok){
+      host.innerHTML = r.status===404
+        ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
+        : '<div class="empty">data_store/ 조회 실패</div>';
+      return;
+    }
+    const dirs = await r.json();
+    if (!Array.isArray(dirs) || !dirs.length){
+      host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
+    }
+    dirs.sort((a,b)=>b.name.localeCompare(a.name));
+    const r2 = await gh(`/contents/${dirs[0].path}`);
+    if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
+    const files = await r2.json();
+    totalFiles = files.length;
+    const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
 
-  const valid = records.filter(Boolean);
+    const records = await Promise.all(recent.map(async f => {
+      const cr = await gh(`/contents/${f.path}`);
+      if (!cr.ok) return null;
+      const cb = await cr.json();
+      try {
+        const raw = atob(cb.content.replace(/\n/g,''));
+        const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
+        const text = new TextDecoder('utf-8').decode(bytes);
+        return JSON.parse(text);
+      } catch(e){ return null; }
+    }));
+    valid = records.filter(Boolean);
+  }
+
+  if (!valid.length){
+    host.innerHTML = '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>';
+  }
 
   // detect newly-seen source_keys (NEW badge)
   const freshKeys = new Set();
@@ -876,7 +1147,7 @@ async function loadLatest(){
 
   const promoted = valid.filter(p=>p.record_status==='promoted').length;
   const cost = valid.reduce((s,p)=>s + (p.llm_context?.cost_usd||0), 0);
-  kpi.children[0].querySelector('.value').textContent = files.length;
+  kpi.children[0].querySelector('.value').textContent = totalFiles;
   kpi.children[1].querySelector('.value').textContent = promoted;
   kpi.children[2].querySelector('.value').textContent = '$'+cost.toFixed(4);
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
@@ -891,6 +1162,12 @@ async function loadLatest(){
   renderStackBar('chart-fail',   'legend-fail',
                  countBy(valid.filter(p=>p.failure_reason_code), 'failure_reason_code'),
                  FAIL_COLORS);
+  renderStackBar('chart-ctype',   'legend-ctype',
+                 countBy(valid.filter(p=>p.content_type), 'content_type'),
+                 CTYPE_COLORS);
+  renderStackBar('chart-llmconf', 'legend-llmconf',
+                 countBy(valid.filter(p=>p.llm_confidence), 'llm_confidence'),
+                 LLM_CONF_COLORS);
 
   // Knowledge cards (final product) — respects current search
   applySearchAndRender();
@@ -926,11 +1203,13 @@ function renderRecordsList(valid){
   }
   // Maintain NEW badges + modal open behaviour from earlier render
   host.innerHTML = valid.slice(0, 10).map(p => {
+    const ctype = (p.content_type || '').toLowerCase();
+    const ctLabel = ctype && CTYPE_LABEL[ctype] ? CTYPE_LABEL[ctype] : '';
     return `
       <div class="rec-item" onclick="openModal('${encodeURIComponent(p.source_key)}')">
         <div class="head">
           <span>${p.source_key || '?'}</span>
-          <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+          <span>${p.record_status || '?'} · ${p.confidence || '?'}${ctLabel ? ' · '+ctLabel : ''}</span>
         </div>
         <div class="title-line">${escapeHtml((p.title||'').slice(0,80) || '(제목 없음)')}</div>
         <div class="summary">${escapeHtml((p.summary||'').slice(0,140))}${(p.summary||'').length>140?'…':''}</div>
@@ -1008,6 +1287,19 @@ function renderKnowledge(valid){
     const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
     const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
     const isPromoted = p.record_status === 'promoted';
+    // v2 sections
+    const knowledge = (p.knowledge || []).map(k => `<li>${escapeHtml(k)}</li>`).join('');
+    const examples  = (p.examples  || []).map(e => `<li>${escapeHtml(e)}</li>`).join('');
+    const claims    = (p.claims    || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+    const unclear   = (p.unclear   || []).map(u => `<li>${escapeHtml(u)}</li>`).join('');
+    const ctype = (p.content_type || '').toLowerCase();
+    const llmConf = (p.llm_confidence || '').toLowerCase();
+    const ctypeBadge = ctype && CTYPE_LABEL[ctype]
+      ? `<span class="kbadge" style="background:${CTYPE_COLORS[ctype]||'#94a3b8'}22;color:${CTYPE_COLORS[ctype]||'#475569'}">${CTYPE_LABEL[ctype]}</span>`
+      : '';
+    const llmConfBadge = llmConf
+      ? `<span class="kbadge" style="background:${LLM_CONF_COLORS[llmConf]||'#94a3b8'}22;color:${LLM_CONF_COLORS[llmConf]||'#475569'}">LLM ${llmConf}</span>`
+      : '';
     const failRow = p.failure_reason_code
       ? `<div class="ksection">실패 사유</div>
          <div class="ksummary" style="background:var(--err-bg);color:var(--err)">
@@ -1015,16 +1307,25 @@ function renderKnowledge(valid){
            ${p.failure_reason_detail ? '<br>'+escapeHtml(String(p.failure_reason_detail).slice(0,200)) : ''}
          </div>`
       : '';
-    // Obsidian / JSON links only make sense for promoted records
+    // Obsidian / JSON links only make sense for promoted records.
+    // Local mode: resolve to the local HTTP server so files open even without git.
+    const vaultHref = isLocalMode
+      ? `/vault/strategies/${vaultName}`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
+    const jsonHref = isLocalMode
+      ? `/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`;
     const promotedLinks = isPromoted
-      ? `<a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
-         <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>`
+      ? `<a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Obsidian Markdown</a>
+         <a class="link-btn" href="${jsonHref}" ${isLocalMode ? '' : 'target="_blank"'}>📦 원본 JSON</a>`
       : '';
     return `
       <div class="know-card">
         <div class="kh">
           <div class="ktitle">${escapeHtml(p.title || sk || '(제목 없음)')}</div>
           <div class="kbadge ${conf}">${p.record_status || conf}</div>
+          ${ctypeBadge}
+          ${llmConfBadge}
         </div>
         <div class="kmeta">
           <span>📺 ${sk}</span>
@@ -1034,8 +1335,11 @@ function renderKnowledge(valid){
         ${failRow}
         <div class="ksection">요약</div>
         <div class="ksummary">${escapeHtml(p.summary || '(아직 요약 없음 — 이 영상은 ' + (p.failure_reason_code ? p.failure_reason_code + ' 단계에서 중단됨' : '처리 중') + ')')}</div>
-        <div class="ksection">규칙 (${(p.rules||[]).length})</div>
-        <ol class="krules">${rules || '<li style="color:var(--text-dim)">아직 추출 안 됨</li>'}</ol>
+        ${knowledge ? `<div class="ksection">핵심 개념 (${(p.knowledge||[]).length})</div><ol class="krules">${knowledge}</ol>` : ''}
+        ${rules ? `<div class="ksection">행동 지침 (${(p.rules||[]).length})</div><ol class="krules">${rules}</ol>` : ''}
+        ${examples ? `<div class="ksection">사례 (${(p.examples||[]).length})</div><ol class="krules">${examples}</ol>` : ''}
+        ${claims ? `<div class="ksection">화자의 주장 (${(p.claims||[]).length})</div><ol class="krules">${claims}</ol>` : ''}
+        ${unclear ? `<div class="ksection">불명확 (${(p.unclear||[]).length})</div><ol class="krules">${unclear}</ol>` : ''}
         ${tags ? `<div class="ksection">태그</div><div class="ktags">${tags}</div>` : ''}
         <div class="kactions">
           <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube 원본</a>
@@ -1059,6 +1363,19 @@ const STATUS_COLORS = {
 const CONF_COLORS = {
   'confirmed': '#16a34a', 'inferred': '#eab308',
   'unverified': '#94a3b8', 'rejected': '#dc2626',
+};
+// extract_generic_v2 metas
+const CTYPE_COLORS = {
+  'concept': '#2563eb', 'howto': '#16a34a', 'case': '#0891b2',
+  'opinion': '#7c3aed', 'mixed': '#94a3b8',
+  'ad': '#dc2626', 'chat': '#9ca3af',
+};
+const LLM_CONF_COLORS = {
+  'high': '#16a34a', 'medium': '#eab308', 'low': '#dc2626',
+};
+const CTYPE_LABEL = {
+  'concept': '📘 개념', 'howto': '🎯 행동', 'case': '📋 사례',
+  'opinion': '💬 주장', 'mixed': '🧩 혼합', 'ad': '🚫 광고', 'chat': '💭 잡담',
 };
 
 function countBy(items, key){
@@ -1116,6 +1433,29 @@ function updatePipelineDiagram(valid){
 }
 
 const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
+
+function resetPipelineDiagram(){
+  // Wipe every stage card back to the '대기' (idle) look. Called on
+  // (a) initial dashboard load — so a refresh after a finished run
+  //     doesn't show the previous progress as if it were live, and
+  // (b) the moment the user clicks 실행 — so a new run replaces the
+  //     last one's badges immediately instead of after the first poll.
+  for (const st of STAGE_ORDER){
+    const node = document.querySelector(`.stage[data-stage="${st}"]`);
+    if (!node) continue;
+    node.className = 'stage';
+    const c = node.querySelector('.stage-count'); if (c) c.textContent = '—';
+    const s = node.querySelector('.stage-sub');   if (s) s.textContent = '대기';
+    const bar = node.querySelector('.stage-bar i');
+    if (bar){ bar.style.width = '0%'; bar.classList.remove('shimmer'); }
+  }
+  for (const st of STAGE_ORDER){
+    const a = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
+    if (a) a.className = 'stage-arrow';
+  }
+  const lbl = document.getElementById('run-label');
+  if (lbl) lbl.innerHTML = '<span>최근 run: —</span>';
+}
 
 function updatePipelineFromStatus(detail, activeGARun){
   if (!detail || !detail.per_stage) return;
@@ -1254,23 +1594,39 @@ function openModal(encodedSk){
   const vid = p.video_id || '';
   const vaultName = sk.replace(':', '__') + '.md';
   const body = document.getElementById('modal-body');
+  const ctype = (p.content_type || '').toLowerCase();
+  const llmConf = (p.llm_confidence || '').toLowerCase();
+  const metaBits = [
+    `<span>${sk}</span>`,
+    `<span>${p.record_status} · ${p.confidence}</span>`,
+    `<span>${fmtTime(p.collected_at||'')}</span>`,
+    ctype && CTYPE_LABEL[ctype] ? `<span>${CTYPE_LABEL[ctype]}</span>` : '',
+    llmConf ? `<span>LLM: ${llmConf}</span>` : '',
+  ].filter(Boolean).join('');
+  function _list(label, arr){
+    if (!arr || !arr.length) return '';
+    return `<div class="sec-title">${label} (${arr.length})</div>` +
+           `<ol>${arr.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ol>`;
+  }
+  const vaultHref = isLocalMode
+    ? `/vault/strategies/${vaultName}`
+    : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
   body.innerHTML = `
-    <h3>${p.title || '(제목 없음)'}</h3>
-    <div class="meta">
-      <span>${sk}</span>
-      <span>${p.record_status} · ${p.confidence}</span>
-      <span>${fmtTime(p.collected_at||'')}</span>
-    </div>
+    <h3>${escapeHtml(p.title || '(제목 없음)')}</h3>
+    <div class="meta">${metaBits}</div>
     <div class="sec-title">요약</div>
-    <div class="summary">${p.summary || '(없음)'}</div>
-    <div class="sec-title">규칙 (${(p.rules||[]).length})</div>
-    <ol>${(p.rules||[]).map(r=>`<li>${r}</li>`).join('') || '<li>(없음)</li>'}</ol>
+    <div class="summary">${escapeHtml(p.summary || '(없음)')}</div>
+    ${_list('핵심 개념', p.knowledge)}
+    ${_list('행동 지침', p.rules)}
+    ${_list('사례', p.examples)}
+    ${_list('화자의 주장', p.claims)}
+    ${_list('불명확', p.unclear)}
     <div class="sec-title">태그</div>
-    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
+    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
     <div class="close-row">
       <div class="links-row" style="margin:0">
         <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube</a>
-        <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Markdown</a>
+        <a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Markdown</a>
       </div>
       <button class="ghost" onclick="closeModal()">닫기</button>
     </div>
@@ -1454,12 +1810,17 @@ function updateRunBusyBanner(activeRun){
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
   // Try two sources to bypass CDN/proxy 403: absolute jsDelivr → relative → raw.githubusercontent.
+  // In local mode the local server's /status.json is authoritative (the
+  // background worker rewrites it after each run); falling back to CDN
+  // would surface a stale main-branch snapshot and mislead the dashboard.
   const host = document.getElementById('op-strip');
-  const urls = [
-    `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
-    `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
-    `status.json?t=${Date.now()}`,
-  ];
+  const urls = isLocalMode
+    ? [`status.json?t=${Date.now()}`]
+    : [
+        `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
+        `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
+        `status.json?t=${Date.now()}`,
+      ];
   try {
     let s = null;
     for (const u of urls){
@@ -1519,17 +1880,71 @@ async function loadOpStrip(){
       chips.push(`<span class="op-chip">📚 <span class="label">총:</span> <span class="val">${s.records.total}</span></span>`);
       chips.push(`<span class="op-chip">✅ <span class="label">Promoted:</span> <span class="val">${s.records.promoted}</span></span>`);
     }
-    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at?.replace('T',' ').slice(0,16) || '?'}</span>`);
+    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at ? fmtTime(s.updated_at) : '?'}</span>`);
     host.innerHTML = chips.join('');
   } catch(e){
     host.innerHTML = '<span class="muted">운영 상태 로드 실패</span>';
   }
 }
 
+async function bootstrapLocalMode(){
+  // Badge
+  const badge = document.getElementById('mode-badge');
+  if (badge){
+    badge.style.display = 'inline-flex';
+    badge.className = 'pill ' + (isLocalMode ? 'ok' : 'run');
+    badge.textContent = isLocalMode ? '🏠 로컬 모드' : '☁ 클라우드 모드';
+    badge.title = isLocalMode
+      ? 'collector app 로컬 서버에 연결됨 — YouTube 접근에 사용자 IP 사용'
+      : 'GitHub Pages / 클라우드 API 사용 중';
+  }
+  const runDesc = document.getElementById('run-desc');
+  if (runDesc){
+    runDesc.innerHTML = isLocalMode
+      ? '이 PC에서 파이프라인이 돌아갑니다. YouTube 자막은 사용자 IP로 가져옵니다. ' +
+        '<a href="#" onclick="document.getElementById(\'local-settings\').open=true;return false;">API 키 설정</a>'
+      : 'GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요. ' +
+        '최초 1회만 <a href="#" onclick="document.getElementById(\'settings\').open=true;return false;">토큰 설정</a>이 필요합니다.';
+  }
+  // Show appropriate settings section
+  const localSettings = document.getElementById('local-settings');
+  const cloudSettings = document.getElementById('settings');
+  if (isLocalMode){
+    if (localSettings) localSettings.style.display = '';
+    if (cloudSettings) cloudSettings.style.display = 'none';
+    const st = await fetchKeyState();
+    if (st) localKeyState = st;
+    renderLocalKeyStatus();
+    const ready = localKeyState.has_youtube && _hasAnyLLM();
+    if (!ready && !sessionStorage.getItem('wizard_dismissed')){
+      showWizard();
+    }
+  } else {
+    if (localSettings) localSettings.style.display = 'none';
+    if (cloudSettings) cloudSettings.style.display = '';
+  }
+}
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {/* non-fatal */});
+  });
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
-  document.getElementById('pat').value = token();
-  updateConn(); loadLatest(); loadRuns(); loadOpStrip();
-  setInterval(loadRuns, 10000);
+  const pat = document.getElementById('pat');
+  if (pat) pat.value = token();
+  bootstrapLocalMode();
+  updateConn(); loadLatest();
+  if (!isLocalMode){
+    loadRuns();
+    setInterval(loadRuns, 10000);
+  } else {
+    // Local mode: runs come from /api/run/status; hide GH runs list.
+    const runsHost = document.getElementById('runs');
+    if (runsHost) runsHost.innerHTML = '<div class="empty">로컬 모드: /api/run/status 로 진행 상태 표시</div>';
+  }
+  loadOpStrip();
   setInterval(loadLatest, 60000);
   setInterval(loadOpStrip, 30000);  // refresh every 30s
   document.getElementById('query').addEventListener('keydown', e=>{

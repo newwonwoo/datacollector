@@ -1,9 +1,28 @@
 # 사용자 매뉴얼 — YouTube Data Collector v10 E2E Tester
 
-## 0. 터미널 없이 쓰는 방법 (모바일/PC 공통)
+## 0. 로컬 웹앱 모드 (권장) — YouTube 차단 우회
 
-### 0.1 초간단 — 웹 브라우저만 (모바일 최적)
-> 아무것도 설치 안 함. 핸드폰에서도 가능.
+> **중요 (2026-04 기준):** YouTube는 클라우드 제공자 IP(GitHub Actions 포함)에서의
+> 자막 요청을 광범위하게 차단합니다. 안정적인 수집은 **본인 PC의 가정 IP**에서 돌려야
+> 합니다. 이를 위해 아래 로컬 웹앱 모드가 기본 사용법입니다.
+
+### 0.0 3단계로 시작
+
+1. **설치 (한 번만)**
+   ```bash
+   pip install -e .
+   ```
+2. **실행** — `./run.sh` (mac/Linux) 또는 `run.bat` (Windows) 더블클릭.
+   브라우저가 `http://127.0.0.1:8765` 를 자동으로 엽니다.
+3. **첫 실행**에서 화면 상단의 **🔑 초기 설정** 카드에 두 API 키를 붙여넣기 → **저장 후 시작 ▶**.
+   키는 이 PC의 `.env` 파일에만 저장되며 Git/외부 서버로 전송되지 않습니다.
+   이후 실행에서는 마법사가 뜨지 않습니다.
+4. 검색어 입력 → **실행 ▶** → 완료되면 지식 카드 + Obsidian Markdown 링크가 생깁니다.
+
+재설정은 설정 섹션의 **🔑 API 키 재설정** 버튼으로 언제든 가능합니다.
+
+### 0.1 클라우드 모드 — 웹 브라우저만 (모바일 최적, 제한적)
+> 아무것도 설치 안 함. 다만 YouTube 자막 수집이 GH Actions IP에서 실패할 수 있음.
 
 1. **Secrets 등록 (최초 1회)** — https://github.com/newwonwoo/datacollector/settings/secrets/actions
    - New repository secret → `YOUTUBE_API_KEY` / `GOOGLE_API_KEY` 추가
@@ -29,6 +48,112 @@
 
 > 릴리스가 아직 없으면 한 번만 태그 푸시하면 자동 빌드됩니다:
 > https://github.com/newwonwoo/datacollector/actions/workflows/build-binaries.yml → Run workflow
+
+---
+
+## 0.5 워크플로 한 줄 명령 / MCP 에이전트 자동화
+
+### 0.5.1 `collector workflow` — 4단계 자동 체인
+
+도메인을 주면 cheap LLM (Gemini Flash / Groq 8b / Claude Haiku) 이
+**아이디어 10개 + 검색 키워드 30개** 를 만들고, 본 파이프라인이 키워드
+별로 영상을 모은 뒤, 다시 cheap LLM 이 best 1개를 골라
+NotebookLM 친화 합본 .md 까지 자동 생성합니다. 1세션 ≈ $0.005.
+
+```bash
+collector workflow full --domain "사주" --count 10
+```
+
+산출물 (`exports/run/`):
+- `step1_ideas.json` — 아이디어 + 키워드
+- `step2_research.json` — 키워드별 run_query 결과
+- `step3_synthesize.json` — best 1개 + 점수표 + 다음 단계
+- `step4_spec_<idx>.md` — best 아이디어의 **제품 설계서** (NotebookLM 기반 MVP, 무료 티어 스택 분석 포함)
+- `notebook_<timestamp>_<도메인>.md` — NotebookLM 한 번 끌어 놓기용 합본
+
+부분 명령:
+```bash
+collector workflow brainstorm --domain "사주" --count 10 --out ideas.json
+collector workflow research    --keywords-file ideas.json --concurrency 3
+collector workflow synthesize  --ideas-file ideas.json --research-file research.json
+collector workflow design      --ideas-file ideas.json --research-file research.json --synth-file step3.json --out spec.md
+collector workflow export      --channel UC... --content-type concept
+```
+
+`research --concurrency` 미지정 시 WARP 켜져있으면 자동으로 1, 그 외엔 3
+(가정 IP 기준 sweet spot).
+
+#### 중간에 뻗었을 때 — 같은 명령으로 재실행하면 이어감
+
+`full` 은 step 끝날 때마다 결과를 `exports/run/step{N}_*.json` 에 저장한다.
+LLM 한도 초과 등으로 어떤 step 이 실패해도:
+1. 그 시점까지의 결과는 모두 디스크에 남는다 (vault 노트 + step1/2 JSON)
+2. 의존성 없는 다음 step (예: step 5 export) 은 그대로 진행된다
+3. 같은 명령을 다시 돌리면 **저장된 step 은 자동으로 스킵** 하고 실패한 step
+   부터 이어서 실행한다 (`--restart` 로 강제 전체 재실행 가능)
+
+예: `step 3 synthesize` 가 quota 로 실패 → 1시간 후 같은 명령 재실행 →
+step 1/2 스킵, step 3 부터 다시 시도 → 성공하면 step 4/5 진행.
+
+#### 설계서에 추가 자료 반영 — `--notes-file`
+
+NotebookLM 채팅에서 받은 요약·도메인 메모·외부 자료를 텍스트 파일로 저장한 뒤
+`design` / `full` 에 `--notes-file` 로 넘기면, vault 추출본과 **동등 비중** 으로
+설계서 작성 LLM 에 입력됩니다 (8k자 자동 절단). 설계서는 그 메모를
+"사용자 메모에 따르면 …" 형식으로 인용합니다.
+
+```bash
+# NotebookLM 에서 복사한 텍스트를 my_notes.md 로 저장 후
+collector workflow design \
+  --ideas-file step1_ideas.json --research-file step2_research.json \
+  --synth-file step3_synthesize.json \
+  --notes-file my_notes.md --out spec.md
+
+# 또는 full 체인에서:
+collector workflow full --domain "사주" --count 10 --notes-file my_notes.md
+```
+
+MCP 도구 `design_spec` 에서도 `user_notes` 인자로 동일하게 전달 가능합니다.
+
+### 0.5.2 `collector mcp` — 외부 에이전트가 collector 를 자율 호출
+
+Claude Desktop, Cursor, Codex CLI, AntiGravity 등이 MCP stdio 서버로 collector
+를 도구처럼 부를 수 있습니다. 노출 도구 10종:
+`run_query` / `search_notes` / `get_note` / `list_recent` / `list_channels` /
+`get_pipeline_status` / `brainstorm_topics` / `research_batch` / `synthesize` /
+`export_notebook`. 추가로 `vault://strategies/{source_key}` 리소스도 직접 읽음.
+
+**Claude Desktop 등록 예시** (`~/.claude/claude_desktop_config.json` 또는
+Windows 의 `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "collector": {
+      "command": "python",
+      "args": ["-m", "collector", "mcp"],
+      "env": {
+        "COLLECTOR_DATA_STORE": "C:/Users/USER/datacollector/data_store",
+        "COLLECTOR_VAULT": "C:/Users/USER/datacollector/vault"
+      }
+    }
+  }
+}
+```
+
+저장 후 Claude Desktop 재시작 → 채팅창에서:
+
+> "사주 분야 사업 아이디어 5개 자동 리서치한 다음 best 1개로 NotebookLM
+> 합본 만들어줘"
+
+→ Claude 가 `brainstorm_topics → research_batch → synthesize → export_notebook`
+순서로 자동 호출, 결과 채팅에 보고. 1세션 비용 ≈ $0.05~$1 (모델별).
+
+내부 collector 파이프라인 (extract 단계의 Gemini/Groq) 토큰은 별도이며 무료
+티어 안에서 동작 — 에이전트 비용 = 외부 모델만.
+
+`collector mcp --list-tools` 로 stdio 안 띄우고 도구 스키마 JSON 만 확인 가능
+(설정/디버깅용).
 
 ---
 

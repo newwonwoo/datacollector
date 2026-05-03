@@ -30,14 +30,16 @@ def test_youtube_captions_falls_back_to_asr():
     calls = []
     def fake_http(method, url, **kw):
         calls.append(url)
-        # Fail manual, succeed asr
+        # Fail manual, succeed asr — return XML; adapter must strip tags
+        # before returning so the LLM sees plain text (G-16).
         if "kind=asr" in url:
             return {"status": 200, "body": "<transcript>hi</transcript>"}
         return {"status": 404, "body": ""}
     yt = YouTubeAdapter("KEY", http=fake_http)
     out = yt.captions("vid")
     assert out["source"] == "asr"
-    assert "transcript" in out["text"]
+    # Plain-text conversion strips the surrounding tags.
+    assert out["text"] == "hi"
 
 
 def test_youtube_429_raises_mock_error():

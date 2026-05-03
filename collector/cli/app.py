@@ -2,7 +2,8 @@
 
 - Builds SQLite sidecar index from data_store/ (first run creates the dir).
 - Renders dashboard.html.
-- Starts a local HTTP server (127.0.0.1).
+- Starts a local HTTP server on 127.0.0.1 with JSON APIs for running the
+  pipeline and saving API keys to `.env` directly from the browser UI.
 - Auto-opens the page in the default browser.
 - Optional --watch mode rebuilds every N seconds when data_store/ changes.
 """
@@ -17,8 +18,8 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
-from typing import Any
 
+from .api_handler import make_handler
 from .dashboard import build_dashboard, build_index
 
 
@@ -38,15 +39,10 @@ def _pick_port(start: int, attempts: int = 10) -> int:
     raise SystemExit(f"no free port in {start}..{start+attempts-1}")
 
 
-def _make_handler(root: Path):
-    class _Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *a: Any, **kw: Any) -> None:
-            super().__init__(*a, directory=str(root), **kw)
-
-        def log_message(self, fmt: str, *args: Any) -> None:  # quiet
-            sys.stderr.write(f"[app] {self.address_string()} - {fmt % args}\n")
-
-    return _Handler
+def _load_env_file(env_path: Path) -> None:
+    """Read .env into os.environ (if the file exists). Non-destructive."""
+    from ..env_io import apply_to_environ, read_env
+    apply_to_environ(read_env(env_path))
 
 
 def _watch_loop(data_store: Path, db: Path, html: Path, interval: float, stop: threading.Event) -> None:
@@ -70,6 +66,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--data-store", default="data_store")
     ap.add_argument("--db", default="index/collector.sqlite")
     ap.add_argument("--html", default="index/dashboard.html")
+    ap.add_argument("--docs", default="docs")
+    ap.add_argument("--env", default=".env")
+    ap.add_argument("--logs", default="logs")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--watch", type=float, default=0.0, help="rebuild every N seconds when data_store changes (0=off)")
@@ -78,6 +77,17 @@ def main(argv: list[str] | None = None) -> int:
     data_store = Path(args.data_store)
     db = Path(args.db)
     html = Path(args.html)
+    docs_dir = Path(args.docs)
+    env_path = Path(args.env)
+    logs_root = Path(args.logs)
+
+    # Project root is inferred from env file location so the sandbox is
+    # correct whether the user runs from the repo root or elsewhere.
+    project_root = env_path.resolve().parent if env_path.is_absolute() else Path.cwd()
+
+    # Bring saved API keys into os.environ so /api/run uses real adapters on
+    # first click (no restart required).
+    _load_env_file(env_path)
 
     n, out = prepare_dashboard(data_store, db, html)
     print(f"[app] indexed {n} records → {out}")
@@ -86,15 +96,21 @@ def main(argv: list[str] | None = None) -> int:
     if port != args.port:
         print(f"[app] port {args.port} busy, using {port}")
 
-    root = out.parent.resolve()
-    url = f"http://127.0.0.1:{port}/{out.name}"
+    handler_cls = make_handler(
+        project_root=project_root,
+        docs_dir=docs_dir,
+        dashboard_html=html,
+        env_path=env_path,
+        data_store=data_store,
+        logs_root=logs_root,
+    )
+    url = f"http://127.0.0.1:{port}/"
 
-    handler_cls = _make_handler(root)
     socketserver.TCPServer.allow_reuse_address = True
     httpd = socketserver.TCPServer(("127.0.0.1", port), handler_cls)
     server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     server_thread.start()
-    print(f"[app] serving {root} at {url}")
+    print(f"[app] serving {project_root} at {url}")
 
     stop = threading.Event()
     watcher: threading.Thread | None = None
@@ -119,6 +135,18 @@ def main(argv: list[str] | None = None) -> int:
         httpd.shutdown()
         httpd.server_close()
     return 0
+
+
+# Kept for backwards-compat with tests that patched this helper.
+def _make_handler(root: Path):
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(root), **kw)
+
+        def log_message(self, fmt, *args):  # quiet
+            sys.stderr.write(f"[app] {self.address_string()} - {fmt % args}\n")
+
+    return _Handler
 
 
 if __name__ == "__main__":

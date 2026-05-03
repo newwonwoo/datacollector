@@ -20,6 +20,8 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "replay": ("collector.cli.replay_cli", "main"),
     "status": ("collector.cli.status_cli", "main"),
     "apitest": ("collector.cli.apitest_cli", "main"),
+    "workflow": ("collector.cli.workflow", "main"),
+    "mcp": ("collector.cli.mcp_server", "main"),
 }
 
 
@@ -64,6 +66,8 @@ Usage:
   collector replay      DLQ 재처리 (dlq/* → pipeline 재실행)
   collector status      운영 상태 JSON 스냅샷 (dashboard용)
   collector apitest     YouTube/LLM API 연결 진단 (captions 경로별 개별 호출)
+  collector workflow    한 줄 워크플로 (brainstorm·research-batch·synthesize·export·full)
+  collector mcp         MCP 서버 모드 (Claude Desktop / Cursor / AntiGravity 등에서 자율 호출)
 
 각 서브커맨드에 --help 를 붙이면 세부 옵션을 볼 수 있다.
 """
