@@ -41,6 +41,22 @@ def _cmd_brainstorm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_notes(path: str | None) -> str | None:
+    """Read user notes from a file (UTF-8). Returns None when path is
+    empty/missing — callers treat None as 'no extra notes'."""
+    if not path:
+        return None
+    p = Path(path)
+    if not p.exists():
+        print(f"[notes] file not found: {path} — ignoring", file=sys.stderr)
+        return None
+    try:
+        return p.read_text(encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        print(f"[notes] failed to read {path}: {e}", file=sys.stderr)
+        return None
+
+
 def _flatten_keywords(ideas: list[dict]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -140,7 +156,8 @@ def _cmd_design(args: argparse.Namespace) -> int:
             except Exception:
                 continue
 
-    out = design_spec(best, research, vault_records)
+    extra_notes = _load_notes(args.notes_file)
+    out = design_spec(best, research, vault_records, extra_notes=extra_notes)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if args.json:
@@ -223,7 +240,9 @@ def _cmd_full(args: argparse.Namespace) -> int:
                 except Exception:
                     continue
         try:
-            spec = design_spec(ideas[best_idx], research, vault_records)
+            extra_notes = _load_notes(args.notes_file)
+            spec = design_spec(ideas[best_idx], research, vault_records,
+                               extra_notes=extra_notes)
             spec_path = out_dir / f"step4_spec_{best_idx}.md"
             spec_path.write_text(
                 f"# {spec['title']}\n\n{spec['spec_md']}\n", encoding="utf-8"
@@ -281,6 +300,9 @@ def main(argv: list[str] | None = None) -> int:
     p_d.add_argument("--best-index", type=int, default=0,
                      help="alternative to --synth-file: directly pick by index")
     p_d.add_argument("--data-store", default="data_store")
+    p_d.add_argument("--notes-file", default="",
+                     help="추가 반영할 텍스트 파일 (NotebookLM 브리프·도메인 메모 등). "
+                          "8k자까지 user_notes 로 LLM 입력에 합쳐짐.")
     p_d.add_argument("--out", default="exports/spec.md")
     p_d.add_argument("--json", action="store_true",
                      help="dump the raw {title, spec_md} JSON instead of pure markdown")
@@ -307,6 +329,8 @@ def main(argv: list[str] | None = None) -> int:
     p_f.add_argument("--min-subscribers", type=int, default=0)
     p_f.add_argument("--data-store", default="data_store")
     p_f.add_argument("--logs", default="logs")
+    p_f.add_argument("--notes-file", default="",
+                     help="step 4(design_spec) 에 추가 반영할 텍스트 파일")
     p_f.add_argument("--out-dir", default="exports/run")
 
     args = ap.parse_args(argv)

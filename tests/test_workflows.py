@@ -418,8 +418,84 @@ def test_design_spec_falls_back_to_all_results_when_keywords_dont_match(monkeypa
     assert "k" in captured["prompt"]
 
 
+def test_design_spec_includes_user_notes_when_provided(monkeypatch):
+    """`extra_notes` should appear in the prompt verbatim (truncated)
+    so the LLM can ground the spec in the user-supplied brief too."""
+    import collector.workflows._spec as _sp
+    captured = {}
+
+    def fake_call(prompt, *, expect_json=True, max_tokens_hint=4000):
+        captured["prompt"] = prompt
+        return {"title": "X", "spec_md": "## 한 줄 정의\nok"}
+
+    monkeypatch.setattr(_sp, "call_workflow_llm", fake_call)
+    notes = "사용자 도메인 메모: 핵심 페르소나는 30대 직장인."
+    out = _sp.design_spec(
+        {"idea": "X", "search_keywords": ["k"]},
+        [],
+        [],
+        extra_notes=notes,
+    )
+    assert out["spec_md"]
+    assert "user_notes" in captured["prompt"]
+    assert "30대 직장인" in captured["prompt"]
+
+
+def test_design_spec_truncates_huge_user_notes(monkeypatch):
+    import collector.workflows._spec as _sp
+    captured = {}
+
+    def fake_call(prompt, *, expect_json=True, max_tokens_hint=4000):
+        captured["prompt"] = prompt
+        return {"title": "X", "spec_md": "## 한 줄 정의\nok"}
+
+    monkeypatch.setattr(_sp, "call_workflow_llm", fake_call)
+    huge = "A" * 50000
+    _sp.design_spec({"idea": "X"}, [], [], extra_notes=huge)
+    assert captured["prompt"].count("A") <= _sp._USER_NOTES_MAX_CHARS + 100
+
+
 def test_mcp_design_spec_tool_present():
     from collector.cli.mcp_server import _TOOLS
     assert "design_spec" in _TOOLS
     schema = _TOOLS["design_spec"]["schema"]
     assert "best_idea" in schema.get("required", [])
+    assert "user_notes" in schema.get("properties", {})
+
+
+def test_workflow_cli_design_accepts_notes_file(tmp_path, monkeypatch):
+    """--notes-file content should be threaded through to design_spec."""
+    import collector.cli.workflow as wf
+
+    notes_path = tmp_path / "notes.md"
+    notes_path.write_text("FREE_TEXT_MARKER_42", encoding="utf-8")
+
+    ideas_path = tmp_path / "ideas.json"
+    ideas_path.write_text(json.dumps({"ideas": [
+        {"idea": "X", "search_keywords": ["k"], "rationale": "r",
+         "target_audience": "t"}
+    ]}), encoding="utf-8")
+
+    research_path = tmp_path / "research.json"
+    research_path.write_text(json.dumps({"results": []}), encoding="utf-8")
+
+    out_path = tmp_path / "spec.md"
+
+    captured = {}
+
+    def fake_design_spec(best_idea, research, vault, extra_notes=None):
+        captured["extra_notes"] = extra_notes
+        return {"title": "T", "spec_md": "## 한 줄 정의\nok"}
+
+    monkeypatch.setattr(wf, "design_spec", fake_design_spec)
+    rc = wf.main([
+        "design",
+        "--ideas-file", str(ideas_path),
+        "--research-file", str(research_path),
+        "--data-store", str(tmp_path / "no_such_dir"),
+        "--notes-file", str(notes_path),
+        "--out", str(out_path),
+    ])
+    assert rc == 0
+    assert "FREE_TEXT_MARKER_42" in (captured.get("extra_notes") or "")
+    assert out_path.exists()

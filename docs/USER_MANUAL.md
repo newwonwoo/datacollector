@@ -83,6 +83,26 @@ collector workflow export      --channel UC... --content-type concept
 `research --concurrency` 미지정 시 WARP 켜져있으면 자동으로 1, 그 외엔 3
 (가정 IP 기준 sweet spot).
 
+#### 설계서에 추가 자료 반영 — `--notes-file`
+
+NotebookLM 채팅에서 받은 요약·도메인 메모·외부 자료를 텍스트 파일로 저장한 뒤
+`design` / `full` 에 `--notes-file` 로 넘기면, vault 추출본과 **동등 비중** 으로
+설계서 작성 LLM 에 입력됩니다 (8k자 자동 절단). 설계서는 그 메모를
+"사용자 메모에 따르면 …" 형식으로 인용합니다.
+
+```bash
+# NotebookLM 에서 복사한 텍스트를 my_notes.md 로 저장 후
+collector workflow design \
+  --ideas-file step1_ideas.json --research-file step2_research.json \
+  --synth-file step3_synthesize.json \
+  --notes-file my_notes.md --out spec.md
+
+# 또는 full 체인에서:
+collector workflow full --domain "사주" --count 10 --notes-file my_notes.md
+```
+
+MCP 도구 `design_spec` 에서도 `user_notes` 인자로 동일하게 전달 가능합니다.
+
 ### 0.5.2 `collector mcp` — 외부 에이전트가 collector 를 자율 호출
 
 Claude Desktop, Cursor, Codex CLI, AntiGravity 등이 MCP stdio 서버로 collector

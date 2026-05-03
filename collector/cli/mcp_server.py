@@ -235,7 +235,13 @@ def tool_design_spec(args: dict) -> dict:
     # Pull vault records from disk so the spec is grounded in the
     # extracted knowledge/rules — same data the dashboard sees.
     vault_records = _read_payloads()
-    return design_spec(args["best_idea"], args.get("research_results") or [], vault_records)
+    notes = args.get("user_notes") or None
+    return design_spec(
+        args["best_idea"],
+        args.get("research_results") or [],
+        vault_records,
+        extra_notes=notes,
+    )
 
 
 def tool_export_notebook(args: dict) -> dict:
@@ -364,6 +370,9 @@ _TOOLS: dict[str, dict[str, Any]] = {
                               "description": "{idea, rationale, search_keywords[], target_audience}"},
                 "research_results": {"type": "array",
                                      "description": "research_batch output (used to identify the idea's keywords)"},
+                "user_notes": {"type": "string",
+                               "description": "Optional free-form notes (e.g. NotebookLM brief, "
+                                              "domain memo) the spec should also reflect. <= 8k chars."},
             },
             "required": ["best_idea"],
         },

@@ -93,6 +93,9 @@ spec_md 의 섹션 구조 (이 순서, ## 헤딩 사용):
 
 규칙:
 - 자료에 없는 사실 추가 금지. 인용은 "자료에 따르면 …" 같이 명시.
+- 입력에 `user_notes` 가 포함되어 있으면, 그것을 자료(YouTube 추출본) 와
+  동등 비중으로 인용·반영해도 된다 (예: NotebookLM 채팅 응답·사용자 메모·
+  외부 도메인 지식). 이때 인용은 "사용자 메모에 따르면 …" 으로 표기.
 - 유료 도구 추천 시 무료 대안 의무.
 - 분량: spec_md 약 2000~3500자.
 - title 은 idea 를 깔끔히 다듬은 한국어 제품명.
@@ -184,16 +187,28 @@ def _gather_evidence(
     }
 
 
+_USER_NOTES_MAX_CHARS = 8000
+
+
 def design_spec(
     best_idea: dict[str, Any],
     research_results: list[dict[str, Any]],
     vault_records: Iterable[dict[str, Any]] | None = None,
+    extra_notes: str | None = None,
 ) -> dict[str, str]:
-    """Return {'title': str, 'spec_md': str}. Single cheap-LLM call."""
+    """Return {'title': str, 'spec_md': str}. Single cheap-LLM call.
+
+    `extra_notes` is free-form text injected as `user_notes` in the
+    payload — typically a NotebookLM chat brief or hand-written domain
+    notes the user wants reflected in the spec. Truncated to 8k chars
+    to keep the cheap-LLM call within budget.
+    """
     if not best_idea or not best_idea.get("idea"):
         return {"title": "(empty)",
                 "spec_md": "best idea 가 비어있어 설계서를 만들 수 없습니다."}
     payload = _gather_evidence(best_idea, research_results, vault_records)
+    if extra_notes and extra_notes.strip():
+        payload["user_notes"] = extra_notes.strip()[:_USER_NOTES_MAX_CHARS]
     prompt = (
         _SYSTEM + "\n\n"
         "아래 입력을 바탕으로 설계서를 작성:\n"
