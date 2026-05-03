@@ -83,6 +83,18 @@ collector workflow export      --channel UC... --content-type concept
 `research --concurrency` 미지정 시 WARP 켜져있으면 자동으로 1, 그 외엔 3
 (가정 IP 기준 sweet spot).
 
+#### 중간에 뻗었을 때 — 같은 명령으로 재실행하면 이어감
+
+`full` 은 step 끝날 때마다 결과를 `exports/run/step{N}_*.json` 에 저장한다.
+LLM 한도 초과 등으로 어떤 step 이 실패해도:
+1. 그 시점까지의 결과는 모두 디스크에 남는다 (vault 노트 + step1/2 JSON)
+2. 의존성 없는 다음 step (예: step 5 export) 은 그대로 진행된다
+3. 같은 명령을 다시 돌리면 **저장된 step 은 자동으로 스킵** 하고 실패한 step
+   부터 이어서 실행한다 (`--restart` 로 강제 전체 재실행 가능)
+
+예: `step 3 synthesize` 가 quota 로 실패 → 1시간 후 같은 명령 재실행 →
+step 1/2 스킵, step 3 부터 다시 시도 → 성공하면 step 4/5 진행.
+
 #### 설계서에 추가 자료 반영 — `--notes-file`
 
 NotebookLM 채팅에서 받은 요약·도메인 메모·외부 자료를 텍스트 파일로 저장한 뒤

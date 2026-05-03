@@ -187,50 +187,125 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_full(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    failures: list[str] = []
 
-    print(f"[full] step 1/4 brainstorm domain={args.domain} count={args.count}", file=sys.stderr)
-    excludes = [s.strip() for s in (args.exclude or "").split(",") if s.strip()]
-    ideas = brainstorm_topics(
-        domain=args.domain, count=args.count, focus=args.focus or "",
-        exclude=excludes, keywords_per_idea=args.keywords_per_idea,
-    )
-    (out_dir / "step1_ideas.json").write_text(
-        json.dumps({"domain": args.domain, "ideas": ideas}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    print(f"[full] {len(ideas)} ideas → step1_ideas.json", file=sys.stderr)
+    # ---- step 1/5: brainstorm ----
+    step1_path = out_dir / "step1_ideas.json"
+    ideas: list[dict] = []
+    if step1_path.exists() and not args.restart:
+        try:
+            body = json.loads(step1_path.read_text(encoding="utf-8"))
+            ideas = body.get("ideas") if isinstance(body, dict) else body
+            print(f"[full] step 1/5 brainstorm — reusing {len(ideas)} saved ideas",
+                  file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] step1 cache read failed ({e}); will re-run", file=sys.stderr)
+            ideas = []
 
-    keywords = _flatten_keywords(ideas)
-    print(f"[full] step 2/4 research_batch keywords={len(keywords)}", file=sys.stderr)
-    research = research_batch(
-        keywords,
-        count_per_keyword=args.videos_per_keyword,
-        max_concurrency=args.concurrency,
-        min_views=args.min_views,
-        min_subscribers=args.min_subscribers,
-        data_store_root=Path(args.data_store),
-        logs_root=Path(args.logs),
-        progress_cb=lambda kw, s: print(
-            f"  [{kw}] processed={s.get('processed', 0)} promoted={s.get('promoted', 0)}",
-            file=sys.stderr,
-        ),
-    )
-    (out_dir / "step2_research.json").write_text(
-        json.dumps({"results": research}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if not ideas:
+        print(f"[full] step 1/5 brainstorm domain={args.domain} count={args.count}",
+              file=sys.stderr)
+        try:
+            excludes = [s.strip() for s in (args.exclude or "").split(",") if s.strip()]
+            ideas = brainstorm_topics(
+                domain=args.domain, count=args.count, focus=args.focus or "",
+                exclude=excludes, keywords_per_idea=args.keywords_per_idea,
+            )
+            step1_path.write_text(
+                json.dumps({"domain": args.domain, "ideas": ideas},
+                           ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"[full] {len(ideas)} ideas → step1_ideas.json", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] STEP 1 FAILED — no ideas, nothing to research: {e}",
+                  file=sys.stderr)
+            print(f"[full] retry later: collector workflow full --domain {args.domain!r}",
+                  file=sys.stderr)
+            return 2
 
-    print("[full] step 3/4 synthesize", file=sys.stderr)
-    syn = synthesize(ideas, research)
-    (out_dir / "step3_synthesize.json").write_text(
-        json.dumps(syn, ensure_ascii=False, indent=2), encoding="utf-8",
-    )
-    best_idx = syn.get("best_idea_index", -1)
-    if 0 <= best_idx < len(ideas):
-        print(f"[full] best idea = #{best_idx} '{ideas[best_idx]['idea']}'", file=sys.stderr)
+    # ---- step 2/5: research_batch (the actual caption-download step) ----
+    step2_path = out_dir / "step2_research.json"
+    research: list[dict] = []
+    if step2_path.exists() and not args.restart:
+        try:
+            body = json.loads(step2_path.read_text(encoding="utf-8"))
+            research = body.get("results") if isinstance(body, dict) else body
+            print(f"[full] step 2/5 research — reusing {len(research)} saved results",
+                  file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] step2 cache read failed ({e}); will re-run", file=sys.stderr)
+            research = []
 
-    if 0 <= best_idx < len(ideas):
-        print(f"[full] step 4/5 design_spec for best idea", file=sys.stderr)
+    if not research:
+        keywords = _flatten_keywords(ideas)
+        print(f"[full] step 2/5 research_batch keywords={len(keywords)}", file=sys.stderr)
+        try:
+            research = research_batch(
+                keywords,
+                count_per_keyword=args.videos_per_keyword,
+                max_concurrency=args.concurrency,
+                min_views=args.min_views,
+                min_subscribers=args.min_subscribers,
+                data_store_root=Path(args.data_store),
+                logs_root=Path(args.logs),
+                progress_cb=lambda kw, s: print(
+                    f"  [{kw}] processed={s.get('processed', 0)} promoted={s.get('promoted', 0)}",
+                    file=sys.stderr,
+                ),
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] STEP 2 FAILED ({e}); vault may have partial captions, "
+                  f"continuing to export", file=sys.stderr)
+            failures.append(f"step2: {e}")
+            research = []
+        # Always persist whatever we got (even empty list = explicit marker)
+        step2_path.write_text(
+            json.dumps({"results": research}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    # ---- step 3/5: synthesize (cheap LLM — most likely to fail on quota) ----
+    step3_path = out_dir / "step3_synthesize.json"
+    syn: dict | None = None
+    if step3_path.exists() and not args.restart:
+        try:
+            syn = json.loads(step3_path.read_text(encoding="utf-8"))
+            print("[full] step 3/5 synthesize — reusing saved best-idea pick",
+                  file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] step3 cache read failed ({e}); will re-run", file=sys.stderr)
+            syn = None
+
+    if syn is None and research:
+        print("[full] step 3/5 synthesize", file=sys.stderr)
+        try:
+            syn = synthesize(ideas, research)
+            step3_path.write_text(
+                json.dumps(syn, ensure_ascii=False, indent=2), encoding="utf-8",
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] STEP 3 FAILED ({e})", file=sys.stderr)
+            print("[full]   step1+step2 outputs are saved; vault is intact.",
+                  file=sys.stderr)
+            print("[full]   retry later (LLM quota reset) with the same command —",
+                  file=sys.stderr)
+            print("[full]   step 1/2 will be skipped automatically.", file=sys.stderr)
+            failures.append(f"step3: {e}")
+            syn = None
+
+    best_idx = syn.get("best_idea_index", -1) if syn else -1
+    if syn and 0 <= best_idx < len(ideas):
+        print(f"[full] best idea = #{best_idx} '{ideas[best_idx].get('idea', '')}'",
+              file=sys.stderr)
+
+    # ---- step 4/5: design_spec (depends on syn) ----
+    step4_glob = list(out_dir.glob("step4_spec_*.md"))
+    if step4_glob and not args.restart:
+        print(f"[full] step 4/5 design_spec — reusing {step4_glob[0].name}",
+              file=sys.stderr)
+    elif syn and 0 <= best_idx < len(ideas):
+        print("[full] step 4/5 design_spec for best idea", file=sys.stderr)
         vault_records: list = []
         ds = Path(args.data_store)
         if ds.exists():
@@ -245,21 +320,40 @@ def _cmd_full(args: argparse.Namespace) -> int:
                                extra_notes=extra_notes)
             spec_path = out_dir / f"step4_spec_{best_idx}.md"
             spec_path.write_text(
-                f"# {spec['title']}\n\n{spec['spec_md']}\n", encoding="utf-8"
+                f"# {spec['title']}\n\n{spec['spec_md']}\n", encoding="utf-8",
             )
             print(f"[full] design spec → {spec_path}", file=sys.stderr)
         except Exception as e:  # noqa: BLE001
-            print(f"[full] design_spec failed (skipped): {e}", file=sys.stderr)
+            print(f"[full] STEP 4 FAILED ({e}); skipping spec — vault still intact",
+                  file=sys.stderr)
+            failures.append(f"step4: {e}")
+    else:
+        print("[full] step 4/5 design_spec — skipped (no best idea from step 3)",
+              file=sys.stderr)
 
+    # ---- step 5/5: export NotebookLM bundle (always runs from vault) ----
     print("[full] step 5/5 export NotebookLM bundle", file=sys.stderr)
-    md_path = export_notebook(
-        data_store_root=Path(args.data_store),
-        out_dir=out_dir,
-        only_promoted=True,
-        label=args.domain.replace(" ", "_")[:30],
-    )
-    print(str(md_path))
-    print(f"[full] done → {out_dir}/", file=sys.stderr)
+    try:
+        md_path = export_notebook(
+            data_store_root=Path(args.data_store),
+            out_dir=out_dir,
+            only_promoted=True,
+            label=args.domain.replace(" ", "_")[:30],
+        )
+        print(str(md_path))
+    except Exception as e:  # noqa: BLE001
+        print(f"[full] STEP 5 FAILED ({e})", file=sys.stderr)
+        failures.append(f"step5: {e}")
+
+    if failures:
+        print(f"[full] done with {len(failures)} failed step(s) → {out_dir}/",
+              file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        print("[full] re-run the same command to resume from the failed step.",
+              file=sys.stderr)
+    else:
+        print(f"[full] done → {out_dir}/", file=sys.stderr)
     return 0
 
 
@@ -331,6 +425,8 @@ def main(argv: list[str] | None = None) -> int:
     p_f.add_argument("--logs", default="logs")
     p_f.add_argument("--notes-file", default="",
                      help="step 4(design_spec) 에 추가 반영할 텍스트 파일")
+    p_f.add_argument("--restart", action="store_true",
+                     help="기본은 resume(저장된 step 결과 재사용). 이 플래그로 모두 새로 실행.")
     p_f.add_argument("--out-dir", default="exports/run")
 
     args = ap.parse_args(argv)

@@ -499,3 +499,162 @@ def test_workflow_cli_design_accepts_notes_file(tmp_path, monkeypatch):
     assert rc == 0
     assert "FREE_TEXT_MARKER_42" in (captured.get("extra_notes") or "")
     assert out_path.exists()
+
+
+# -------- _cmd_full resume + failure isolation --------
+
+def _stub_full_deps(monkeypatch, *, ideas=None, research=None,
+                    synth=None, fail_synth=False,
+                    fail_design=False, fail_export=False,
+                    export_path="exports/notebook.md"):
+    """Replace every external in workflow.py with a tiny stub so we can
+    drive _cmd_full deterministically without LLMs / yt-dlp / network."""
+    import collector.cli.workflow as wf
+
+    calls: dict[str, int] = {"brain": 0, "research": 0, "synth": 0,
+                             "design": 0, "export": 0}
+
+    def fake_brainstorm(**kw):
+        calls["brain"] += 1
+        return ideas if ideas is not None else [
+            {"idea": "X", "search_keywords": ["k"], "rationale": "r",
+             "target_audience": "t"}
+        ]
+
+    def fake_research(keywords, **kw):
+        calls["research"] += 1
+        return research if research is not None else [
+            {"query": "k", "processed": 1, "promoted": 1,
+             "per_video": [{"video_id": "V1", "record_status": "promoted"}]}
+        ]
+
+    def fake_synth(ideas_, research_):
+        calls["synth"] += 1
+        if fail_synth:
+            raise RuntimeError("simulated quota exhaustion")
+        return synth if synth is not None else {
+            "best_idea_index": 0, "score_per_idea": [1.0],
+            "reasoning": "ok", "recommended_next_steps": [],
+        }
+
+    def fake_design(best, research_, vault, extra_notes=None):
+        calls["design"] += 1
+        if fail_design:
+            raise RuntimeError("simulated design failure")
+        return {"title": "T", "spec_md": "## 한 줄 정의\nok"}
+
+    def fake_export(**kw):
+        calls["export"] += 1
+        if fail_export:
+            raise RuntimeError("simulated export failure")
+        return Path(kw.get("out_dir", ".")) / "notebook.md"
+
+    monkeypatch.setattr(wf, "brainstorm_topics", fake_brainstorm)
+    monkeypatch.setattr(wf, "research_batch", fake_research)
+    monkeypatch.setattr(wf, "synthesize", fake_synth)
+    monkeypatch.setattr(wf, "design_spec", fake_design)
+    monkeypatch.setattr(wf, "export_notebook", fake_export)
+    return calls
+
+
+def test_cmd_full_step3_failure_preserves_step1_2_and_runs_step5(tmp_path, monkeypatch):
+    """When synthesize blows up (real-world: all LLMs at 429),
+    step1+step2 outputs must be on disk and step 5 (export) must
+    still run from the vault."""
+    import collector.cli.workflow as wf
+
+    calls = _stub_full_deps(monkeypatch, fail_synth=True)
+    out_dir = tmp_path / "run"
+
+    rc = wf.main([
+        "full", "--domain", "사주", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+    ])
+    assert rc == 0  # graceful, not a crash
+    assert (out_dir / "step1_ideas.json").exists()
+    assert (out_dir / "step2_research.json").exists()
+    assert not (out_dir / "step3_synthesize.json").exists()
+    assert calls["export"] == 1  # step 5 still ran despite step 3 failure
+    assert calls["design"] == 0  # step 4 skipped (no best idea)
+
+
+def test_cmd_full_resumes_from_saved_step1_step2(tmp_path, monkeypatch):
+    """Re-running `full` after a step-3 failure should NOT re-call
+    brainstorm / research_batch — the saved JSON files are reused."""
+    import collector.cli.workflow as wf
+
+    out_dir = tmp_path / "run"
+    out_dir.mkdir(parents=True)
+
+    # Pre-seed the artifacts a previous (failed) run would have left.
+    (out_dir / "step1_ideas.json").write_text(json.dumps({
+        "domain": "사주",
+        "ideas": [{"idea": "Y", "search_keywords": ["k"], "rationale": "r",
+                   "target_audience": "t"}],
+    }), encoding="utf-8")
+    (out_dir / "step2_research.json").write_text(json.dumps({
+        "results": [{"query": "k", "processed": 1, "promoted": 1,
+                     "per_video": [{"video_id": "V", "record_status": "promoted"}]}]
+    }), encoding="utf-8")
+
+    calls = _stub_full_deps(monkeypatch)  # synth succeeds this time
+
+    rc = wf.main([
+        "full", "--domain", "사주", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+    ])
+    assert rc == 0
+    assert calls["brain"] == 0       # reused
+    assert calls["research"] == 0    # reused
+    assert calls["synth"] == 1       # actually ran this time
+    assert calls["design"] == 1
+    assert calls["export"] == 1
+    assert (out_dir / "step3_synthesize.json").exists()
+    assert (out_dir / "step4_spec_0.md").exists()
+
+
+def test_cmd_full_restart_flag_re_runs_everything(tmp_path, monkeypatch):
+    import collector.cli.workflow as wf
+
+    out_dir = tmp_path / "run"
+    out_dir.mkdir(parents=True)
+    # Seed cache that --restart should ignore.
+    (out_dir / "step1_ideas.json").write_text(json.dumps({
+        "domain": "x", "ideas": [{"idea": "STALE", "search_keywords": ["k"]}],
+    }), encoding="utf-8")
+
+    calls = _stub_full_deps(monkeypatch)
+    rc = wf.main([
+        "full", "--domain", "사주", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+        "--restart",
+    ])
+    assert rc == 0
+    assert calls["brain"] == 1  # re-ran despite cache present
+
+
+def test_cmd_full_brainstorm_failure_aborts_with_clear_message(tmp_path, monkeypatch, capsys):
+    """If step 1 fails, no point trying step 2-5 — exit non-zero so
+    callers/CI can detect it, but never crash with a traceback."""
+    import collector.cli.workflow as wf
+
+    def fake_brain(**kw):
+        raise RuntimeError("brainstorm boom")
+
+    monkeypatch.setattr(wf, "brainstorm_topics", fake_brain)
+    out_dir = tmp_path / "run"
+    rc = wf.main([
+        "full", "--domain", "x", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "STEP 1 FAILED" in err
