@@ -15,30 +15,50 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any
 
 
 def call_workflow_llm(prompt: str, *, expect_json: bool = True, max_tokens_hint: int = 4000) -> Any:
-    """Single LLM round-trip for workflow planning steps.
+    """Single LLM round-trip for workflow planning steps, with rollover.
 
-    Returns parsed JSON (when `expect_json`) or raw text. Raises
-    RuntimeError when no key is available, or when the model output
+    Tries every configured cheap-LLM key in order (Gemini → Groq → Anthropic).
+    A 503/429/5xx/auth error on one provider falls through to the next so a
+    transient outage doesn't kill the whole brainstorm/synthesize step.
+
+    Returns parsed JSON (when `expect_json`) or raw text. Raises RuntimeError
+    when no key is available, every provider failed, or the final output
     fails to parse and `expect_json` is True.
     """
     goog_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
     anth_key = os.environ.get("ANTHROPIC_API_KEY")
 
+    providers: list[tuple[str, Any]] = []
     if goog_key:
-        text = _call_gemini(goog_key, prompt, expect_json=expect_json)
-    elif groq_key:
-        text = _call_groq(groq_key, prompt, expect_json=expect_json)
-    elif anth_key:
-        text = _call_anthropic(anth_key, prompt, expect_json=expect_json)
-    else:
+        providers.append(("gemini", lambda: _call_gemini(goog_key, prompt, expect_json=expect_json)))
+    if groq_key:
+        providers.append(("groq", lambda: _call_groq(groq_key, prompt, expect_json=expect_json)))
+    if anth_key:
+        providers.append(("anthropic", lambda: _call_anthropic(anth_key, prompt, expect_json=expect_json)))
+
+    if not providers:
         raise RuntimeError(
             "no workflow LLM key set (GOOGLE_API_KEY / GROQ_API_KEY / ANTHROPIC_API_KEY)"
         )
+
+    last_err: Exception | None = None
+    text = None
+    for name, call in providers:
+        try:
+            text = call()
+            break
+        except RuntimeError as e:
+            last_err = e
+            sys.stderr.write(f"[workflow_llm] {name} failed: {e}\n[workflow_llm] falling through to next provider\n")
+            continue
+    if text is None:
+        raise RuntimeError(f"all workflow LLM providers failed; last: {last_err}")
 
     if not expect_json:
         return text
