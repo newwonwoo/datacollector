@@ -51,6 +51,78 @@
 
 ---
 
+## 0.5 워크플로 한 줄 명령 / MCP 에이전트 자동화
+
+### 0.5.1 `collector workflow` — 4단계 자동 체인
+
+도메인을 주면 cheap LLM (Gemini Flash / Groq 8b / Claude Haiku) 이
+**아이디어 10개 + 검색 키워드 30개** 를 만들고, 본 파이프라인이 키워드
+별로 영상을 모은 뒤, 다시 cheap LLM 이 best 1개를 골라
+NotebookLM 친화 합본 .md 까지 자동 생성합니다. 1세션 ≈ $0.005.
+
+```bash
+collector workflow full --domain "사주" --count 10
+```
+
+산출물 (`exports/run/`):
+- `step1_ideas.json` — 아이디어 + 키워드
+- `step2_research.json` — 키워드별 run_query 결과
+- `step3_synthesize.json` — best 1개 + 점수표 + 다음 단계
+- `notebook_<timestamp>_<도메인>.md` — NotebookLM 한 번 끌어 놓기용 합본
+
+부분 명령:
+```bash
+collector workflow brainstorm --domain "사주" --count 10 --out ideas.json
+collector workflow research    --keywords-file ideas.json --concurrency 3
+collector workflow synthesize  --ideas-file ideas.json --research-file research.json
+collector workflow export      --channel UC... --content-type concept
+```
+
+`research --concurrency` 미지정 시 WARP 켜져있으면 자동으로 1, 그 외엔 3
+(가정 IP 기준 sweet spot).
+
+### 0.5.2 `collector mcp` — 외부 에이전트가 collector 를 자율 호출
+
+Claude Desktop, Cursor, Codex CLI, AntiGravity 등이 MCP stdio 서버로 collector
+를 도구처럼 부를 수 있습니다. 노출 도구 10종:
+`run_query` / `search_notes` / `get_note` / `list_recent` / `list_channels` /
+`get_pipeline_status` / `brainstorm_topics` / `research_batch` / `synthesize` /
+`export_notebook`. 추가로 `vault://strategies/{source_key}` 리소스도 직접 읽음.
+
+**Claude Desktop 등록 예시** (`~/.claude/claude_desktop_config.json` 또는
+Windows 의 `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "collector": {
+      "command": "python",
+      "args": ["-m", "collector", "mcp"],
+      "env": {
+        "COLLECTOR_DATA_STORE": "C:/Users/USER/datacollector/data_store",
+        "COLLECTOR_VAULT": "C:/Users/USER/datacollector/vault"
+      }
+    }
+  }
+}
+```
+
+저장 후 Claude Desktop 재시작 → 채팅창에서:
+
+> "사주 분야 사업 아이디어 5개 자동 리서치한 다음 best 1개로 NotebookLM
+> 합본 만들어줘"
+
+→ Claude 가 `brainstorm_topics → research_batch → synthesize → export_notebook`
+순서로 자동 호출, 결과 채팅에 보고. 1세션 비용 ≈ $0.05~$1 (모델별).
+
+내부 collector 파이프라인 (extract 단계의 Gemini/Groq) 토큰은 별도이며 무료
+티어 안에서 동작 — 에이전트 비용 = 외부 모델만.
+
+`collector mcp --list-tools` 로 stdio 안 띄우고 도구 스키마 JSON 만 확인 가능
+(설정/디버깅용).
+
+---
+
 ## 1. 이 문서가 필요한 경우
 - 설계서(Master_01~03, Appendix A~D)대로 파이프라인이 정말 동작하는지 확인하고 싶을 때
 - 코드를 건드리지 않고도 100개 시나리오가 전부 통과하는지 빠르게 점검하고 싶을 때
