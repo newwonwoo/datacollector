@@ -556,6 +556,38 @@
     </p>
   </div>
 
+  <!-- 워크플로 실행: 도메인 → brainstorm → research → synthesize → design → NotebookLM 자동 (로컬 모드) -->
+  <div class="card" id="wf-card" style="display:none">
+    <div class="section-title">🧭 워크플로 실행 — 도메인 한 줄로 끝까지
+      <span class="muted" style="font-weight:400;font-size:11px">brainstorm → research → synthesize → 설계서 → NotebookLM</span>
+    </div>
+    <div class="form-row">
+      <input id="wf-domain" type="text" placeholder="도메인 (예: 사주, 단타매매, 영어회화)" />
+      <input id="wf-count" type="number" value="3" min="1" max="20" title="아이디어 수 (각 아이디어 = 키워드 묶음)" style="max-width:120px" />
+      <button id="wf-run-btn" onclick="runWorkflow()">워크플로 실행 ▶</button>
+    </div>
+    <div class="form-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:14px">
+      <span class="muted" style="font-size:12px;font-weight:600">설계서 종류 (NotebookLM 자동 호출)</span>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="monetize" checked /> 수익화</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="textbook" /> 교과서</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="summary" /> 정리</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="presentation" /> 발표</label>
+    </div>
+    <div id="wf-busy" class="run-busy">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span id="wf-busy-text">워크플로 실행 중…</span>
+    </div>
+    <div id="wf-results" style="margin-top:10px;display:none">
+      <div class="muted" style="font-size:12px;margin-bottom:6px">산출물</div>
+      <ul id="wf-files" style="font-size:13px;margin:0;padding-left:18px"></ul>
+    </div>
+    <p class="desc">
+      체크된 모드별로 NotebookLM 노트북에 자막을 자동 업로드 → 프롬프트 자동 호출 → spec_NB_*.md 생성.
+      <code class="kbd">nlm</code> CLI 가 설치되어 있어야 합니다 (없으면 cheap-LLM 설계서로 폴백).
+      자세한 내용은 <a href="#" onclick="document.getElementById('settings').open=true;return false;">설정</a> 참고.
+    </p>
+  </div>
+
   <!-- 최종 산출물: 가공된 지식 내용물 -->
   <div class="card">
     <div class="section-title">📚 최종 산출물 — 가공된 지식
@@ -941,6 +973,84 @@ function startLocalRunPolling(){
       }
     } catch(_){}
   }, 1500);
+}
+
+// --- 워크플로 (로컬 모드 전용) ---
+let __wfPoll = null;
+async function runWorkflow(){
+  const dom = document.getElementById('wf-domain').value.trim();
+  const cnt = parseInt(document.getElementById('wf-count').value || '3', 10) || 3;
+  if (!dom) return toast('도메인을 입력하세요');
+  if (!localKeyState.has_youtube || !_hasAnyLLM()){
+    showWizard();
+    return toast('API 키부터 등록하세요');
+  }
+  const modes = Array.from(document.querySelectorAll('.wf-mode'))
+    .filter(el => el.checked).map(el => el.value);
+  const btn = document.getElementById('wf-run-btn');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  document.getElementById('wf-results').style.display = 'none';
+  document.getElementById('wf-files').innerHTML = '';
+  try {
+    const resp = await fetch('/api/workflow', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain: dom, count: cnt, modes: modes}),
+    });
+    if (resp.status === 202){
+      toast('✓ 워크플로 시작 (수 분 소요)');
+      startWorkflowPolling();
+    } else if (resp.status === 409){
+      toast('이미 워크플로가 진행 중');
+      startWorkflowPolling();
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '워크플로 실행 ▶'; }
+}
+
+function startWorkflowPolling(){
+  if (__wfPoll) clearInterval(__wfPoll);
+  const busy = document.getElementById('wf-busy');
+  const txt = document.getElementById('wf-busy-text');
+  if (busy) busy.classList.add('show');
+  __wfPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/workflow/status', {cache: 'no-store'});
+      if (!r.ok) return;
+      const s = await r.json();
+      if (txt){
+        const base = `워크플로 진행 중 · ${s.domain || ''} · 모드 [${(s.modes||[]).join(',') || '없음'}]`;
+        txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
+      }
+      if (s.status === 'completed' || s.status === 'failed'){
+        clearInterval(__wfPoll); __wfPoll = null;
+        if (busy) busy.classList.remove('show');
+        if (s.status === 'completed') toast('✅ 워크플로 완료');
+        else toast('❌ 워크플로 실패: ' + (s.error || ''));
+        // List artifacts.
+        try {
+          const f = await fetch('/api/workflow/files', {cache: 'no-store'});
+          if (f.ok){
+            const fj = await f.json();
+            const ul = document.getElementById('wf-files');
+            ul.innerHTML = '';
+            (fj.files || []).forEach(it => {
+              const li = document.createElement('li');
+              const a = document.createElement('a');
+              a.href = '/' + it.rel; a.target = '_blank'; a.textContent = it.name;
+              li.appendChild(a);
+              li.append(` · ${(it.size/1024).toFixed(1)} KB`);
+              ul.appendChild(li);
+            });
+            document.getElementById('wf-results').style.display = (fj.files || []).length ? '' : 'none';
+          }
+        } catch(_){}
+      }
+    } catch(_){}
+  }, 2000);
 }
 
 async function runQuery(){
@@ -1906,6 +2016,10 @@ async function bootstrapLocalMode(){
       : 'GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요. ' +
         '최초 1회만 <a href="#" onclick="document.getElementById(\'settings\').open=true;return false;">토큰 설정</a>이 필요합니다.';
   }
+  // Workflow card is local-mode only (POSTs to /api/workflow).
+  const wfCard = document.getElementById('wf-card');
+  if (wfCard) wfCard.style.display = isLocalMode ? '' : 'none';
+
   // Show appropriate settings section
   const localSettings = document.getElementById('local-settings');
   const cloudSettings = document.getElementById('settings');

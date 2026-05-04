@@ -253,6 +253,116 @@ def test_static_files_from_project_root(server, layout):
     assert body == "hi"
 
 
+def test_workflow_post_validates_domain(server):
+    status, body = _post(server.url("/api/workflow"), {})
+    assert status == 400
+    assert "domain" in body
+
+
+def test_workflow_post_rejects_unknown_mode(server):
+    status, body = _post(server.url("/api/workflow"),
+                         {"domain": "x", "modes": ["not_a_mode"]})
+    assert status == 400
+    assert "unknown mode" in body or "not_a_mode" in body
+
+
+def test_workflow_post_starts_run(server, layout, monkeypatch):
+    """POST /api/workflow returns 202, runs the worker (we patch it),
+    and exposes the run_id via /api/workflow/status."""
+    import collector.cli.api_handler as ah
+
+    started = threading.Event()
+    captured = {}
+
+    def fake_workflow_main(argv):
+        captured["argv"] = list(argv)
+        started.set()
+        return 0  # success
+
+    monkeypatch.setattr("collector.cli.workflow.main", fake_workflow_main)
+
+    status, body = _post(server.url("/api/workflow"),
+                         {"domain": "사주", "count": 2,
+                          "modes": ["monetize", "summary"]})
+    assert status == 202, body
+    j = json.loads(body)
+    assert j["ok"] is True
+    assert j["domain"] == "사주"
+    assert j["modes"] == ["monetize", "summary"]
+    rid = j["run_id"]
+    assert rid.startswith("wf_")
+
+    assert started.wait(timeout=5)
+
+    # Worker has set the state to completed eventually.
+    deadline = time.time() + 5
+    final = None
+    while time.time() < deadline:
+        _, _h, body2 = _get(server.url("/api/workflow/status"))
+        snap = json.loads(body2)
+        if snap["status"] in ("completed", "failed"):
+            final = snap
+            break
+        time.sleep(0.05)
+    assert final is not None and final["status"] == "completed"
+    # CLI args were assembled correctly.
+    argv = captured["argv"]
+    assert argv[0] == "full"
+    assert "--domain" in argv and "사주" in argv
+    assert "--modes" in argv
+    assert "monetize,summary" in argv
+
+
+def test_workflow_post_409_when_already_running(server, monkeypatch):
+    """Second POST while one is in flight gets 409."""
+    barrier = threading.Event()
+
+    def slow_workflow_main(argv):
+        barrier.wait(timeout=5)
+        return 0
+
+    monkeypatch.setattr("collector.cli.workflow.main", slow_workflow_main)
+
+    s1, _ = _post(server.url("/api/workflow"), {"domain": "x"})
+    assert s1 == 202
+    s2, body2 = _post(server.url("/api/workflow"), {"domain": "x"})
+    assert s2 == 409
+    assert "already" in body2
+    barrier.set()
+
+
+def test_workflow_files_lists_artifacts(server, layout, monkeypatch):
+    """After a run, /api/workflow/files lists the produced artifacts."""
+    project_root = layout["root"]
+
+    def fake_workflow_main(argv):
+        # Simulate the workflow writing artifacts into out_dir.
+        idx = argv.index("--out-dir")
+        out_dir = Path(argv[idx + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "step4_spec_0.md").write_text("# spec", encoding="utf-8")
+        (out_dir / "spec_NB_monetize.md").write_text("# nb", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr("collector.cli.workflow.main", fake_workflow_main)
+    status, body = _post(server.url("/api/workflow"),
+                         {"domain": "x", "modes": ["monetize"]})
+    assert status == 202
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        _, _h, b = _get(server.url("/api/workflow/status"))
+        if json.loads(b)["status"] == "completed":
+            break
+        time.sleep(0.05)
+
+    _, _h, files_body = _get(server.url("/api/workflow/files"))
+    obj = json.loads(files_body)
+    names = sorted(f["name"] for f in obj["files"])
+    assert "spec_NB_monetize.md" in names
+    assert "step4_spec_0.md" in names
+
+
 def test_api_records_returns_local_data_store(server, layout):
     """Local-mode dashboard reads records via /api/records, not GitHub."""
     ds = layout["data_store"]

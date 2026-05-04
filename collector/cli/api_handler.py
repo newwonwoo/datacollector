@@ -9,6 +9,9 @@ Routes:
     POST /api/config        → body: {"youtube":"...", "google":"..."} → write .env
     POST /api/run           → body: {"query", "count", "llm_choice"} → start pipeline
     GET  /api/run/status    → latest run summary (from in-memory state)
+    POST /api/workflow      → body: {"domain", "count", "modes":[...]} → start full chain
+    GET  /api/workflow/status → latest workflow run summary
+    GET  /api/workflow/files  → list of artifacts in latest workflow out_dir
 
 Security:
 - The handler only binds `127.0.0.1` (enforced by the caller).
@@ -43,6 +46,21 @@ _RUN_STATE: dict[str, Any] = {
     "error": None,
 }
 _RUN_LOCK = threading.Lock()
+
+# Separate state for `collector workflow full` runs, kept distinct from
+# /api/run so the existing single-keyword UI doesn't think the workflow
+# is "the" run.
+_WORKFLOW_STATE: dict[str, Any] = {
+    "run_id": None,
+    "status": "idle",
+    "domain": None,
+    "modes": [],
+    "started_at": None,
+    "ended_at": None,
+    "out_dir": None,
+    "error": None,
+}
+_WORKFLOW_LOCK = threading.Lock()
 
 
 def _json_bytes(payload: dict) -> bytes:
@@ -127,6 +145,10 @@ def make_handler(
             try:
                 if path == "/api/config":
                     return self._handle_config_get()
+                if path == "/api/workflow/status":
+                    return self._handle_workflow_status()
+                if path == "/api/workflow/files":
+                    return self._handle_workflow_files()
                 if path == "/api/run/status":
                     return self._handle_run_status()
                 if path == "/api/records":
@@ -169,6 +191,8 @@ def make_handler(
                     return self._handle_config_post()
                 if path == "/api/run":
                     return self._handle_run_post()
+                if path == "/api/workflow":
+                    return self._handle_workflow_post()
                 self.send_error(404, "not found")
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[app] POST {path} error: {e}\n")
@@ -327,6 +351,121 @@ def make_handler(
                 "records": out,
             })
 
+        # ---- /api/workflow ----
+        def _handle_workflow_post(self) -> None:
+            with _WORKFLOW_LOCK:
+                if _WORKFLOW_STATE["status"] == "running":
+                    return self._send_json(409, {
+                        "ok": False,
+                        "error": "workflow already in progress",
+                        "run_id": _WORKFLOW_STATE["run_id"],
+                    })
+            body = self._read_json_body()
+            domain = (body.get("domain") or "").strip()
+            if not domain:
+                return self._send_json(400, {"ok": False, "error": "domain required"})
+            try:
+                count = int(body.get("count") or 5)
+            except (TypeError, ValueError):
+                count = 5
+            count = max(1, min(count, 50))
+            try:
+                videos_per_keyword = int(body.get("videos_per_keyword") or 10)
+            except (TypeError, ValueError):
+                videos_per_keyword = 10
+            videos_per_keyword = max(1, min(videos_per_keyword, 50))
+            try:
+                min_views = max(0, int(body.get("min_views") or 0))
+            except (TypeError, ValueError):
+                min_views = 0
+            try:
+                min_subscribers = max(0, int(body.get("min_subscribers") or 0))
+            except (TypeError, ValueError):
+                min_subscribers = 0
+
+            # modes: list[str] or comma-separated string. Validated server-side.
+            raw_modes = body.get("modes") or []
+            if isinstance(raw_modes, str):
+                modes_str = raw_modes
+            else:
+                modes_str = ",".join(str(m) for m in raw_modes)
+            try:
+                from ..workflows._nb_specs import parse_modes
+                modes = parse_modes(modes_str)
+            except ValueError as e:
+                return self._send_json(400, {"ok": False, "error": str(e)})
+
+            run_id = f"wf_{uuid.uuid4().hex[:8]}"
+            out_dir = (project_root / "exports" / "run" / run_id).resolve()
+
+            with _WORKFLOW_LOCK:
+                _WORKFLOW_STATE.update({
+                    "run_id": run_id,
+                    "status": "running",
+                    "domain": domain,
+                    "modes": modes,
+                    "started_at": _now_iso(),
+                    "ended_at": None,
+                    "out_dir": str(out_dir),
+                    "error": None,
+                })
+
+            t = threading.Thread(
+                target=_workflow_worker,
+                kwargs={
+                    "domain": domain,
+                    "count": count,
+                    "videos_per_keyword": videos_per_keyword,
+                    "min_views": min_views,
+                    "min_subscribers": min_subscribers,
+                    "modes_csv": ",".join(modes),
+                    "out_dir": out_dir,
+                    "data_store": data_store,
+                    "logs_root": logs_root,
+                },
+                daemon=True,
+            )
+            t.start()
+            self._send_json(202, {
+                "ok": True, "run_id": run_id, "domain": domain,
+                "count": count, "modes": modes,
+                "out_dir": str(out_dir),
+            })
+
+        def _handle_workflow_status(self) -> None:
+            with _WORKFLOW_LOCK:
+                snap = dict(_WORKFLOW_STATE)
+            self._send_json(200, snap)
+
+        def _handle_workflow_files(self) -> None:
+            """List artifacts in the latest (or queried) workflow out_dir.
+            Used by the dashboard to render links to spec_NB_*.md after
+            the run completes."""
+            from urllib.parse import parse_qs
+            qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            with _WORKFLOW_LOCK:
+                cur_dir = _WORKFLOW_STATE.get("out_dir")
+            requested = qs.get("dir", [cur_dir])[0]
+            if not requested:
+                return self._send_json(200, {"files": []})
+            target = Path(requested).resolve()
+            # Confine to project_root/exports/.
+            try:
+                target.relative_to((project_root / "exports").resolve())
+            except ValueError:
+                return self._send_json(403, {"error": "out_dir outside exports/"})
+            if not target.exists() or not target.is_dir():
+                return self._send_json(200, {"files": []})
+            files = []
+            for p in sorted(target.iterdir()):
+                if p.is_file():
+                    files.append({
+                        "name": p.name,
+                        "size": p.stat().st_size,
+                        "rel": str(p.relative_to(project_root)),
+                    })
+            self._send_json(200, {"out_dir": str(target), "files": files})
+
     return _Handler
 
 
@@ -387,6 +526,61 @@ def _run_worker(
         sys.stderr.write(f"[app] status.json refresh failed: {e}\n")
 
 
+def _workflow_worker(
+    *,
+    domain: str,
+    count: int,
+    videos_per_keyword: int,
+    min_views: int,
+    min_subscribers: int,
+    modes_csv: str,
+    out_dir: Path,
+    data_store: Path,
+    logs_root: Path,
+) -> None:
+    """Run `collector workflow full --modes ...` in a background thread."""
+    from .workflow import main as workflow_main
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    argv = [
+        "full",
+        "--domain", domain,
+        "--count", str(count),
+        "--videos-per-keyword", str(videos_per_keyword),
+        "--min-views", str(min_views),
+        "--min-subscribers", str(min_subscribers),
+        "--data-store", str(data_store),
+        "--logs", str(logs_root),
+        "--out-dir", str(out_dir),
+    ]
+    if modes_csv:
+        argv += ["--modes", modes_csv]
+
+    try:
+        rc = workflow_main(argv)
+        if rc != 0:
+            with _WORKFLOW_LOCK:
+                _WORKFLOW_STATE.update({
+                    "status": "failed",
+                    "ended_at": _now_iso(),
+                    "error": f"workflow exit code {rc}",
+                })
+            return
+        with _WORKFLOW_LOCK:
+            _WORKFLOW_STATE.update({
+                "status": "completed",
+                "ended_at": _now_iso(),
+            })
+    except Exception as e:  # noqa: BLE001
+        with _WORKFLOW_LOCK:
+            _WORKFLOW_STATE.update({
+                "status": "failed",
+                "ended_at": _now_iso(),
+                "error": f"{type(e).__name__}: {e}",
+            })
+        traceback.print_exc()
+
+
 def reset_run_state_for_tests() -> None:
     """Test hook — not used at runtime."""
     with _RUN_LOCK:
@@ -397,5 +591,16 @@ def reset_run_state_for_tests() -> None:
             "started_at": None,
             "ended_at": None,
             "summary": None,
+            "error": None,
+        })
+    with _WORKFLOW_LOCK:
+        _WORKFLOW_STATE.update({
+            "run_id": None,
+            "status": "idle",
+            "domain": None,
+            "modes": [],
+            "started_at": None,
+            "ended_at": None,
+            "out_dir": None,
             "error": None,
         })

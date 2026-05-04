@@ -95,6 +95,33 @@ LLM 한도 초과 등으로 어떤 step 이 실패해도:
 예: `step 3 synthesize` 가 quota 로 실패 → 1시간 후 같은 명령 재실행 →
 step 1/2 스킵, step 3 부터 다시 시도 → 성공하면 step 4/5 진행.
 
+#### NotebookLM 자동 호출 — `--modes`
+
+`step 4(설계서)` 의 입력은 우리 cheap-LLM 이 자막 30K → bullet 500자로 축약한
+부산물이라 원본 자막을 통째로 NotebookLM 에 넣었을 때만큼 깊이가 안 나옴.
+`--modes` 를 넣으면 step 6 가 자동으로:
+
+1. raw 자막 합본 `notebook_raw_<도메인>.md` 생성 (원본 보존)
+2. NotebookLM 에 새 노트북 생성 + 합본 업로드
+3. 모드별 프롬프트 자동 호출 → `spec_NB_<mode>.md` 저장
+
+```bash
+collector workflow full --domain "사주" --count 5 \
+    --modes monetize,textbook,summary,presentation
+```
+
+모드 4종:
+- `monetize` — 1인 사업 수익화 설계서 (기존 `_spec.py` 와 동일 골격)
+- `textbook` — 0에서 시작하는 학습자용 교과서 형식
+- `summary` — TL;DR + 핵심 메시지 + 인용 (1~1.5K자)
+- `presentation` — 슬라이드 8장 + 발표자 노트
+
+전제: `pip install notebooklm-mcp-cli` + 1회 `nlm login`. CLI 가 없거나
+구글이 NotebookLM UI 변경으로 깨지면 step 6 만 스킵 (기존 cheap-LLM
+`step4_spec_*.md` 는 그대로 보존됨 — fail-safe).
+
+대시보드 (`collector app`) 에서도 동일하게 도메인 + 모드 체크박스로 실행 가능.
+
 #### 설계서에 추가 자료 반영 — `--notes-file`
 
 NotebookLM 채팅에서 받은 요약·도메인 메모·외부 자료를 텍스트 파일로 저장한 뒤
