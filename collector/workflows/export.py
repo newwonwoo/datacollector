@@ -132,3 +132,64 @@ def export_notebook(
 
     out.write_text("\n".join(lines), encoding="utf-8")
     return out
+
+
+def export_raw_bundle(
+    *,
+    data_store_root: Path = Path("data_store"),
+    out_dir: Path = Path("exports"),
+    channel_id: str | None = None,
+    only_promoted: bool = True,
+    label: str = "",
+) -> Path:
+    """Bundle RAW transcripts (not extracted bullets) into one .md ready
+    for NotebookLM upload. NotebookLM does its own analysis — we should
+    feed it the source material, not our pre-chewed bullet points."""
+    records: list[dict[str, Any]] = []
+    for rec in _iter_payloads(data_store_root):
+        if only_promoted and rec.get("record_status") != "promoted":
+            continue
+        if channel_id and rec.get("channel_id") != channel_id:
+            continue
+        records.append(rec)
+    records.sort(key=lambda r: (r.get("collected_at") or ""), reverse=True)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    parts = ["notebook_raw", ts]
+    if label:
+        parts.append(label.replace(" ", "_"))
+    if channel_id:
+        parts.append(f"ch_{channel_id[:10]}")
+    name = "_".join(parts) + ".md"
+    out = out_dir / name
+
+    total_chars = 0
+    lines: list[str] = [
+        f"# Collector Raw Bundle — {len(records)}건",
+        f"_export_at: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}_",
+        "",
+    ]
+    for r in records:
+        sk = r.get("source_key", "?")
+        title = r.get("title") or sk
+        vid = r.get("video_id", "")
+        ch = r.get("channel_id", "")
+        transcript = (r.get("transcript") or "").strip()
+        total_chars += len(transcript)
+        lines += [
+            f"## {title}",
+            f"- video: https://www.youtube.com/watch?v={vid}",
+            f"- channel: `{ch}`",
+            f"- collected: {r.get('collected_at', '')}",
+            "",
+        ]
+        if transcript:
+            lines += ["```", transcript, "```", ""]
+        else:
+            lines += ["_(no transcript captured)_", ""]
+        lines += ["---", ""]
+
+    lines.insert(2, f"_total_transcript_chars: {total_chars}_")
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out

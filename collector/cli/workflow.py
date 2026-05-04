@@ -21,6 +21,8 @@ from ..workflows import (
     research_batch,
     synthesize,
 )
+from ..workflows.export import export_raw_bundle
+from ..workflows._nb_specs import parse_modes, NotebookLMUnavailable
 
 
 def _cmd_brainstorm(args: argparse.Namespace) -> int:
@@ -333,6 +335,8 @@ def _cmd_full(args: argparse.Namespace) -> int:
 
     # ---- step 5/5: export NotebookLM bundle (always runs from vault) ----
     print("[full] step 5/5 export NotebookLM bundle", file=sys.stderr)
+    md_path = None
+    raw_path = None
     try:
         md_path = export_notebook(
             data_store_root=Path(args.data_store),
@@ -344,6 +348,56 @@ def _cmd_full(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"[full] STEP 5 FAILED ({e})", file=sys.stderr)
         failures.append(f"step5: {e}")
+
+    # ---- step 6 (optional): NotebookLM-driven mode-specific specs ----
+    requested_modes: list[str] = []
+    if args.modes:
+        try:
+            requested_modes = parse_modes(args.modes)
+        except ValueError as e:
+            print(f"[full] --modes invalid ({e}); skipping NotebookLM step",
+                  file=sys.stderr)
+            failures.append(f"modes: {e}")
+
+    if requested_modes:
+        print(f"[full] step 6/6 NotebookLM specs: modes={requested_modes}",
+              file=sys.stderr)
+        try:
+            raw_path = export_raw_bundle(
+                data_store_root=Path(args.data_store),
+                out_dir=out_dir,
+                only_promoted=True,
+                label=args.domain.replace(" ", "_")[:30],
+            )
+            print(f"[full]   raw bundle → {raw_path}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[full] raw bundle export failed ({e}); skipping NotebookLM",
+                  file=sys.stderr)
+            failures.append(f"step6_bundle: {e}")
+            raw_path = None
+
+        if raw_path is not None:
+            try:
+                from ..workflows._nb_specs import generate_specs
+                paths = generate_specs(
+                    domain=args.domain,
+                    bundle_path=raw_path,
+                    modes=requested_modes,
+                    out_dir=out_dir,
+                )
+                for mode, p in paths.items():
+                    print(f"[full]   {mode} → {p}", file=sys.stderr)
+            except NotebookLMUnavailable as e:
+                print(
+                    f"[full] NotebookLM unavailable ({e}). cheap-LLM "
+                    f"step4_spec_*.md is still your spec. Install nlm later "
+                    f"and re-run with --modes.",
+                    file=sys.stderr,
+                )
+                failures.append(f"step6_nb: {e}")
+            except Exception as e:  # noqa: BLE001
+                print(f"[full] STEP 6 FAILED ({e})", file=sys.stderr)
+                failures.append(f"step6: {e}")
 
     if failures:
         print(f"[full] done with {len(failures)} failed step(s) → {out_dir}/",
@@ -425,6 +479,10 @@ def main(argv: list[str] | None = None) -> int:
     p_f.add_argument("--logs", default="logs")
     p_f.add_argument("--notes-file", default="",
                      help="step 4(design_spec) 에 추가 반영할 텍스트 파일")
+    p_f.add_argument("--modes", default="",
+                     help="NotebookLM 자동 호출. comma-separated subset of "
+                          "monetize,textbook,summary,presentation. 비우면 "
+                          "NotebookLM 단계는 건너뜀.")
     p_f.add_argument("--restart", action="store_true",
                      help="기본은 resume(저장된 step 결과 재사용). 이 플래그로 모두 새로 실행.")
     p_f.add_argument("--out-dir", default="exports/run")

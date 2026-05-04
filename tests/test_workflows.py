@@ -658,3 +658,303 @@ def test_cmd_full_brainstorm_failure_aborts_with_clear_message(tmp_path, monkeyp
     assert rc == 2
     err = capsys.readouterr().err
     assert "STEP 1 FAILED" in err
+
+
+# -------- NotebookLM driver --------
+
+def test_notebooklm_unavailable_when_cli_missing(monkeypatch):
+    import collector.adapters.notebooklm as nb
+    monkeypatch.setattr(nb.shutil, "which", lambda _name: None)
+    assert nb.is_available() is False
+    with pytest.raises(nb.NotebookLMUnavailable):
+        nb._run(["foo"], 1.0)
+
+
+def test_notebooklm_create_parses_id(monkeypatch):
+    import collector.adapters.notebooklm as nb
+
+    class _R:
+        returncode = 0
+        stdout = '{"id": "abc-12345678", "title": "x"}'
+        stderr = ""
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", lambda *a, **k: _R())
+    nb_id = nb.create_notebook("foo")
+    assert nb_id == "abc-12345678"
+
+
+def test_notebooklm_create_handles_bare_id_output(monkeypatch):
+    import collector.adapters.notebooklm as nb
+
+    class _R:
+        returncode = 0
+        stdout = "Created notebook\nnb-abcdef12\n"
+        stderr = ""
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", lambda *a, **k: _R())
+    assert nb.create_notebook("foo") == "nb-abcdef12"
+
+
+def test_notebooklm_query_returns_stripped_stdout(monkeypatch):
+    import collector.adapters.notebooklm as nb
+
+    class _R:
+        returncode = 0
+        stdout = "  ## hello\n\nworld  \n"
+        stderr = ""
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", lambda *a, **k: _R())
+    assert nb.query("nb-1", "p") == "## hello\n\nworld"
+
+
+def test_notebooklm_subprocess_failure_raises(monkeypatch):
+    import collector.adapters.notebooklm as nb
+
+    class _R:
+        returncode = 2
+        stdout = ""
+        stderr = "auth expired"
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", lambda *a, **k: _R())
+    with pytest.raises(nb.NotebookLMUnavailable, match="auth expired"):
+        nb.create_notebook("foo")
+
+
+# -------- _nb_specs --------
+
+def test_nb_specs_parse_modes_validates():
+    from collector.workflows._nb_specs import parse_modes
+    assert parse_modes("") == []
+    assert parse_modes("monetize") == ["monetize"]
+    assert parse_modes("monetize,textbook") == ["monetize", "textbook"]
+    assert parse_modes("monetize, monetize, textbook") == ["monetize", "textbook"]
+    with pytest.raises(ValueError):
+        parse_modes("not-a-mode")
+
+
+def test_nb_specs_load_prompt_returns_template():
+    from collector.workflows._nb_specs import load_prompt, MODES
+    for m in MODES:
+        body = load_prompt(m)
+        assert body.strip(), f"prompt for {m} is empty"
+
+
+def test_nb_specs_generate_specs_writes_one_file_per_mode(tmp_path, monkeypatch):
+    from collector.workflows import _nb_specs
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text("# raw\nhi", encoding="utf-8")
+
+    calls = {"create": 0, "add": 0, "query": []}
+
+    def fake_create(title, **k):
+        calls["create"] += 1
+        return "nb-XYZ"
+
+    def fake_add(nb_id, path, **k):
+        calls["add"] += 1
+        return "src-1"
+
+    def fake_query(nb_id, prompt, **k):
+        calls["query"].append(prompt[:30])
+        return f"# answer for {prompt[:20]}"
+
+    monkeypatch.setattr(_nb_specs.notebooklm, "create_notebook", fake_create)
+    monkeypatch.setattr(_nb_specs.notebooklm, "add_source", fake_add)
+    monkeypatch.setattr(_nb_specs.notebooklm, "query", fake_query)
+
+    out_dir = tmp_path / "out"
+    written = _nb_specs.generate_specs(
+        domain="X", bundle_path=bundle,
+        modes=["monetize", "summary"], out_dir=out_dir,
+    )
+    assert calls["create"] == 1
+    assert calls["add"] == 1
+    assert len(calls["query"]) == 2
+    assert set(written.keys()) == {"monetize", "summary"}
+    for mode, p in written.items():
+        body = p.read_text(encoding="utf-8")
+        assert "mode: " + mode in body
+        assert "notebook: nb-XYZ" in body
+
+
+def test_nb_specs_generate_specs_no_modes_returns_empty(tmp_path, monkeypatch):
+    from collector.workflows import _nb_specs
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text("hi", encoding="utf-8")
+    written = _nb_specs.generate_specs(
+        domain="X", bundle_path=bundle, modes=[], out_dir=tmp_path / "out",
+    )
+    assert written == {}
+
+
+def test_nb_specs_propagates_unavailable(tmp_path, monkeypatch):
+    """Driver failure surfaces as NotebookLMUnavailable so the
+    calling workflow can fall back instead of crashing."""
+    from collector.workflows import _nb_specs
+    from collector.adapters.notebooklm import NotebookLMUnavailable
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text("hi", encoding="utf-8")
+
+    def boom(*a, **k):
+        raise NotebookLMUnavailable("nlm missing")
+
+    monkeypatch.setattr(_nb_specs.notebooklm, "create_notebook", boom)
+    with pytest.raises(NotebookLMUnavailable):
+        _nb_specs.generate_specs(
+            domain="X", bundle_path=bundle,
+            modes=["monetize"], out_dir=tmp_path / "out",
+        )
+
+
+# -------- export_raw_bundle --------
+
+def test_export_raw_bundle_includes_transcript_field(tmp_path):
+    from collector.workflows.export import export_raw_bundle
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    (ds / "k1__v1.json").write_text(json.dumps({
+        "source_key": "k1__v1", "video_id": "v1", "channel_id": "C1",
+        "title": "T1", "record_status": "promoted",
+        "transcript": "원본 자막 텍스트 ABC",
+        "collected_at": "2026-05-04T00:00:00Z",
+    }), encoding="utf-8")
+    out_dir = tmp_path / "exp"
+    p = export_raw_bundle(data_store_root=ds, out_dir=out_dir,
+                          only_promoted=True, label="사주")
+    body = p.read_text(encoding="utf-8")
+    assert "원본 자막 텍스트 ABC" in body
+    assert "T1" in body
+    assert p.name.startswith("notebook_raw_")
+
+
+def test_export_raw_bundle_skips_non_promoted_by_default(tmp_path):
+    from collector.workflows.export import export_raw_bundle
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    (ds / "good.json").write_text(json.dumps({
+        "source_key": "good", "video_id": "v1", "record_status": "promoted",
+        "transcript": "GOOD_TX",
+    }), encoding="utf-8")
+    (ds / "bad.json").write_text(json.dumps({
+        "source_key": "bad", "video_id": "v2", "record_status": "invalid",
+        "transcript": "BAD_TX",
+    }), encoding="utf-8")
+    p = export_raw_bundle(data_store_root=ds, out_dir=tmp_path / "out",
+                          only_promoted=True)
+    body = p.read_text(encoding="utf-8")
+    assert "GOOD_TX" in body
+    assert "BAD_TX" not in body
+
+
+# -------- _cmd_full integration with --modes --------
+
+def test_cmd_full_modes_calls_generate_specs(tmp_path, monkeypatch):
+    """When --modes is given and NotebookLM is reachable, _cmd_full
+    runs the new step 6 and produces spec_NB_*.md files."""
+    import collector.cli.workflow as wf
+
+    out_dir = tmp_path / "run"
+    calls = _stub_full_deps(monkeypatch)
+
+    captured: dict = {}
+
+    def fake_export_raw(**kw):
+        p = Path(kw["out_dir"]) / "notebook_raw_X.md"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("# raw bundle", encoding="utf-8")
+        captured["raw"] = p
+        return p
+
+    def fake_generate_specs(domain, bundle_path, modes, out_dir, **kw):
+        captured["modes"] = list(modes)
+        captured["bundle"] = bundle_path
+        written = {}
+        for m in modes:
+            p = Path(out_dir) / f"spec_NB_{m}.md"
+            p.write_text(f"# {m} spec", encoding="utf-8")
+            written[m] = p
+        return written
+
+    monkeypatch.setattr(wf, "export_raw_bundle", fake_export_raw)
+    # patch the lazy-imported generate_specs
+    import collector.workflows._nb_specs as _nbs
+    monkeypatch.setattr(_nbs, "generate_specs", fake_generate_specs)
+
+    rc = wf.main([
+        "full", "--domain", "사주", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+        "--modes", "monetize,summary",
+    ])
+    assert rc == 0
+    assert captured["modes"] == ["monetize", "summary"]
+    assert (out_dir / "spec_NB_monetize.md").exists()
+    assert (out_dir / "spec_NB_summary.md").exists()
+
+
+def test_cmd_full_falls_back_when_nlm_unavailable(tmp_path, monkeypatch, capsys):
+    import collector.cli.workflow as wf
+    from collector.adapters.notebooklm import NotebookLMUnavailable
+
+    out_dir = tmp_path / "run"
+    _stub_full_deps(monkeypatch)
+
+    def fake_export_raw(**kw):
+        p = Path(kw["out_dir"]) / "raw.md"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("hi", encoding="utf-8")
+        return p
+
+    def boom(*a, **kw):
+        raise NotebookLMUnavailable("nlm not installed")
+
+    monkeypatch.setattr(wf, "export_raw_bundle", fake_export_raw)
+    import collector.workflows._nb_specs as _nbs
+    monkeypatch.setattr(_nbs, "generate_specs", boom)
+
+    rc = wf.main([
+        "full", "--domain", "x", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+        "--modes", "monetize",
+    ])
+    assert rc == 0  # graceful: cheap-LLM step4 spec is still there
+    err = capsys.readouterr().err
+    assert "NotebookLM unavailable" in err
+    assert (out_dir / "step4_spec_0.md").exists()  # cheap-LLM spec preserved
+
+
+def test_cmd_full_no_modes_skips_notebooklm_step(tmp_path, monkeypatch):
+    import collector.cli.workflow as wf
+    out_dir = tmp_path / "run"
+    _stub_full_deps(monkeypatch)
+
+    called = {"raw": False, "specs": False}
+
+    def fake_export_raw(**kw):
+        called["raw"] = True
+        return Path(kw["out_dir"]) / "raw.md"
+
+    def fake_specs(*a, **kw):
+        called["specs"] = True
+        return {}
+
+    monkeypatch.setattr(wf, "export_raw_bundle", fake_export_raw)
+    import collector.workflows._nb_specs as _nbs
+    monkeypatch.setattr(_nbs, "generate_specs", fake_specs)
+
+    rc = wf.main([
+        "full", "--domain", "x", "--count", "1",
+        "--data-store", str(tmp_path / "ds"),
+        "--logs", str(tmp_path / "lg"),
+        "--out-dir", str(out_dir),
+    ])
+    assert rc == 0
+    assert called["raw"] is False
+    assert called["specs"] is False
