@@ -422,6 +422,7 @@ def make_handler(
                     "out_dir": out_dir,
                     "data_store": data_store,
                     "logs_root": logs_root,
+                    "docs_dir": docs_dir,
                 },
                 daemon=True,
             )
@@ -469,6 +470,52 @@ def make_handler(
     return _Handler
 
 
+def _refresh_status_json(*, docs_dir: Path, data_store: Path, logs_root: Path) -> None:
+    """One-shot: regenerate docs/status.json from events.jsonl + data_store
+    so the dashboard's stage diagram reflects current pipeline progress."""
+    try:
+        from .status_cli import main as status_main
+        status_main([
+            "--out", str(docs_dir / "status.json"),
+            "--data-store", str(data_store),
+            "--events", str(logs_root / "events.jsonl"),
+        ])
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"[app] status.json refresh failed: {e}\n")
+
+
+class _StatusTicker:
+    """Background thread that refreshes status.json every `interval` sec.
+
+    Used to wrap long-running workers so the dashboard's pipeline
+    diagram (which polls /status.json) shows live progress instead of
+    being frozen on the previous run's terminal counts."""
+
+    def __init__(self, *, docs_dir: Path, data_store: Path,
+                 logs_root: Path, interval: float = 2.5) -> None:
+        self._kw = {"docs_dir": docs_dir, "data_store": data_store,
+                    "logs_root": logs_root}
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            _refresh_status_json(**self._kw)
+            self._stop.wait(self._interval)
+
+    def __enter__(self) -> "_StatusTicker":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._stop.set()
+        self._thread.join(timeout=self._interval + 1.0)
+        # One final synchronous refresh so the post-run snapshot is durable
+        # even if the ticker's last tick lost the race with the worker exit.
+        _refresh_status_json(**self._kw)
+
+
 def _run_worker(
     *,
     query: str,
@@ -486,15 +533,17 @@ def _run_worker(
     from .run import run_query
 
     try:
-        summary = run_query(
-            query,
-            count=count,
-            data_store_root=data_store,
-            logs_root=logs_root,
-            llm_choice=llm_choice,
-            min_views=min_views,
-            min_subscribers=min_subscribers,
-        )
+        with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
+                           logs_root=logs_root):
+            summary = run_query(
+                query,
+                count=count,
+                data_store_root=data_store,
+                logs_root=logs_root,
+                llm_choice=llm_choice,
+                min_views=min_views,
+                min_subscribers=min_subscribers,
+            )
         with _RUN_LOCK:
             _RUN_STATE.update({
                 "status": "completed",
@@ -509,21 +558,9 @@ def _run_worker(
                 "error": f"{type(e).__name__}: {e}",
             })
         traceback.print_exc()
-        return
-
-    # Best-effort: refresh docs/status.json so the dashboard polls see
-    # up-to-date per-stage counts. Matches what the GH Actions workflow does.
-    # Pass through the app's data/log paths so non-default layouts don't read
-    # from cwd-relative defaults (which would report empty counts).
-    try:
-        from .status_cli import main as status_main
-        status_main([
-            "--out", str(docs_dir / "status.json"),
-            "--data-store", str(data_store),
-            "--events", str(logs_root / "events.jsonl"),
-        ])
-    except Exception as e:  # noqa: BLE001
-        sys.stderr.write(f"[app] status.json refresh failed: {e}\n")
+        # Final refresh so failure-state counts are visible too.
+        _refresh_status_json(docs_dir=docs_dir, data_store=data_store,
+                             logs_root=logs_root)
 
 
 def _workflow_worker(
@@ -537,6 +574,7 @@ def _workflow_worker(
     out_dir: Path,
     data_store: Path,
     logs_root: Path,
+    docs_dir: Path | None = None,
 ) -> None:
     """Run `collector workflow full --modes ...` in a background thread."""
     from .workflow import main as workflow_main
@@ -556,8 +594,16 @@ def _workflow_worker(
     if modes_csv:
         argv += ["--modes", modes_csv]
 
+    # Resolve docs_dir lazily — if the caller didn't pass one (older
+    # callers / tests), fall back to project_root/docs which is where
+    # the dashboard reads status.json from.
+    if docs_dir is None:
+        docs_dir = data_store.parent / "docs"
+
     try:
-        rc = workflow_main(argv)
+        with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
+                           logs_root=logs_root):
+            rc = workflow_main(argv)
         if rc != 0:
             with _WORKFLOW_LOCK:
                 _WORKFLOW_STATE.update({
@@ -579,6 +625,8 @@ def _workflow_worker(
                 "error": f"{type(e).__name__}: {e}",
             })
         traceback.print_exc()
+        _refresh_status_json(docs_dir=docs_dir, data_store=data_store,
+                             logs_root=logs_root)
 
 
 def reset_run_state_for_tests() -> None:

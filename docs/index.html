@@ -950,6 +950,9 @@ function startLocalRunPolling(){
         const base = `실행 중 · ${s.query || ''}`;
         txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
       }
+      // Live-sync the pipeline diagram (DISCOVER/COLLECT/...) while the
+      // run is in flight. Backend rewrites status.json every ~2.5s.
+      try { await loadLatest(); } catch (_) {}
       if (s.status === 'completed' || s.status === 'failed' || s.status === 'idle'){
         clearInterval(__localRunPoll);
         __localRunPoll = null;
@@ -1025,6 +1028,11 @@ function startWorkflowPolling(){
         const base = `워크플로 진행 중 · ${s.domain || ''} · 모드 [${(s.modes||[]).join(',') || '없음'}]`;
         txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
       }
+      // Live-sync the pipeline diagram while the workflow runs. The
+      // backend ticker rewrites status.json every ~2.5s; pulling it
+      // here keeps the stage counts (DISCOVER 3/3 etc.) honest instead
+      // of frozen on the previous run.
+      try { await loadLatest(); } catch (_) {}
       if (s.status === 'completed' || s.status === 'failed'){
         clearInterval(__wfPoll); __wfPoll = null;
         if (busy) busy.classList.remove('show');
