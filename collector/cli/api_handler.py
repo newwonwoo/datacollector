@@ -153,6 +153,8 @@ def make_handler(
                     return self._handle_resolve_channel_get()
                 if path == "/api/events":
                     return self._handle_events_get()
+                if path == "/api/watches":
+                    return self._handle_watches_get()
                 if path == "/api/run/status":
                     return self._handle_run_status()
                 if path == "/api/records":
@@ -188,6 +190,17 @@ def make_handler(
                 traceback.print_exc()
                 self.send_error(500, "internal error")
 
+        def do_DELETE(self) -> None:  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            try:
+                if path.startswith("/api/watches/"):
+                    return self._handle_watch_delete(path)
+                self.send_error(404, "not found")
+            except Exception as e:  # noqa: BLE001
+                sys.stderr.write(f"[app] DELETE {path} error: {e}\n")
+                traceback.print_exc()
+                self._send_json(500, {"ok": False, "error": "internal error"})
+
         def do_POST(self) -> None:  # noqa: N802
             path = self.path.split("?", 1)[0]
             try:
@@ -197,6 +210,12 @@ def make_handler(
                     return self._handle_run_post()
                 if path == "/api/workflow":
                     return self._handle_workflow_post()
+                if path == "/api/watches":
+                    return self._handle_watches_post()
+                if path.startswith("/api/watches/") and path.endswith("/tick"):
+                    return self._handle_watch_tick(path)
+                if path.startswith("/api/watches/") and path.endswith("/pause"):
+                    return self._handle_watch_pause(path)
                 self.send_error(404, "not found")
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[app] POST {path} error: {e}\n")
@@ -591,6 +610,98 @@ def make_handler(
                     })
             self._send_json(200, {"out_dir": str(target), "files": files})
 
+        # ---- /api/watches (registered cron-like watches) ----
+        def _watches_path(self) -> Path:
+            return (project_root / "state" / "watches.json").resolve()
+
+        def _handle_watches_get(self) -> None:
+            from .. import watch_registry as reg
+            items = reg.load(self._watches_path())
+            # Render as a list (stable order: alphabetical by domain) so
+            # the dashboard grid doesn't reorder rows on each refresh.
+            entries = [items[k] for k in sorted(items.keys())]
+            self._send_json(200, {"watches": entries})
+
+        def _handle_watches_post(self) -> None:
+            from .. import watch_registry as reg
+            body = self._read_json_body()
+            domain = (body.get("domain") or "").strip()
+            if not domain:
+                return self._send_json(400, {"ok": False, "error": "domain required"})
+            kw_raw = body.get("keywords") or []
+            if isinstance(kw_raw, str):
+                keywords = [s.strip() for s in kw_raw.split(",") if s.strip()]
+            else:
+                keywords = [str(s).strip() for s in kw_raw if str(s).strip()]
+            if not keywords:
+                return self._send_json(400, {"ok": False,
+                                             "error": "keywords required"})
+            modes_raw = body.get("modes") or []
+            if isinstance(modes_raw, str):
+                modes = [s.strip() for s in modes_raw.split(",") if s.strip()]
+            else:
+                modes = [str(s) for s in modes_raw]
+            interval = (body.get("interval") or "manual").strip()
+            if interval not in ("daily", "weekly", "monthly", "manual"):
+                return self._send_json(400, {"ok": False,
+                                             "error": "interval must be daily/weekly/monthly/manual"})
+            try:
+                vpk = int(body.get("videos_per_keyword") or 10)
+            except (TypeError, ValueError):
+                vpk = 10
+            entry = reg.upsert(
+                domain, path=self._watches_path(),
+                keywords=keywords, modes=modes,
+                interval=interval, videos_per_keyword=max(1, min(vpk, 50)),
+                paused=False,
+            )
+            self._send_json(200, {"ok": True, "watch": entry})
+
+        def _handle_watch_delete(self, path: str) -> None:
+            from .. import watch_registry as reg
+            domain = path[len("/api/watches/"):].rstrip("/")
+            if not domain:
+                return self._send_json(400, {"ok": False, "error": "domain in path required"})
+            from urllib.parse import unquote
+            domain = unquote(domain)
+            ok = reg.remove(domain, self._watches_path())
+            self._send_json(200, {"ok": ok})
+
+        def _handle_watch_pause(self, path: str) -> None:
+            from .. import watch_registry as reg
+            from urllib.parse import unquote
+            domain = unquote(path.split("/")[-2])
+            body = self._read_json_body()
+            paused = bool(body.get("paused", True))
+            entry = reg.upsert(domain, path=self._watches_path(), paused=paused)
+            self._send_json(200, {"ok": True, "watch": entry})
+
+        def _handle_watch_tick(self, path: str) -> None:
+            """POST /api/watches/{domain}/tick — fire one tick in a
+            background thread so the request returns immediately."""
+            from urllib.parse import unquote
+            domain = unquote(path.split("/")[-2])
+            from .. import watch_registry as reg
+            items = reg.load(self._watches_path())
+            entry = items.get(domain)
+            if entry is None:
+                return self._send_json(404, {"ok": False, "error": "not registered"})
+
+            t = threading.Thread(
+                target=_run_watch_tick_worker,
+                kwargs={
+                    "domain": domain,
+                    "data_store": data_store,
+                    "logs_root": logs_root,
+                    "registry_path": self._watches_path(),
+                    "out_dir": project_root / "exports" / "watch",
+                    "docs_dir": docs_dir,
+                },
+                daemon=True,
+            )
+            t.start()
+            self._send_json(202, {"ok": True, "domain": domain})
+
     return _Handler
 
 
@@ -772,6 +883,34 @@ def _workflow_worker(
         traceback.print_exc()
         _refresh_status_json(docs_dir=docs_dir, data_store=data_store,
                              logs_root=logs_root)
+
+
+def _run_watch_tick_worker(
+    *,
+    domain: str,
+    data_store: Path,
+    logs_root: Path,
+    registry_path: Path,
+    out_dir: Path,
+    docs_dir: Path,
+) -> None:
+    """Run a single watch tick (research_batch + optional NB refresh).
+    Wrapped in StatusTicker so the cohort dashboard updates live."""
+    from .watch import run_tick
+
+    try:
+        with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
+                           logs_root=logs_root):
+            run_tick(
+                domain,
+                data_store_root=data_store,
+                logs_root=logs_root,
+                registry_path=registry_path,
+                out_dir=out_dir,
+            )
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"[watch-tick worker] {domain}: {e}\n")
+        traceback.print_exc()
 
 
 def reset_run_state_for_tests() -> None:

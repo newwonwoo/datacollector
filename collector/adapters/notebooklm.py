@@ -85,6 +85,74 @@ def query(notebook_id: str, prompt: str,
     return _run(["notebook", "query", notebook_id, prompt], timeout).strip()
 
 
+def list_sources(notebook_id: str, *, timeout: float = 60) -> list[dict]:
+    """Return the notebook's current sources. nlm output shape may
+    vary — try JSON first, fall back to a permissive line parser.
+
+    On parse failure returns []. Caller decides whether that means
+    'empty' or 'unsupported nlm version'."""
+    out = _run(["source", "list", notebook_id], timeout)
+    s = out.strip()
+    if not s:
+        return []
+    if s.startswith("[") or s.startswith("{"):
+        try:
+            j = json.loads(s)
+            if isinstance(j, list):
+                return [x for x in j if isinstance(x, dict)]
+            if isinstance(j, dict) and isinstance(j.get("sources"), list):
+                return [x for x in j["sources"] if isinstance(x, dict)]
+        except json.JSONDecodeError:
+            pass
+    # Best-effort line parse: each non-empty line is one source whose
+    # first whitespace-token looks like an id.
+    rows: list[dict] = []
+    for ln in s.splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        tok = ln.split()[0] if ln.split() else ""
+        if re.fullmatch(r"[\w\-]{6,}", tok):
+            rows.append({"id": tok, "raw": ln})
+    return rows
+
+
+def remove_source(notebook_id: str, source_id: str,
+                  *, timeout: float = 60) -> None:
+    _run(["source", "remove", notebook_id, source_id], timeout)
+
+
+def replace_source(
+    notebook_id: str, file_path: Path,
+    *, timeout_list: float = 60,
+    timeout_remove: float = 60,
+    timeout_add: float = DEFAULT_TIMEOUT_ADD,
+) -> str:
+    """Drop ALL existing sources, then add `file_path` as the only one.
+
+    Used by `collector watch` so each tick refreshes the notebook with
+    the current vault snapshot — keeps the chat grounded in fresh data
+    without piling up sources past the 50-per-notebook free-tier cap.
+
+    On any subprocess failure, raises NotebookLMUnavailable so the
+    caller can record the watch tick as failed."""
+    try:
+        existing = list_sources(notebook_id, timeout=timeout_list)
+    except NotebookLMUnavailable:
+        existing = []
+    for src in existing:
+        sid = src.get("id") or src.get("source_id")
+        if not sid:
+            continue
+        try:
+            remove_source(notebook_id, sid, timeout=timeout_remove)
+        except NotebookLMUnavailable:
+            # Ignore individual failures — the add below is what matters
+            # and a stale leftover source won't break grounding.
+            pass
+    return add_source(notebook_id, file_path, timeout=timeout_add)
+
+
 _ID_PATTERNS = [
     re.compile(r'"id"\s*:\s*"([\w\-]{6,})"'),
     re.compile(r'\bid\s*[:=]\s*([\w\-]{6,})\b', re.IGNORECASE),

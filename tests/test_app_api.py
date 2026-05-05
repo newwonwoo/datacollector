@@ -671,6 +671,95 @@ def test_api_events_returns_empty_when_no_events(server):
     assert obj["events"] == []
 
 
+def test_api_watches_get_returns_empty_initially(server):
+    status, _h, body = _get(server.url("/api/watches"))
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["watches"] == []
+
+
+def test_api_watches_register_and_list(server, layout):
+    status, body = _post(server.url("/api/watches"), {
+        "domain": "사주",
+        "keywords": ["사주 결혼", "사주 직업"],
+        "modes": ["monetize", "summary"],
+        "interval": "daily",
+        "videos_per_keyword": 5,
+    })
+    assert status == 200, body
+    obj = json.loads(body)
+    assert obj["ok"] is True
+    assert obj["watch"]["domain"] == "사주"
+
+    _, _h, list_body = _get(server.url("/api/watches"))
+    items = json.loads(list_body)["watches"]
+    assert len(items) == 1
+    assert items[0]["keywords"] == ["사주 결혼", "사주 직업"]
+    assert items[0]["interval"] == "daily"
+
+
+def test_api_watches_register_validates(server):
+    s, body = _post(server.url("/api/watches"), {})
+    assert s == 400
+    assert "domain" in body or "keywords" in body
+    s, body = _post(server.url("/api/watches"),
+                    {"domain": "x"})
+    assert s == 400
+    assert "keywords" in body
+    s, body = _post(server.url("/api/watches"),
+                    {"domain": "x", "keywords": ["k"], "interval": "wrong"})
+    assert s == 400
+    assert "interval" in body
+
+
+def test_api_watches_delete(server):
+    _, body = _post(server.url("/api/watches"),
+                    {"domain": "X", "keywords": ["k"]})
+    assert json.loads(body)["ok"]
+    # DELETE
+    req = urllib.request.Request(server.url("/api/watches/X"), method="DELETE")
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        assert resp.status == 200
+    _, _h, list_body = _get(server.url("/api/watches"))
+    assert json.loads(list_body)["watches"] == []
+
+
+def test_api_watches_pause(server):
+    _post(server.url("/api/watches"),
+          {"domain": "X", "keywords": ["k"]})
+    s, body = _post(server.url("/api/watches/X/pause"), {"paused": True})
+    assert s == 200
+    obj = json.loads(body)
+    assert obj["watch"]["paused"] is True
+
+
+def test_api_watches_tick_starts_worker(server, layout, monkeypatch):
+    """POST /api/watches/X/tick returns 202 and dispatches a worker
+    that calls run_tick (which we patch)."""
+    import threading
+    fired = threading.Event()
+    captured = {}
+
+    def fake_run_tick(domain, **kw):
+        captured["domain"] = domain
+        fired.set()
+        return {"domain": domain, "diff": {"new_videos": 0}}
+
+    monkeypatch.setattr("collector.cli.watch.run_tick", fake_run_tick)
+
+    _post(server.url("/api/watches"),
+          {"domain": "X", "keywords": ["k"]})
+    status, body = _post(server.url("/api/watches/X/tick"), {})
+    assert status == 202
+    assert fired.wait(timeout=5)
+    assert captured["domain"] == "X"
+
+
+def test_api_watches_tick_404_when_unregistered(server):
+    s, body = _post(server.url("/api/watches/UNKNOWN/tick"), {})
+    assert s == 404
+
+
 def test_api_records_returns_local_data_store(server, layout):
     """Local-mode dashboard reads records via /api/records, not GitHub."""
     ds = layout["data_store"]

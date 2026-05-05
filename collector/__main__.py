@@ -21,6 +21,7 @@ SUBCOMMANDS: dict[str, tuple[str, str]] = {
     "status": ("collector.cli.status_cli", "main"),
     "apitest": ("collector.cli.apitest_cli", "main"),
     "workflow": ("collector.cli.workflow", "main"),
+    "watch": ("collector.cli.watch", "main"),
     "mcp": ("collector.cli.mcp_server", "main"),
 }
 
