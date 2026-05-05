@@ -272,25 +272,49 @@ class YouTubeAdapter:
             for it in items:
                 if not it.get("id", {}).get("videoId"):
                     continue
+                snippet = it.get("snippet") or {}
+                # Skip livestreams / premieres / upcoming. They don't have
+                # transcripts available (or auto-captions until they end +
+                # YouTube transcribes), so they'd fail YT_NO_TRANSCRIPT
+                # 100% of the time — wasting yt-dlp calls and confusing
+                # the dashboard with all-failed runs.
+                live_state = snippet.get("liveBroadcastContent", "none")
+                if live_state and live_state != "none":
+                    continue
                 results.append({
                     "video_id": it["id"]["videoId"],
-                    "channel_id": it["snippet"].get("channelId", ""),
-                    "title": it["snippet"].get("title", ""),
-                    "published_at": it["snippet"].get("publishedAt", ""),
+                    "channel_id": snippet.get("channelId", ""),
+                    "title": snippet.get("title", ""),
+                    "published_at": snippet.get("publishedAt", ""),
                 })
             page_token = body.get("nextPageToken")
             if not page_token or not items:
                 break
         return results[:max_results]
 
+    @staticmethod
+    def _parse_iso8601_duration(s: str) -> int:
+        """PT1H2M3S → 3723 seconds. Returns 0 on parse failure."""
+        if not s or not s.startswith("PT"):
+            return 0
+        import re
+        h = re.search(r"(\d+)H", s)
+        m = re.search(r"(\d+)M", s)
+        sec = re.search(r"(\d+)S", s)
+        return ((int(h.group(1)) if h else 0) * 3600 +
+                (int(m.group(1)) if m else 0) * 60 +
+                (int(sec.group(1)) if sec else 0))
+
     def enrich_stats(
         self,
         candidates: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Add `view_count` and `subscriber_count` to each candidate.
+        """Add `view_count`, `subscriber_count`, and `duration_sec` to
+        each candidate.
 
         Two batched API calls (1 unit each per 50 IDs):
-          - videos.list?part=statistics → viewCount per video_id
+          - videos.list?part=statistics,contentDetails →
+                viewCount + ISO8601 duration per video_id
           - channels.list?part=statistics → subscriberCount per channel_id
 
         Candidates are mutated in place AND returned. Missing/private
@@ -303,11 +327,12 @@ class YouTubeAdapter:
         channel_ids = list({c.get("channel_id") for c in candidates if c.get("channel_id")})
 
         video_stats: dict[str, int] = {}
+        video_duration: dict[str, int] = {}
         for i in range(0, len(video_ids), 50):
             chunk = video_ids[i:i + 50]
             params = {
                 "key": self.api_key,
-                "part": "statistics",
+                "part": "statistics,contentDetails",
                 "id": ",".join(chunk),
             }
             url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
@@ -325,6 +350,9 @@ class YouTubeAdapter:
                         video_stats[vid] = int(vc)
                     except (TypeError, ValueError):
                         video_stats[vid] = 0
+                dur_iso = (it.get("contentDetails") or {}).get("duration", "")
+                if vid and dur_iso:
+                    video_duration[vid] = self._parse_iso8601_duration(dur_iso)
 
         channel_stats: dict[str, int] = {}
         for i in range(0, len(channel_ids), 50):
@@ -353,6 +381,7 @@ class YouTubeAdapter:
         for c in candidates:
             c["view_count"] = video_stats.get(c.get("video_id", ""), 0)
             c["subscriber_count"] = channel_stats.get(c.get("channel_id", ""), 0)
+            c["duration_sec"] = video_duration.get(c.get("video_id", ""), 0)
         return candidates
 
     def captions(self, video_id: str) -> dict[str, Any]:

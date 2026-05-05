@@ -511,6 +511,70 @@ def test_run_post_400_when_neither_query_nor_channel(server):
     assert "검색어" in body or "채널" in body
 
 
+def test_youtube_search_skips_livestreams(monkeypatch):
+    """liveBroadcastContent != 'none' results have no captions yet —
+    they'd waste yt-dlp calls and produce 100% YT_NO_TRANSCRIPT runs.
+    The adapter must drop them at the search step."""
+    from collector.adapters.youtube import YouTubeAdapter
+    payload = {
+        "items": [
+            {"id": {"videoId": "VID_LIVE"}, "snippet": {
+                "channelId": "UCx", "title": "Live", "publishedAt": "2026-05-05T00:00:00Z",
+                "liveBroadcastContent": "live"}},
+            {"id": {"videoId": "VID_UPCOMING"}, "snippet": {
+                "channelId": "UCx", "title": "Premiere", "publishedAt": "2026-05-05T00:00:00Z",
+                "liveBroadcastContent": "upcoming"}},
+            {"id": {"videoId": "VID_OK"}, "snippet": {
+                "channelId": "UCx", "title": "Normal", "publishedAt": "2026-05-05T00:00:00Z",
+                "liveBroadcastContent": "none"}},
+            {"id": {"videoId": "VID_LEGACY"}, "snippet": {
+                "channelId": "UCx", "title": "No field", "publishedAt": "2026-05-05T00:00:00Z"}},
+        ]
+    }
+    yt = YouTubeAdapter("KEY", http=lambda *a, **k:
+                        {"status": 200, "headers": {}, "body": json.dumps(payload)})
+    out = yt.search({"topic": "x", "exclude_terms": [], "max_results": 10})
+    ids = sorted(c["video_id"] for c in out)
+    # Only non-live items should remain. Missing field defaults to 'none' too.
+    assert ids == ["VID_LEGACY", "VID_OK"]
+
+
+def test_enrich_stats_populates_duration_sec(monkeypatch):
+    """contentDetails.duration is parsed into duration_sec so callers
+    can drop Shorts upfront."""
+    from collector.adapters.youtube import YouTubeAdapter
+
+    def fake_http(method, url, **kw):
+        if "videos" in url:
+            return {"status": 200, "headers": {}, "body": json.dumps({
+                "items": [
+                    {"id": "VID_SHORT", "statistics": {"viewCount": "10"},
+                     "contentDetails": {"duration": "PT45S"}},
+                    {"id": "VID_LONG", "statistics": {"viewCount": "100"},
+                     "contentDetails": {"duration": "PT12M30S"}},
+                ]
+            })}
+        return {"status": 200, "headers": {}, "body": json.dumps({"items": []})}
+
+    yt = YouTubeAdapter("KEY", http=fake_http)
+    cands = [{"video_id": "VID_SHORT", "channel_id": "UC1"},
+             {"video_id": "VID_LONG", "channel_id": "UC1"}]
+    yt.enrich_stats(cands)
+    by_id = {c["video_id"]: c for c in cands}
+    assert by_id["VID_SHORT"]["duration_sec"] == 45
+    assert by_id["VID_LONG"]["duration_sec"] == 750  # 12m30s
+
+
+def test_parse_iso8601_duration():
+    from collector.adapters.youtube import YouTubeAdapter
+    f = YouTubeAdapter._parse_iso8601_duration
+    assert f("PT45S") == 45
+    assert f("PT3M") == 180
+    assert f("PT1H2M3S") == 3723
+    assert f("") == 0
+    assert f("garbage") == 0
+
+
 def test_youtube_search_omits_q_param_when_channel_only(monkeypatch):
     """Channel-only browse: drop `q` so the API returns the channel's
     actual recent uploads (not noise from an empty query) and order=date."""

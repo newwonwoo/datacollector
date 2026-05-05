@@ -371,6 +371,22 @@ def run_query(
                     )
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[run] quality filter skipped: {e}\n")
+
+        # Drop Shorts upfront — duration_sec was populated by enrich_stats.
+        # If we don't have duration (enrich failed / no API key), the
+        # in-pipeline stage_collect filter still catches them later.
+        if candidates and any(c.get("duration_sec") for c in candidates):
+            shorts_before = len(candidates)
+            candidates = [c for c in candidates
+                          if c.get("duration_sec", 0) == 0
+                          or c.get("duration_sec", 0) >= 240]
+            if shorts_before != len(candidates):
+                logger.log(
+                    entity_type="run", entity_id="pre_shorts_filter",
+                    from_status=None, to_status="shorts_dropped",
+                    reason="duration_sec < 240",
+                    metrics={"before": shorts_before, "after": len(candidates)},
+                )
     else:
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)

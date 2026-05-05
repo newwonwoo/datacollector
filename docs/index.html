@@ -976,9 +976,13 @@ async function runQueryLocal(q, c){
     const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
     const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
     const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
-    // Prefer the locally-resolved UC… if the user's preview was successful.
-    // Otherwise send the raw input — the backend will resolve it (or 400).
-    const channelId = __channelResolved || channelRaw;
+    // Always send the RAW input — backend re-resolves it. The
+    // __channelResolved cache is only for the inline preview; using
+    // it at submit time risks sending a stale UC… from a previous
+    // value of the input box. The backend resolver is the source of
+    // truth (1 quota unit per call, ≤ 10k/day quota = effectively
+    // unlimited).
+    const channelId = channelRaw;
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1672,10 +1676,13 @@ function updateFunnelBanner(runState, detail){
   const ps  = (detail && detail.per_stage) || {};
   const get = (st, k) => (ps[st] || {})[k] || 0;
 
-  const discover  = get('discover',  'completed');
-  const collect   = get('collect',   'completed');
-  const extract   = get('extract',   'completed');
-  const promote   = get('promote',   'completed');
+  // Cap intermediate counts at requested N — internally we oversample
+  // (×3) for dedup, but the user shouldn't see numbers larger than
+  // what they asked for.
+  const capN = (n) => (req && n > req) ? req : n;
+  const collect = capN(get('collect', 'completed'));
+  const extract = capN(get('extract', 'completed'));
+  const promote = capN(get('promote', 'completed'));
 
   // Sum failure counts across all stages, grouped by reason.
   const allFails = {};
@@ -1687,9 +1694,12 @@ function updateFunnelBanner(runState, detail){
   }
   const failsArr = Object.entries(allFails).sort((a,b)=>b[1]-a[1]);
 
+  // Anchor every funnel value to the requested N. "발견" line removed
+  // because the upstream search returns 3× oversample which used to
+  // confuse the count.
   let txt = '';
   if (req !== null && req !== undefined) txt += `📥 요청 <b>${req}</b> · `;
-  txt += `🔍 발견 <b>${discover}</b> · 📝 자막 <b>${collect}</b> · 🤖 추출 <b>${extract}</b> · ✅ 최종 <b>${promote}</b>`;
+  txt += `📝 자막 <b>${collect}</b> · 🤖 추출 <b>${extract}</b> · ✅ 최종 <b>${promote}</b>`;
   if (failsArr.length){
     txt += '<br>⚠️ 실패: ' + failsArr.map(([c,n]) => `${c}×${n}`).join(' · ');
   }
