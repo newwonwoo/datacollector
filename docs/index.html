@@ -729,16 +729,22 @@
       <span class="muted" style="font-weight:400;font-size:11px">
         등록한 도메인은 cron / Task Scheduler 로 주기 실행
       </span>
+      <button class="ghost" id="watch-refresh-selected"
+              onclick="tickSelected()" style="margin-left:auto;font-size:12px"
+              title="체크된 도메인만 한번에 업데이트">↻ 선택 업데이트</button>
     </div>
     <table class="watch-table" id="watch-table">
       <thead>
         <tr>
+          <th style="width:24px"><input type="checkbox" id="wn-select-all"
+              onchange="toggleAllWatchSelect(this.checked)"
+              title="전체 선택" /></th>
           <th>도메인</th><th>키워드</th><th>주기</th><th>모드</th>
           <th>마지막 실행</th><th>증분</th><th></th>
         </tr>
       </thead>
       <tbody id="watch-tbody">
-        <tr><td colspan="7" class="muted center">등록된 watch 없음</td></tr>
+        <tr><td colspan="8" class="muted center">등록된 watch 없음</td></tr>
       </tbody>
     </table>
     <details style="margin-top:10px">
@@ -1317,7 +1323,7 @@ async function loadWatches(){
     const j = await r.json();
     const ws = j.watches || [];
     if (!ws.length){
-      tbody.innerHTML = '<tr><td colspan="7" class="center">등록된 watch 없음</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="center">등록된 watch 없음</td></tr>';
       return;
     }
     const esc = (s) => String(s ?? '').replace(/[<>&"']/g, c =>
@@ -1336,6 +1342,7 @@ async function loadWatches(){
         ? `<a href="https://notebooklm.google.com/notebook/${esc(w.notebook_id)}" target="_blank" title="NotebookLM 열기" style="text-decoration:none">↗</a>`
         : '';
       return `<tr>
+        <td><input type="checkbox" class="wn-select" data-domain="${esc(w.domain)}" /></td>
         <td class="domain">${pausedBadge}${errBadge}${esc(w.domain)} ${nbLink}</td>
         <td class="muted">${esc(kw)}</td>
         <td>${esc(w.interval || 'manual')}</td>
@@ -1415,6 +1422,40 @@ async function deleteWatch(domain){
                           {method: 'DELETE'});
     if (r.ok){ toast('삭제됨'); loadWatches(); }
   } catch(e){ toast('오류: ' + e.message); }
+}
+
+function toggleAllWatchSelect(on){
+  document.querySelectorAll('.wn-select').forEach(el => { el.checked = on; });
+}
+
+async function tickSelected(){
+  const selected = Array.from(document.querySelectorAll('.wn-select'))
+    .filter(el => el.checked)
+    .map(el => el.dataset.domain);
+  if (!selected.length){
+    return toast('체크된 도메인이 없습니다');
+  }
+  const btn = document.getElementById('watch-refresh-selected');
+  if (btn) { btn.disabled = true; btn.textContent = '실행 중…'; }
+  let started = 0, failed = 0;
+  // Fire sequentially — each /tick returns 202 immediately, so we don't
+  // wait for the full run to finish; we just stagger the kick-offs so
+  // research_batch instances don't all hammer YouTube on second 0.
+  for (const domain of selected){
+    try {
+      const r = await fetch(`/api/watches/${encodeURIComponent(domain)}/tick`,
+                            {method: 'POST'});
+      if (r.status === 202) started++;
+      else failed++;
+    } catch(_) { failed++; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '↻ 선택 업데이트'; }
+  toast(`✓ ${started}개 실행 시작${failed ? ` · ${failed}개 실패` : ''}`);
+  // Cohort dashboard reflects the inner pipeline progress.
+  try { cohPollOnce(); } catch(_){}
+  // Refresh the watches table while ticks are running.
+  const refresher = setInterval(loadWatches, 3000);
+  setTimeout(() => clearInterval(refresher), 5 * 60 * 1000);
 }
 
 async function runQuery(){
