@@ -68,10 +68,19 @@ def create_notebook(title: str, *, timeout: float = DEFAULT_TIMEOUT_CREATE) -> s
 
 
 def add_source(notebook_id: str, file_path: Path,
-               *, timeout: float = DEFAULT_TIMEOUT_ADD) -> str:
+               *, timeout: float = DEFAULT_TIMEOUT_ADD,
+               wait: bool = True) -> str:
     """Upload a local file as a source for the given notebook. Returns
-    the source ID (or empty string if nlm doesn't print one)."""
-    out = _run(["source", "add", notebook_id, str(file_path)], timeout)
+    the source ID (or empty string if nlm doesn't print one).
+
+    nlm CLI syntax (jacob-bd v0.6+):
+        nlm source add NOTEBOOK --file PATH [--wait]
+    The legacy `nlm source add NOTEBOOK PATH` form is rejected with
+    'unexpected extra argument' — the file MUST come via --file."""
+    args = ["source", "add", notebook_id, "--file", str(file_path)]
+    if wait:
+        args.append("--wait")
+    out = _run(args, timeout)
     try:
         return _parse_id(out, label="source")
     except NotebookLMUnavailable:
@@ -119,7 +128,11 @@ def list_sources(notebook_id: str, *, timeout: float = 60) -> list[dict]:
 
 def remove_source(notebook_id: str, source_id: str,
                   *, timeout: float = 60) -> None:
-    _run(["source", "remove", notebook_id, source_id], timeout)
+    """Delete a source by id. nlm CLI: `nlm source delete SOURCE_ID --confirm`.
+    notebook_id is accepted only for symmetry with add_source — the CLI
+    doesn't actually need it here."""
+    del notebook_id  # unused; kept for caller symmetry
+    _run(["source", "delete", source_id, "--confirm"], timeout)
 
 
 def replace_source(

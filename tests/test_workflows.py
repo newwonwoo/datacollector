@@ -769,6 +769,49 @@ def test_notebooklm_subprocess_failure_raises(monkeypatch):
         nb.create_notebook("foo")
 
 
+def test_notebooklm_add_source_uses_file_flag(tmp_path, monkeypatch):
+    """Regression for the 'unexpected extra argument' error: nlm CLI
+    requires --file, not a positional path."""
+    import collector.adapters.notebooklm as nb
+    captured: dict = {}
+
+    class _R:
+        returncode = 0
+        stdout = '{"id": "src-1"}'
+        stderr = ""
+
+    def fake_run(argv, **kw):
+        captured["argv"] = list(argv)
+        return _R()
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", fake_run)
+    p = tmp_path / "bundle.md"
+    p.write_text("# x", encoding="utf-8")
+    nb.add_source("nb-XYZ", p)
+    assert captured["argv"][1:] == ["source", "add", "nb-XYZ", "--file", str(p), "--wait"]
+
+
+def test_notebooklm_remove_source_uses_delete_subcommand(monkeypatch):
+    import collector.adapters.notebooklm as nb
+    captured: dict = {}
+
+    class _R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **kw):
+        captured["argv"] = list(argv)
+        return _R()
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", fake_run)
+    nb.remove_source("ignored-nb-id", "src-42")
+    # nlm uses `source delete SOURCE_ID --confirm` — no notebook id needed.
+    assert captured["argv"][1:] == ["source", "delete", "src-42", "--confirm"]
+
+
 # -------- _nb_specs --------
 
 def test_nb_specs_parse_modes_validates():
