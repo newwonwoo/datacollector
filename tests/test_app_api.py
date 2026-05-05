@@ -7,6 +7,7 @@ import socketserver
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -363,6 +364,101 @@ def test_workflow_files_lists_artifacts(server, layout, monkeypatch):
     assert "step4_spec_0.md" in names
 
 
+def test_resolve_channel_passes_uc_id_through(server, monkeypatch):
+    """A bare UC… id requires no API call — must round-trip directly."""
+    status, _h, body = _get(server.url(
+        "/api/resolve_channel?q=" + "UC1234567890ABCDEFGHIJKL"
+    ))
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["ok"] is True
+    assert obj["channel_id"] == "UC1234567890ABCDEFGHIJKL"
+
+
+def test_resolve_channel_resolves_handle_via_youtube_adapter(server, monkeypatch):
+    """An @handle should be routed to YouTubeAdapter.resolve_channel."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+
+    captured = {}
+
+    def fake_resolve(self, raw):
+        captured["raw"] = raw
+        return "UCFAKEFAKEFAKEFAKEFAKE12"
+
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        fake_resolve,
+    )
+
+    status, _h, body = _get(server.url(
+        "/api/resolve_channel?q=" + urllib.parse.quote("@somehandle")
+    ))
+    assert status == 200, body
+    obj = json.loads(body)
+    assert obj["ok"] is True
+    assert obj["channel_id"] == "UCFAKEFAKEFAKEFAKEFAKE12"
+    assert "@somehandle" in (captured.get("raw") or "")
+
+
+def test_resolve_channel_rejects_unknown_input(server, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: None,
+    )
+    status, _h, body = _get(server.url(
+        "/api/resolve_channel?q=" + urllib.parse.quote("not-a-channel")
+    ))
+    # 200 with ok:false — reserved 502 for transport / adapter errors.
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["ok"] is False
+    assert obj["channel_id"] is None
+
+
+def test_run_post_resolves_channel_url(server, layout, monkeypatch):
+    """POST /api/run with a channel URL should resolve to UC… server-side
+    and pass it on as target_channel_id."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: "UCRESOLVEDFROMURL12345A",
+    )
+
+    captured: dict = {}
+    started = threading.Event()
+
+    def fake_run_query(*a, **kw):
+        captured.update(kw)
+        started.set()
+        return {"requested_count": kw.get("count", 0), "promoted": 0,
+                "processed": 0, "candidates": 0, "skipped_duplicates": 0,
+                "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query)
+
+    status, body = _post(server.url("/api/run"), {
+        "query": "x",
+        "count": 1,
+        "channel_id": "https://www.youtube.com/@someone",
+    })
+    assert status == 202, body
+    assert started.wait(timeout=5)
+    assert captured.get("target_channel_id") == "UCRESOLVEDFROMURL12345A"
+
+
+def test_run_post_400_when_channel_unresolvable(server, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: None,
+    )
+    status, body = _post(server.url("/api/run"),
+                         {"query": "x", "channel_id": "garbage"})
+    assert status == 400
+    assert "인식" in body or "channel" in body
+
+
 def test_api_records_returns_local_data_store(server, layout):
     """Local-mode dashboard reads records via /api/records, not GitHub."""
     ds = layout["data_store"]
@@ -410,7 +506,8 @@ def test_run_status_exposes_requested_count_and_channel(server, monkeypatch):
 
     monkeypatch.setattr("collector.cli.run.run_query", slow_run_query)
     s, _ = _post(server.url("/api/run"),
-                 {"query": "단타", "count": 7, "channel_id": "UCabc12345678"})
+                 {"query": "단타", "count": 7,
+                  "channel_id": "UCabcDEFghi12345678JKLmn"})  # 24 chars, real shape
     assert s == 202
 
     # While the run is in flight, the status snapshot should already
@@ -425,7 +522,7 @@ def test_run_status_exposes_requested_count_and_channel(server, monkeypatch):
         time.sleep(0.02)
     assert snap is not None and snap["status"] == "running"
     assert snap["requested_count"] == 7
-    assert snap["channel_id"] == "UCabc12345678"
+    assert snap["channel_id"] == "UCabcDEFghi12345678JKLmn"
     barrier.set()
 
 

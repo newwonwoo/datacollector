@@ -142,11 +142,87 @@ def _default_http(method: str, url: str, *, headers: dict | None = None, data: b
 class YouTubeAdapter:
     SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
     VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
+    CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
     TIMEDTEXT_URL = "https://video.google.com/timedtext"
 
     def __init__(self, api_key: str, http: Callable = _default_http):
         self.api_key = api_key
         self.http = http
+
+    # ---------- Channel ID resolution ----------
+    # Accepted inputs:
+    #   UC...22-chars                        → returned as-is (no API call)
+    #   https://youtube.com/channel/UCxxx    → extract UC...
+    #   https://youtube.com/@handle  /  @h   → channels.list?forHandle=
+    #   https://youtube.com/c/customname     → channels.list?forUsername= (best-effort)
+    #   https://youtube.com/user/legacyname  → channels.list?forUsername=
+    #   https://youtube.com/watch?v=VIDEOID  → videos.list → snippet.channelId
+    _UC_RX = __import__("re").compile(r"\b(UC[0-9A-Za-z_\-]{22})\b")
+    _HANDLE_RX = __import__("re").compile(r"@([A-Za-z0-9._\-]{3,30})")
+    _CUSTOM_RX = __import__("re").compile(r"youtube\.com/(?:c|user)/([A-Za-z0-9._\-]+)")
+    _VIDEO_RX = __import__("re").compile(
+        r"(?:youtube\.com/watch\?[^ ]*v=|youtu\.be/)([A-Za-z0-9_\-]{11})"
+    )
+
+    def resolve_channel(self, raw: str) -> str | None:
+        """Best-effort: turn a user-pasted YouTube URL / @handle / UC...
+        into a `UC…` channel ID. Returns None if unresolvable.
+
+        At most one API call (1 unit) per resolution. Results are not
+        cached — caller is expected to call this once per run."""
+        s = (raw or "").strip()
+        if not s:
+            return None
+        m = self._UC_RX.search(s)
+        if m:
+            return m.group(1)
+        # Handle: @xxx (with or without youtube.com/ prefix)
+        m = self._HANDLE_RX.search(s)
+        if m:
+            return self._channels_lookup({"forHandle": "@" + m.group(1)})
+        # Custom URL (/c/foo or /user/foo)
+        m = self._CUSTOM_RX.search(s)
+        if m:
+            return self._channels_lookup({"forUsername": m.group(1)})
+        # Video URL → channel of that video
+        m = self._VIDEO_RX.search(s)
+        if m:
+            return self._video_channel_lookup(m.group(1))
+        return None
+
+    def _channels_lookup(self, extra_params: dict[str, str]) -> str | None:
+        params = {"key": self.api_key, "part": "id"}
+        params.update(extra_params)
+        try:
+            resp = self.http(
+                "GET",
+                f"{self.CHANNELS_URL}?{urllib.parse.urlencode(params)}",
+            )
+            self._raise_for(resp)
+            body = json.loads(resp["body"])
+        except Exception:
+            return None
+        items = body.get("items") or []
+        if not items:
+            return None
+        cid = items[0].get("id") or ""
+        return cid if cid.startswith("UC") else None
+
+    def _video_channel_lookup(self, video_id: str) -> str | None:
+        params = {"key": self.api_key, "part": "snippet", "id": video_id}
+        try:
+            resp = self.http(
+                "GET", f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+            )
+            self._raise_for(resp)
+            body = json.loads(resp["body"])
+        except Exception:
+            return None
+        items = body.get("items") or []
+        if not items:
+            return None
+        cid = (items[0].get("snippet") or {}).get("channelId", "")
+        return cid if cid.startswith("UC") else None
 
     # ---------- Services interface ----------
 

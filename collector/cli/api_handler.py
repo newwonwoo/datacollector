@@ -149,6 +149,8 @@ def make_handler(
                     return self._handle_workflow_status()
                 if path == "/api/workflow/files":
                     return self._handle_workflow_files()
+                if path == "/api/resolve_channel":
+                    return self._handle_resolve_channel_get()
                 if path == "/api/run/status":
                     return self._handle_run_status()
                 if path == "/api/records":
@@ -277,7 +279,32 @@ def make_handler(
                 min_subscribers = max(0, int(body.get("min_subscribers") or 0))
             except (TypeError, ValueError):
                 min_subscribers = 0
-            target_channel_id = (body.get("channel_id") or body.get("target_channel_id") or "").strip() or None
+            raw_channel = (body.get("channel_id") or body.get("target_channel_id")
+                           or body.get("channel") or "").strip()
+            target_channel_id: str | None = None
+            channel_resolve_error: str | None = None
+            if raw_channel:
+                # If already a UC… id, accept directly. Otherwise call the
+                # YouTube adapter's resolver (1 quota unit) to turn a URL,
+                # @handle, /c/name, /user/name, or video URL into UC….
+                if raw_channel.startswith("UC") and len(raw_channel) >= 22 and " " not in raw_channel:
+                    target_channel_id = raw_channel.split()[0][:24]
+                else:
+                    try:
+                        target_channel_id = _resolve_channel_input(raw_channel)
+                    except Exception as e:  # noqa: BLE001
+                        channel_resolve_error = f"{type(e).__name__}: {e}"
+                if not target_channel_id and not channel_resolve_error:
+                    return self._send_json(400, {
+                        "ok": False,
+                        "error": f"channel을 인식하지 못했어요: {raw_channel!r}. "
+                                 f"채널 URL/@핸들/UC… 중 하나를 넣어주세요.",
+                    })
+                if channel_resolve_error:
+                    return self._send_json(502, {
+                        "ok": False,
+                        "error": f"channel 변환 실패: {channel_resolve_error}",
+                    })
             run_id = f"api_{uuid.uuid4().hex[:8]}"
 
             with _RUN_LOCK:
@@ -440,6 +467,28 @@ def make_handler(
                 "out_dir": str(out_dir),
             })
 
+        def _handle_resolve_channel_get(self) -> None:
+            """GET /api/resolve_channel?q=... — preview the UC… that the
+            given input would resolve to, without starting a run. Used
+            by the dashboard to show '✓ resolved to UC…' next to the
+            channel input as the user types/pastes."""
+            from urllib.parse import parse_qs
+            qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            raw = (qs.get("q", [""])[0] or "").strip()
+            if not raw:
+                return self._send_json(200, {"ok": True, "channel_id": None})
+            try:
+                cid = _resolve_channel_input(raw)
+            except Exception as e:  # noqa: BLE001
+                return self._send_json(502, {"ok": False, "error": str(e)})
+            if not cid:
+                return self._send_json(200, {
+                    "ok": False,
+                    "channel_id": None,
+                    "error": "인식 불가 — UC.../@핸들/채널 URL 중 하나여야 합니다.",
+                })
+            return self._send_json(200, {"ok": True, "channel_id": cid})
+
         def _handle_workflow_status(self) -> None:
             with _WORKFLOW_LOCK:
                 snap = dict(_WORKFLOW_STATE)
@@ -475,6 +524,25 @@ def make_handler(
             self._send_json(200, {"out_dir": str(target), "files": files})
 
     return _Handler
+
+
+def _resolve_channel_input(raw: str) -> str | None:
+    """Turn user input (URL / @handle / UC…) into a UC… channel id.
+
+    Builds a YouTubeAdapter from the env's YOUTUBE_API_KEY. Returns None
+    on unresolvable input. Raises only if the adapter can't be built —
+    typically because no API key is configured."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        # No key → can only handle UC… directly without an API call.
+        if raw.startswith("UC") and len(raw) >= 24:
+            return raw[:24]
+        raise RuntimeError("YOUTUBE_API_KEY 가 설정되지 않아 핸들/URL 변환 불가")
+    from ..adapters.youtube import YouTubeAdapter
+    return YouTubeAdapter(api_key).resolve_channel(raw)
 
 
 def _refresh_status_json(*, docs_dir: Path, data_store: Path, logs_root: Path) -> None:

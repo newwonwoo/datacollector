@@ -548,9 +548,12 @@
     </div>
     <div class="form-row" style="margin-top:8px;align-items:center">
       <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px">채널 한정</label>
-      <input id="channel-id" type="text" placeholder="채널 ID (UC...) 또는 비워두면 전체 검색"
-             title="YouTube 채널 페이지 URL 의 UC... 부분. 비우면 전체 YouTube 검색."
-             style="flex:1" />
+      <input id="channel-id" type="text"
+             placeholder="채널 URL / @핸들 / UC… (비우면 전체 YouTube 검색)"
+             title="채널 페이지 URL, @핸들, 영상 URL, 또는 UC… 어느 것이든 OK. 비우면 전체 검색."
+             style="flex:1"
+             oninput="resolveChannelDebounced()" />
+      <span id="channel-resolved" class="muted" style="font-size:11px;min-width:140px"></span>
     </div>
     <div id="run-busy" class="run-busy">
       <span class="dots"><span></span><span></span><span></span></span>
@@ -915,6 +918,54 @@ function _hasAnyLLM(){
   return localKeyState.has_gemini || localKeyState.has_groq || localKeyState.has_anthropic;
 }
 
+// --- 채널 입력 자동 변환 (URL / @handle / UC…) ---
+let __channelResolveTimer = null;
+let __channelResolved = null;  // last successful UC… (or null)
+function resolveChannelDebounced(){
+  clearTimeout(__channelResolveTimer);
+  __channelResolveTimer = setTimeout(resolveChannelNow, 400);
+}
+async function resolveChannelNow(){
+  const inp = document.getElementById('channel-id');
+  const out = document.getElementById('channel-resolved');
+  if (!inp || !out) return;
+  const raw = inp.value.trim();
+  if (!raw){ out.textContent = ''; out.style.color = ''; __channelResolved = null; return; }
+  if (raw.startsWith('UC') && raw.length >= 22 && raw.length <= 26){
+    // Already a channel id — no API call needed.
+    __channelResolved = raw.split(/\s/)[0].slice(0, 24);
+    out.style.color = 'var(--ok)';
+    out.textContent = '✓ ' + __channelResolved;
+    return;
+  }
+  out.style.color = 'var(--text-2)';
+  out.textContent = '변환 중…';
+  try {
+    const r = await fetch('/api/resolve_channel?q=' + encodeURIComponent(raw),
+                          {cache: 'no-store'});
+    if (!r.ok){
+      out.style.color = 'var(--err)';
+      out.textContent = '✗ API 오류';
+      __channelResolved = null;
+      return;
+    }
+    const j = await r.json();
+    if (j.ok && j.channel_id){
+      __channelResolved = j.channel_id;
+      out.style.color = 'var(--ok)';
+      out.textContent = '✓ ' + j.channel_id;
+    } else {
+      __channelResolved = null;
+      out.style.color = 'var(--err)';
+      out.textContent = '✗ ' + (j.error || '인식 불가');
+    }
+  } catch(e){
+    out.style.color = 'var(--err)';
+    out.textContent = '✗ ' + e.message;
+    __channelResolved = null;
+  }
+}
+
 async function runQueryLocal(q, c){
   const btn = document.getElementById('run-btn');
   btn.disabled = true; btn.textContent = '요청 중…';
@@ -924,7 +975,10 @@ async function runQueryLocal(q, c){
   try {
     const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
     const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
-    const channelId = (document.getElementById('channel-id')?.value || '').trim();
+    const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
+    // Prefer the locally-resolved UC… if the user's preview was successful.
+    // Otherwise send the raw input — the backend will resolve it (or 400).
+    const channelId = __channelResolved || channelRaw;
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
