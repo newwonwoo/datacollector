@@ -48,6 +48,8 @@ def research_batch(
     max_concurrency: int | None = None,
     min_views: int = 0,
     min_subscribers: int = 0,
+    target_channel_id: str | None = None,
+    target_channel_ids: list[str] | None = None,
     data_store_root: Path = Path("data_store"),
     logs_root: Path = Path("logs"),
     progress_cb: Callable[[str, dict], None] | None = None,
@@ -63,53 +65,76 @@ def research_batch(
     """
     from ..cli.run import run_query
 
+    # Normalize channel input: target_channel_ids list takes precedence,
+    # falling back to single target_channel_id, finally to [None] which
+    # means "no channel restriction" — a single global search.
+    chs: list[str | None] = []
+    if target_channel_ids:
+        chs = [c for c in target_channel_ids if c]
+    elif target_channel_id:
+        chs = [target_channel_id]
+    if not chs:
+        chs = [None]
+
+    # Channel-only mode: keywords empty + at least one channel → expand
+    # to a single empty-keyword run per channel. Useful when the user
+    # wants "everything new from channels A,B,C" with no topic filter.
     if not keywords:
-        return []
+        if chs == [None]:
+            return []
+        keywords = [""]
 
     if max_concurrency is None:
         max_concurrency = _default_concurrency()
     max_concurrency = max(1, min(max_concurrency, 5))
 
+    # Build the (keyword, channel) execution matrix.
+    ops: list[tuple[str, str | None]] = [(kw, ch) for kw in keywords for ch in chs]
+
     sys.stderr.write(
-        f"[workflow] research_batch: {len(keywords)} keywords × "
-        f"{count_per_keyword} videos, concurrency={max_concurrency}\n"
+        f"[workflow] research_batch: {len(keywords)} keyword(s) × "
+        f"{len(chs)} channel(s) = {len(ops)} sub-runs × "
+        f"{count_per_keyword} videos each, concurrency={max_concurrency}\n"
     )
 
     results: list[dict[str, Any]] = []
 
-    def _one(kw: str, stagger: float) -> dict[str, Any]:
+    def _one(kw: str, ch: str | None, stagger: float) -> dict[str, Any]:
         if stagger:
             time.sleep(stagger)
         try:
-            return run_query(
+            summary = run_query(
                 kw,
                 count=count_per_keyword,
                 data_store_root=data_store_root,
                 logs_root=logs_root,
                 min_views=min_views,
                 min_subscribers=min_subscribers,
+                target_channel_id=ch,
             )
+            summary["target_channel_id"] = ch
+            return summary
         except Exception as e:  # noqa: BLE001
-            return {"query": kw, "error": str(e), "candidates": 0,
-                    "processed": 0, "promoted": 0}
+            return {"query": kw, "target_channel_id": ch, "error": str(e),
+                    "candidates": 0, "processed": 0, "promoted": 0}
 
     # Stagger the very first wave so workers don't simultaneously hit
     # YouTube on second 0.
     with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
         futures = {}
-        for i, kw in enumerate(keywords):
-            stagger = 0.0 if i < max_concurrency else 0.0
+        for i, (kw, ch) in enumerate(ops):
             # Spread the first `max_concurrency` worker starts across 0–2s
             stagger = (i % max_concurrency) * (2.0 / max_concurrency) if i < max_concurrency else 0.0
-            futures[pool.submit(_one, kw, stagger)] = kw
+            futures[pool.submit(_one, kw, ch, stagger)] = (kw, ch)
 
         for fut in as_completed(futures):
-            kw = futures[fut]
+            kw, ch = futures[fut]
             summary = fut.result()
             results.append(summary)
             if progress_cb is not None:
                 try:
-                    progress_cb(kw, summary)
+                    label = kw if not ch else f"{kw}@{ch[:8]}"
+                    progress_cb(label, summary)
                 except Exception:  # noqa: BLE001
                     pass
 

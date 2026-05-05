@@ -84,6 +84,51 @@ def test_brainstorm_drops_invalid_entries(monkeypatch):
 
 # -------- research_batch --------
 
+def test_research_batch_iterates_keyword_x_channel_matrix(monkeypatch, tmp_path):
+    """target_channel_ids 가 N 개면 (keywords × channels) 매트릭스로 호출."""
+    import collector.workflows._batch as _rb
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_run_query(kw, **kw_args):
+        calls.append((kw, kw_args.get("target_channel_id")))
+        return {"query": kw, "promoted": 1, "processed": 1, "candidates": 1,
+                "skipped_duplicates": 0, "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query)
+    out = _rb.research_batch(
+        ["k1", "k2"],
+        target_channel_ids=["UCa", "UCb"],
+        max_concurrency=1,
+        data_store_root=tmp_path / "ds", logs_root=tmp_path / "lg",
+    )
+    pairs = sorted([(kw, ch) for kw, ch in calls])
+    assert pairs == [("k1", "UCa"), ("k1", "UCb"), ("k2", "UCa"), ("k2", "UCb")]
+    assert len(out) == 4
+    for r in out:
+        assert "target_channel_id" in r
+
+
+def test_research_batch_channels_only_no_keywords(monkeypatch, tmp_path):
+    """키워드 없이 채널만 주어진 경우 → 빈 키워드 1개 × N 채널 = N sub-runs."""
+    import collector.workflows._batch as _rb
+    calls = []
+
+    def fake_run_query(kw, **kw_args):
+        calls.append((kw, kw_args.get("target_channel_id")))
+        return {"query": kw, "promoted": 0, "processed": 0,
+                "candidates": 0, "skipped_duplicates": 0, "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query)
+    _rb.research_batch(
+        [],
+        target_channel_ids=["UCa", "UCb", "UCc"],
+        max_concurrency=1,
+        data_store_root=tmp_path / "ds", logs_root=tmp_path / "lg",
+    )
+    assert sorted(c[1] for c in calls) == ["UCa", "UCb", "UCc"]
+    assert all(c[0] == "" for c in calls)  # empty keyword
+
+
 def test_research_batch_calls_run_query_per_keyword(monkeypatch, tmp_path):
     """Concurrency=1 keeps order deterministic so we can assert content."""
     seen: list[str] = []

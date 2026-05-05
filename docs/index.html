@@ -672,14 +672,14 @@
              title="이 수치 미만 채널의 영상은 제외 (0=필터 없음)"
              style="max-width:140px" />
     </div>
-    <div class="form-row" style="margin-top:8px;align-items:center">
-      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px">채널 한정</label>
-      <input id="channel-id" type="text"
-             placeholder="채널 URL / @핸들 / UC… (비우면 전체 YouTube 검색)"
-             title="채널 페이지 URL, @핸들, 영상 URL, 또는 UC… 어느 것이든 OK. 비우면 전체 검색."
-             style="flex:1"
-             oninput="resolveChannelDebounced()" />
-      <span id="channel-resolved" class="muted" style="font-size:11px;min-width:140px"></span>
+    <div class="form-row" style="margin-top:8px;align-items:flex-start">
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px;padding-top:6px">채널 한정</label>
+      <textarea id="channel-id" rows="2"
+             placeholder="채널 URL / @핸들 / UC…  (여러 개면 줄바꿈 또는 콤마로 구분, 비우면 전체 YouTube 검색)"
+             title="채널 페이지 URL, @핸들, 영상 URL, 또는 UC… 어느 것이든 OK. 여러 개 가능. 비우면 전체 검색."
+             style="flex:1;font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:6px;resize:vertical"
+             oninput="resolveChannelDebounced()"></textarea>
+      <span id="channel-resolved" class="muted" style="font-size:11px;min-width:140px;padding-top:6px"></span>
     </div>
     <div id="run-busy" class="run-busy">
       <span class="dots"><span></span><span></span><span></span></span>
@@ -761,10 +761,15 @@
         </div>
         <div class="form-row" style="margin-top:6px">
           <input id="wn-keywords" type="text"
-                 placeholder="키워드 (쉼표 구분, 예: 사주 결혼, 사주 직업)"
+                 placeholder="키워드 (쉼표 구분, 예: 사주 결혼, 사주 직업) — 비워도 OK (채널만 지정 가능)"
                  style="flex:1" />
           <input id="wn-vpk" type="number" value="10" min="1" max="50"
                  title="키워드당 영상 수" style="max-width:90px" />
+        </div>
+        <div class="form-row" style="margin-top:6px;align-items:flex-start">
+          <textarea id="wn-channels" rows="2"
+                 placeholder="채널 (선택, 줄바꿈/콤마로 여러개. URL/@핸들/UC… 어떤 형식이든)"
+                 style="flex:1;font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:6px;resize:vertical"></textarea>
         </div>
         <div class="form-row" style="margin-top:6px;align-items:center;gap:14px">
           <span class="muted" style="font-size:11px">모드</span>
@@ -1096,45 +1101,42 @@ function resolveChannelDebounced(){
   clearTimeout(__channelResolveTimer);
   __channelResolveTimer = setTimeout(resolveChannelNow, 400);
 }
+function _splitChannelInput(raw){
+  return (raw || '').replace(/,/g, '\n').split('\n')
+    .map(s => s.trim()).filter(Boolean);
+}
 async function resolveChannelNow(){
   const inp = document.getElementById('channel-id');
   const out = document.getElementById('channel-resolved');
   if (!inp || !out) return;
-  const raw = inp.value.trim();
-  if (!raw){ out.textContent = ''; out.style.color = ''; __channelResolved = null; return; }
-  if (raw.startsWith('UC') && raw.length >= 22 && raw.length <= 26){
-    // Already a channel id — no API call needed.
-    __channelResolved = raw.split(/\s/)[0].slice(0, 24);
-    out.style.color = 'var(--ok)';
-    out.textContent = '✓ ' + __channelResolved;
-    return;
-  }
+  const lines = _splitChannelInput(inp.value);
+  if (!lines.length){ out.textContent = ''; out.style.color = ''; __channelResolved = null; return; }
   out.style.color = 'var(--text-2)';
-  out.textContent = '변환 중…';
-  try {
-    const r = await fetch('/api/resolve_channel?q=' + encodeURIComponent(raw),
-                          {cache: 'no-store'});
-    if (!r.ok){
-      out.style.color = 'var(--err)';
-      out.textContent = '✗ API 오류';
-      __channelResolved = null;
-      return;
+  out.textContent = `변환 중… (${lines.length}개)`;
+  let ok = 0, fail = 0;
+  for (const line of lines){
+    if (line.startsWith('UC') && line.length >= 22 && line.length <= 26){
+      ok++; continue;
     }
-    const j = await r.json();
-    if (j.ok && j.channel_id){
-      __channelResolved = j.channel_id;
-      out.style.color = 'var(--ok)';
-      out.textContent = '✓ ' + j.channel_id;
-    } else {
-      __channelResolved = null;
-      out.style.color = 'var(--err)';
-      out.textContent = '✗ ' + (j.error || '인식 불가');
-    }
-  } catch(e){
-    out.style.color = 'var(--err)';
-    out.textContent = '✗ ' + e.message;
-    __channelResolved = null;
+    try {
+      const r = await fetch('/api/resolve_channel?q=' + encodeURIComponent(line),
+                            {cache: 'no-store'});
+      if (r.ok){
+        const j = await r.json();
+        if (j.ok && j.channel_id) { ok++; continue; }
+      }
+      fail++;
+    } catch(_) { fail++; }
   }
+  if (lines.length === 1){
+    if (ok === 1){ out.style.color = 'var(--ok)'; out.textContent = '✓ 인식 OK'; }
+    else { out.style.color = 'var(--err)'; out.textContent = '✗ 인식 불가'; }
+  } else {
+    out.style.color = fail ? 'var(--err)' : 'var(--ok)';
+    out.textContent = `✓ ${ok}개${fail ? ` · ✗ ${fail}` : ''}`;
+  }
+  // Cache is no longer used at submit time (backend re-resolves anyway).
+  __channelResolved = null;
 }
 
 async function runQueryLocal(q, c){
@@ -1147,13 +1149,7 @@ async function runQueryLocal(q, c){
     const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
     const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
     const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
-    // Always send the RAW input — backend re-resolves it. The
-    // __channelResolved cache is only for the inline preview; using
-    // it at submit time risks sending a stale UC… from a previous
-    // value of the input box. The backend resolver is the source of
-    // truth (1 quota unit per call, ≤ 10k/day quota = effectively
-    // unlimited).
-    const channelId = channelRaw;
+    const channelLines = _splitChannelInput(channelRaw);
     const resp = await fetch('/api/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -1162,7 +1158,7 @@ async function runQueryLocal(q, c){
         count: parseInt(c, 10) || 10,
         min_views: minViews,
         min_subscribers: minSubs,
-        channel_id: channelId,
+        channels: channelLines,
       }),
     });
     if (resp.status === 202){
@@ -1329,7 +1325,10 @@ async function loadWatches(){
     const esc = (s) => String(s ?? '').replace(/[<>&"']/g, c =>
       ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
     tbody.innerHTML = ws.map(w => {
-      const kw = (w.keywords || []).join(', ');
+      const kwArr = w.keywords || [];
+      const chArr = w.channels || [];
+      const kw = (kwArr.length ? kwArr.join(', ') : '(키워드 없음)')
+        + (chArr.length ? ` · 📡${chArr.length}개 채널` : '');
       const md = (w.modes || []).join(', ') || '—';
       const last = fmtTimeShort(w.last_run);
       const d = w.last_diff || {};
@@ -1365,24 +1364,33 @@ async function loadWatches(){
 async function registerWatch(){
   const domain = document.getElementById('wn-domain').value.trim();
   const keywords = document.getElementById('wn-keywords').value.trim();
+  const channelsRaw = document.getElementById('wn-channels').value.trim();
+  const channels = _splitChannelInput(channelsRaw);
   const interval = document.getElementById('wn-interval').value;
   const vpk = parseInt(document.getElementById('wn-vpk').value || '10', 10);
   const modes = Array.from(document.querySelectorAll('.wn-mode'))
     .filter(el => el.checked).map(el => el.value);
   if (!domain) return toast('도메인을 입력하세요');
-  if (!keywords) return toast('키워드를 입력하세요');
+  if (!keywords && !channels.length) return toast('키워드 또는 채널 둘 중 하나는 필요합니다');
   try {
     const r = await fetch('/api/watches', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({domain, keywords, modes, interval, videos_per_keyword: vpk}),
+      body: JSON.stringify({domain, keywords, channels, modes, interval,
+                            videos_per_keyword: vpk}),
     });
     if (!r.ok){
       const t = await r.text();
       return toast(`등록 실패 ${r.status}: ${t.slice(0,120)}`);
     }
-    toast('✓ watch 등록됨');
+    const j = await r.json();
+    if (j.channel_errors){
+      toast(`✓ 등록 (일부 채널 인식 실패: ${j.channel_errors.length}개)`);
+    } else {
+      toast('✓ watch 등록됨');
+    }
     document.getElementById('wn-domain').value = '';
     document.getElementById('wn-keywords').value = '';
+    document.getElementById('wn-channels').value = '';
     loadWatches();
   } catch(e){ toast('오류: ' + e.message); }
 }
@@ -1463,10 +1471,10 @@ async function runQuery(){
   const q = document.getElementById('query').value.trim();
   const c = document.getElementById('count').value || '5';
   const btn = document.getElementById('run-btn');
-  // Either keyword OR channel is required. Channel-only mode just
-  // pulls the latest videos from that channel (still dedup-aware).
+  // Either keyword OR (one or more) channels is required. Channel-only
+  // mode pulls the latest videos from those channels (still dedup-aware).
   const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
-  const hasChannel = !!(__channelResolved || channelRaw);
+  const hasChannel = _splitChannelInput(channelRaw).length > 0;
   if (!q && !hasChannel) return toast('검색어 또는 채널 둘 중 하나는 필요합니다');
   if (isLocalMode){
     if (!localKeyState.has_youtube || !_hasAnyLLM()){

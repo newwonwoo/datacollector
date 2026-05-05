@@ -309,34 +309,37 @@ def make_handler(
                 min_subscribers = max(0, int(body.get("min_subscribers") or 0))
             except (TypeError, ValueError):
                 min_subscribers = 0
-            raw_channel = (body.get("channel_id") or body.get("target_channel_id")
-                           or body.get("channel") or "").strip()
-            target_channel_id: str | None = None
-            channel_resolve_error: str | None = None
-            if raw_channel:
-                # If already a UC… id, accept directly. Otherwise call the
-                # YouTube adapter's resolver (1 quota unit) to turn a URL,
-                # @handle, /c/name, /user/name, or video URL into UC….
-                if raw_channel.startswith("UC") and len(raw_channel) >= 22 and " " not in raw_channel:
-                    target_channel_id = raw_channel.split()[0][:24]
+            # Channels: accept either single `channel_id` (legacy) or
+            # multiple `channels` (list / line-or-comma-separated string).
+            raw_inputs = _parse_channels_field(
+                body.get("channels"),
+                body.get("channel_id") or body.get("target_channel_id")
+                    or body.get("channel"),
+            )
+            channel_ids: list[str] = []
+            channel_errors: list[str] = []
+            for raw in raw_inputs:
+                if raw.startswith("UC") and len(raw) >= 22 and " " not in raw:
+                    channel_ids.append(raw[:24])
+                    continue
+                try:
+                    cid = _resolve_channel_input(raw)
+                except Exception as e:  # noqa: BLE001
+                    channel_errors.append(f"{raw}: {type(e).__name__}: {e}")
+                    continue
+                if cid:
+                    channel_ids.append(cid)
                 else:
-                    try:
-                        target_channel_id = _resolve_channel_input(raw_channel)
-                    except Exception as e:  # noqa: BLE001
-                        channel_resolve_error = f"{type(e).__name__}: {e}"
-                if not target_channel_id and not channel_resolve_error:
-                    return self._send_json(400, {
-                        "ok": False,
-                        "error": f"channel을 인식하지 못했어요: {raw_channel!r}. "
-                                 f"채널 URL/@핸들/UC… 중 하나를 넣어주세요.",
-                    })
-                if channel_resolve_error:
-                    return self._send_json(502, {
-                        "ok": False,
-                        "error": f"channel 변환 실패: {channel_resolve_error}",
-                    })
-            # Must have at least one of: keyword, channel.
-            if not query and not target_channel_id:
+                    channel_errors.append(f"{raw}: 인식 불가")
+            if raw_inputs and not channel_ids:
+                return self._send_json(400, {
+                    "ok": False,
+                    "error": "채널 인식 실패: " + "; ".join(channel_errors),
+                })
+            target_channel_id = channel_ids[0] if len(channel_ids) == 1 else None
+
+            # Must have at least one of: keyword, channel(s).
+            if not query and not channel_ids:
                 return self._send_json(400, {
                     "ok": False,
                     "error": "검색어 또는 채널 둘 중 하나는 필요합니다.",
@@ -348,10 +351,11 @@ def make_handler(
                     "run_id": run_id,
                     "status": "running",
                     "query": query,
-                    "requested_count": count,
+                    "requested_count": count * max(1, len(channel_ids) or 1),
                     "min_views": min_views,
                     "min_subscribers": min_subscribers,
                     "channel_id": target_channel_id,
+                    "channel_ids": channel_ids,
                     "started_at": _now_iso(),
                     "ended_at": None,
                     "summary": None,
@@ -367,6 +371,7 @@ def make_handler(
                     "min_views": min_views,
                     "min_subscribers": min_subscribers,
                     "target_channel_id": target_channel_id,
+                    "channel_ids": channel_ids,
                     "data_store": data_store,
                     "logs_root": logs_root,
                     "docs_dir": docs_dir,
@@ -378,6 +383,8 @@ def make_handler(
                 "ok": True, "run_id": run_id, "query": query, "count": count,
                 "min_views": min_views, "min_subscribers": min_subscribers,
                 "channel_id": target_channel_id,
+                "channel_ids": channel_ids,
+                "channel_errors": channel_errors or None,
             })
 
         def _handle_run_status(self) -> None:
@@ -641,9 +648,6 @@ def make_handler(
                 keywords = [s.strip() for s in kw_raw.split(",") if s.strip()]
             else:
                 keywords = [str(s).strip() for s in kw_raw if str(s).strip()]
-            if not keywords:
-                return self._send_json(400, {"ok": False,
-                                             "error": "keywords required"})
             modes_raw = body.get("modes") or []
             if isinstance(modes_raw, str):
                 modes = [s.strip() for s in modes_raw.split(",") if s.strip()]
@@ -657,13 +661,48 @@ def make_handler(
                 vpk = int(body.get("videos_per_keyword") or 10)
             except (TypeError, ValueError):
                 vpk = 10
+
+            # Channels: same parsing as /api/run — list, line-or-comma-
+            # separated string, or a single legacy "channel" field.
+            channel_inputs = _parse_channels_field(
+                body.get("channels"), body.get("channel"))
+            channel_ids: list[str] = []
+            channel_errors: list[str] = []
+            for raw in channel_inputs:
+                if raw.startswith("UC") and len(raw) >= 22 and " " not in raw:
+                    channel_ids.append(raw[:24])
+                    continue
+                try:
+                    cid = _resolve_channel_input(raw)
+                except Exception as e:  # noqa: BLE001
+                    channel_errors.append(f"{raw}: {type(e).__name__}: {e}")
+                    continue
+                if cid:
+                    channel_ids.append(cid)
+                else:
+                    channel_errors.append(f"{raw}: 인식 불가")
+            if channel_inputs and not channel_ids:
+                return self._send_json(400, {"ok": False,
+                                             "error": "채널 인식 실패: " + "; ".join(channel_errors)})
+
+            # Need at least one of: keywords, channels.
+            if not keywords and not channel_ids:
+                return self._send_json(400, {
+                    "ok": False,
+                    "error": "키워드 또는 채널 둘 중 하나는 필요합니다.",
+                })
+
             entry = reg.upsert(
                 domain, path=self._watches_path(),
                 keywords=keywords, modes=modes,
+                channels=channel_ids, channel_inputs=channel_inputs,
                 interval=interval, videos_per_keyword=max(1, min(vpk, 50)),
                 paused=False,
             )
-            self._send_json(200, {"ok": True, "watch": entry})
+            resp = {"ok": True, "watch": entry}
+            if channel_errors:
+                resp["channel_errors"] = channel_errors
+            self._send_json(200, resp)
 
         def _handle_watch_delete(self, path: str) -> None:
             from .. import watch_registry as reg
@@ -711,6 +750,39 @@ def make_handler(
             self._send_json(202, {"ok": True, "domain": domain})
 
     return _Handler
+
+
+def _parse_channels_field(channels_value: Any, legacy_single: Any = None) -> list[str]:
+    """Normalize the multiple-channel input shape to a flat list of
+    raw strings (URLs/@handles/UC…). Accepts:
+
+      - list[str]  → as-is, trimmed
+      - str        → split on newlines AND commas
+      - None       → []  (then fall back to `legacy_single`)
+    """
+    out: list[str] = []
+    if isinstance(channels_value, list):
+        for item in channels_value:
+            s = str(item or "").strip()
+            if s:
+                out.append(s)
+    elif isinstance(channels_value, str):
+        for line in channels_value.replace(",", "\n").splitlines():
+            s = line.strip()
+            if s:
+                out.append(s)
+    if not out and legacy_single:
+        s = str(legacy_single).strip()
+        if s:
+            out.append(s)
+    # De-dup preserve order.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in out:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    return deduped
 
 
 def _resolve_channel_input(raw: str) -> str | None:
@@ -789,30 +861,51 @@ def _run_worker(
     min_views: int = 0,
     min_subscribers: int = 0,
     target_channel_id: str | None = None,
+    channel_ids: list[str] | None = None,
 ) -> None:
-    """Run the pipeline in a background thread and persist status."""
-    # Lazy import so the handler module doesn't drag pipeline deps in during
-    # unit tests that only exercise /api/config.
+    """Run the pipeline in a background thread and persist status.
+
+    With 0/1 channel: single run_query call (existing path).
+    With 2+ channels: serial loop — one run_query per channel, all under
+    the same lock. The cohort dashboard tracks the latest sub-run; the
+    summary in _RUN_STATE rolls up promoted/processed across all subs."""
     from .run import run_query
+
+    chs = list(channel_ids or [])
+    if not chs:
+        chs = [target_channel_id]  # may be [None] = unrestricted
 
     try:
         with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
                            logs_root=logs_root):
-            summary = run_query(
-                query,
-                count=count,
-                data_store_root=data_store,
-                logs_root=logs_root,
-                llm_choice=llm_choice,
-                min_views=min_views,
-                min_subscribers=min_subscribers,
-                target_channel_id=target_channel_id,
-            )
+            agg = {"query": query,
+                   "requested_count": count * max(1, len(chs)),
+                   "promoted": 0, "processed": 0,
+                   "candidates": 0, "skipped_duplicates": 0,
+                   "per_video": [], "channel_summaries": []}
+            for ch in chs:
+                sub = run_query(
+                    query,
+                    count=count,
+                    data_store_root=data_store,
+                    logs_root=logs_root,
+                    llm_choice=llm_choice,
+                    min_views=min_views,
+                    min_subscribers=min_subscribers,
+                    target_channel_id=ch,
+                )
+                for k in ("promoted", "processed", "candidates", "skipped_duplicates"):
+                    agg[k] += int(sub.get(k, 0) or 0)
+                agg["per_video"].extend(sub.get("per_video", []) or [])
+                agg["channel_summaries"].append(
+                    {"target_channel_id": ch,
+                     "promoted": sub.get("promoted", 0),
+                     "processed": sub.get("processed", 0)})
         with _RUN_LOCK:
             _RUN_STATE.update({
                 "status": "completed",
                 "ended_at": _now_iso(),
-                "summary": summary,
+                "summary": agg,
             })
     except Exception as e:  # noqa: BLE001
         with _RUN_LOCK:
@@ -822,7 +915,6 @@ def _run_worker(
                 "error": f"{type(e).__name__}: {e}",
             })
         traceback.print_exc()
-        # Final refresh so failure-state counts are visible too.
         _refresh_status_json(docs_dir=docs_dir, data_store=data_store,
                              logs_root=logs_root)
 

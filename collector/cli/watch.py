@@ -70,6 +70,7 @@ def run_tick(
     *,
     keywords: list[str] | None = None,
     modes: list[str] | None = None,
+    channels: list[str] | None = None,
     videos_per_keyword: int = 10,
     data_store_root: Path = Path("data_store"),
     logs_root: Path = Path("logs"),
@@ -82,16 +83,21 @@ def run_tick(
     entry = items.get(domain) or {}
     kw = keywords or entry.get("keywords") or []
     md = modes or entry.get("modes") or []
-    if not kw:
-        raise ValueError(f"watch[{domain}]: no keywords registered")
+    chs = channels or entry.get("channels") or []
+    if not kw and not chs:
+        raise ValueError(f"watch[{domain}]: no keywords nor channels registered")
 
     prev_snap = entry.get("vault_snapshot") or {}
-    sys.stderr.write(f"[watch] {domain}: research_batch over {len(kw)} keyword(s)\n")
+    sys.stderr.write(
+        f"[watch] {domain}: research_batch over {len(kw)} keyword(s) × "
+        f"{len(chs) or 1} channel(s)\n"
+    )
     research_batch(
         kw,
         count_per_keyword=videos_per_keyword,
         data_store_root=data_store_root,
         logs_root=logs_root,
+        target_channel_ids=chs or None,
     )
 
     cur_snap = _vault_snapshot(data_store_root)
@@ -147,21 +153,49 @@ def run_tick(
 
 def cmd_register(args) -> int:
     kw = _parse_csv(args.keywords)
-    if not kw:
-        print("--keywords required", file=sys.stderr)
-        return 2
     md = _parse_csv(args.modes)
+    raw_channels = _parse_csv(args.channels)
     interval = args.interval or "manual"
     if interval not in _INTERVAL_SECONDS:
         print(f"--interval must be one of {list(_INTERVAL_SECONDS)}", file=sys.stderr)
         return 2
+
+    # Resolve channels via the YouTube adapter (UC… passthrough, others
+    # via channels.list). We resolve at register time so each tick is
+    # cheap (no API call to convert handles repeatedly).
+    resolved: list[str] = []
+    if raw_channels:
+        import os
+        api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+        for raw in raw_channels:
+            if raw.startswith("UC") and len(raw) >= 22 and " " not in raw:
+                resolved.append(raw[:24])
+                continue
+            if not api_key:
+                print(f"--channels: '{raw}' 변환 불가 (YOUTUBE_API_KEY 필요)",
+                      file=sys.stderr)
+                return 2
+            from ..adapters.youtube import YouTubeAdapter
+            cid = YouTubeAdapter(api_key).resolve_channel(raw)
+            if not cid:
+                print(f"--channels: '{raw}' 인식 불가", file=sys.stderr)
+                return 2
+            resolved.append(cid)
+
+    if not kw and not resolved:
+        print("--keywords 또는 --channels 둘 중 하나는 필요합니다", file=sys.stderr)
+        return 2
+
     reg.upsert(
         args.domain, path=Path(args.registry),
-        keywords=kw, modes=md, interval=interval,
+        keywords=kw, modes=md,
+        channels=resolved, channel_inputs=raw_channels,
+        interval=interval,
         videos_per_keyword=args.videos_per_keyword,
         paused=False,
     )
-    print(f"watch registered: {args.domain} ({len(kw)} keywords, interval={interval})")
+    print(f"watch registered: {args.domain} ({len(kw)} keywords, "
+          f"{len(resolved)} channels, interval={interval})")
     return 0
 
 
@@ -247,7 +281,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p_reg = sub.add_parser("register", help="새 watch 등록 (또는 갱신)")
     p_reg.add_argument("--domain", required=True)
-    p_reg.add_argument("--keywords", required=True, help="comma-separated")
+    p_reg.add_argument("--keywords", default="",
+                       help="comma-separated. --channels 와 함께 또는 따로 지정 가능 "
+                            "(둘 중 하나는 필수)")
+    p_reg.add_argument("--channels", default="",
+                       help="comma-separated. URL/@핸들/UC… 어떤 형식이든 OK. "
+                            "여러 개 지정 시 각 채널별로 별도 sub-run 으로 실행")
     p_reg.add_argument("--modes", default="",
                        help="comma-separated subset of monetize,textbook,summary,presentation")
     p_reg.add_argument("--interval", default="manual",

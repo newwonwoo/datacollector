@@ -422,6 +422,42 @@ def test_resolve_channel_rejects_unknown_input(server, monkeypatch):
     assert obj["channel_id"] is None
 
 
+def test_run_post_accepts_multiple_channels(server, monkeypatch):
+    """POST /api/run with `channels` list resolves each and routes to
+    a multi-channel run worker (one run_query per channel)."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: {"@a": "UCAAAAAAAAAAAAAAAAAAAAA", "@b": "UCBBBBBBBBBBBBBBBBBBBBB"}.get(raw),
+    )
+
+    captured: list[dict] = []
+    import threading
+    fired = threading.Event()
+
+    def fake_run_query(query, **kw):
+        captured.append({"q": query, "ch": kw.get("target_channel_id")})
+        if len(captured) >= 2:
+            fired.set()
+        return {"requested_count": kw.get("count", 0), "promoted": 0,
+                "processed": 0, "candidates": 0, "skipped_duplicates": 0,
+                "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query)
+
+    s, body = _post(server.url("/api/run"), {
+        "query": "x",
+        "count": 1,
+        "channels": ["@a", "@b"],
+    })
+    assert s == 202, body
+    j = json.loads(body)
+    assert sorted(j["channel_ids"]) == ["UCAAAAAAAAAAAAAAAAAAAAA", "UCBBBBBBBBBBBBBBBBBBBBB"]
+    assert fired.wait(timeout=5)
+    chs = sorted([c["ch"] for c in captured])
+    assert chs == ["UCAAAAAAAAAAAAAAAAAAAAA", "UCBBBBBBBBBBBBBBBBBBBBB"]
+
+
 def test_run_post_resolves_channel_url(server, layout, monkeypatch):
     """POST /api/run with a channel URL should resolve to UC… server-side
     and pass it on as target_channel_id."""
@@ -698,14 +734,30 @@ def test_api_watches_register_and_list(server, layout):
     assert items[0]["interval"] == "daily"
 
 
+def test_api_watches_register_with_channels_only(server, monkeypatch):
+    """채널만 주어도 OK (키워드 없이 채널 모니터링)."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: "UCFROMHANDLE0000000000A1",
+    )
+    s, body = _post(server.url("/api/watches"), {
+        "domain": "사주", "channels": ["@슈카월드"], "interval": "manual",
+    })
+    assert s == 200, body
+    obj = json.loads(body)
+    assert obj["watch"]["channels"] == ["UCFROMHANDLE0000000000A1"]
+    assert obj["watch"]["channel_inputs"] == ["@슈카월드"]
+
+
 def test_api_watches_register_validates(server):
     s, body = _post(server.url("/api/watches"), {})
     assert s == 400
-    assert "domain" in body or "keywords" in body
-    s, body = _post(server.url("/api/watches"),
-                    {"domain": "x"})
+    assert "domain" in body
+    # No keywords AND no channels
+    s, body = _post(server.url("/api/watches"), {"domain": "x"})
     assert s == 400
-    assert "keywords" in body
+    assert "키워드" in body or "채널" in body
     s, body = _post(server.url("/api/watches"),
                     {"domain": "x", "keywords": ["k"], "interval": "wrong"})
     assert s == 400
