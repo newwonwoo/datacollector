@@ -1,7 +1,7 @@
 // Collector service worker — cache only the static shell (HTML/manifest).
 // API calls (/api/*), status.json, and data_store/vault content always hit the
 // network so the dashboard never serves stale pipeline state.
-const CACHE = 'collector-shell-v3';
+const CACHE = 'collector-shell-v4';
 const SHELL = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {

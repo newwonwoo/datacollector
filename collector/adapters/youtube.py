@@ -152,10 +152,16 @@ class YouTubeAdapter:
 
     def search(self, query: dict[str, Any]) -> list[dict[str, Any]]:
         """Search with pagination. query['max_results'] caps the result count
-        (default 25). Fetches up to ceil(max_results/50) pages."""
+        (default 25). Fetches up to ceil(max_results/50) pages.
+
+        If `query['channel_id']` is set, results are restricted to that
+        channel (YouTube Data API `channelId` parameter)."""
         q = query.get("topic", "")
         excludes = " ".join(f"-{w}" for w in query.get("exclude_terms", []))
         max_results = int(query.get("max_results", 25))
+        # QueryObject.to_dict() spells it `target_channel_id`; keep an
+        # alias so callers can pass either.
+        channel_id = (query.get("target_channel_id") or query.get("channel_id") or "").strip()
         results: list[dict[str, Any]] = []
         page_token: str | None = None
         while len(results) < max_results:
@@ -168,6 +174,8 @@ class YouTubeAdapter:
                 "q": f"{q} {excludes}".strip(),
                 "relevanceLanguage": "ko",
             }
+            if channel_id:
+                params["channelId"] = channel_id
             if page_token:
                 params["pageToken"] = page_token
             url = f"{self.SEARCH_URL}?{urllib.parse.urlencode(params)}"

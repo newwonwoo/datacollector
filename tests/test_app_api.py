@@ -393,3 +393,59 @@ def test_api_records_returns_local_data_store(server, layout):
     assert "transcript" not in r
     assert r["source_key"] == "youtube:LOCAL00001"
     assert r["record_status"] == "promoted"
+
+
+def test_run_status_exposes_requested_count_and_channel(server, monkeypatch):
+    """Dashboard relies on /api/run/status reporting the requested
+    count + channel_id mid-run so it can render the funnel banner
+    (요청 N · 발견 M · ...) even before the run finishes."""
+    barrier = threading.Event()
+    captured = {}
+
+    def slow_run_query(query, **kw):
+        captured["count"] = kw.get("count")
+        captured["target_channel_id"] = kw.get("target_channel_id")
+        barrier.wait(timeout=5)
+        return {"requested_count": kw.get("count"), "promoted": 0}
+
+    monkeypatch.setattr("collector.cli.run.run_query", slow_run_query)
+    s, _ = _post(server.url("/api/run"),
+                 {"query": "단타", "count": 7, "channel_id": "UCabc12345678"})
+    assert s == 202
+
+    # While the run is in flight, the status snapshot should already
+    # carry the user-supplied denominator + channel.
+    deadline = time.time() + 3
+    snap = None
+    while time.time() < deadline:
+        _, _h, body = _get(server.url("/api/run/status"))
+        snap = json.loads(body)
+        if snap.get("status") == "running":
+            break
+        time.sleep(0.02)
+    assert snap is not None and snap["status"] == "running"
+    assert snap["requested_count"] == 7
+    assert snap["channel_id"] == "UCabc12345678"
+    barrier.set()
+
+
+def test_youtube_search_threads_channel_id(monkeypatch):
+    """Channel-restricted search must pass `channelId` through to the
+    YouTube Data API so results are scoped to that channel only."""
+    from collector.adapters.youtube import YouTubeAdapter
+
+    seen_params: list[dict] = []
+
+    def fake_http(method, url):
+        from urllib.parse import urlparse, parse_qs
+        seen_params.append({k: v[0] for k, v in parse_qs(urlparse(url).query).items()})
+        return {"status": 200, "headers": {}, "body": json.dumps({"items": []})}
+
+    yt = YouTubeAdapter(api_key="K", http=fake_http)
+    yt.search({"topic": "단타", "max_results": 3,
+               "target_channel_id": "UCxyz98765432"})
+    assert seen_params, "search() did not call http"
+    assert seen_params[0].get("channelId") == "UCxyz98765432"
+
+    yt.search({"topic": "단타", "max_results": 3})
+    assert "channelId" not in seen_params[1]

@@ -277,6 +277,7 @@ def make_handler(
                 min_subscribers = max(0, int(body.get("min_subscribers") or 0))
             except (TypeError, ValueError):
                 min_subscribers = 0
+            target_channel_id = (body.get("channel_id") or body.get("target_channel_id") or "").strip() or None
             run_id = f"api_{uuid.uuid4().hex[:8]}"
 
             with _RUN_LOCK:
@@ -284,6 +285,10 @@ def make_handler(
                     "run_id": run_id,
                     "status": "running",
                     "query": query,
+                    "requested_count": count,
+                    "min_views": min_views,
+                    "min_subscribers": min_subscribers,
+                    "channel_id": target_channel_id,
                     "started_at": _now_iso(),
                     "ended_at": None,
                     "summary": None,
@@ -298,6 +303,7 @@ def make_handler(
                     "llm_choice": llm_choice,
                     "min_views": min_views,
                     "min_subscribers": min_subscribers,
+                    "target_channel_id": target_channel_id,
                     "data_store": data_store,
                     "logs_root": logs_root,
                     "docs_dir": docs_dir,
@@ -308,6 +314,7 @@ def make_handler(
             self._send_json(202, {
                 "ok": True, "run_id": run_id, "query": query, "count": count,
                 "min_views": min_views, "min_subscribers": min_subscribers,
+                "channel_id": target_channel_id,
             })
 
         def _handle_run_status(self) -> None:
@@ -526,6 +533,7 @@ def _run_worker(
     docs_dir: Path,
     min_views: int = 0,
     min_subscribers: int = 0,
+    target_channel_id: str | None = None,
 ) -> None:
     """Run the pipeline in a background thread and persist status."""
     # Lazy import so the handler module doesn't drag pipeline deps in during
@@ -543,6 +551,7 @@ def _run_worker(
                 llm_choice=llm_choice,
                 min_views=min_views,
                 min_subscribers=min_subscribers,
+                target_channel_id=target_channel_id,
             )
         with _RUN_LOCK:
             _RUN_STATE.update({
@@ -636,6 +645,10 @@ def reset_run_state_for_tests() -> None:
             "run_id": None,
             "status": "idle",
             "query": None,
+            "requested_count": None,
+            "min_views": 0,
+            "min_subscribers": 0,
+            "channel_id": None,
             "started_at": None,
             "ended_at": None,
             "summary": None,
