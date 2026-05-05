@@ -62,6 +62,14 @@ _WORKFLOW_STATE: dict[str, Any] = {
 }
 _WORKFLOW_LOCK = threading.Lock()
 
+# Watch-tick serialization: only one watch tick may run at a time. When
+# the user checks N watches and clicks "선택 업데이트", the dashboard
+# fires N POSTs in quick succession — each spawns a worker thread that
+# blocks on this lock before doing any YouTube / LLM work, so the API
+# rate limits (Gemini 1500 RPD, YouTube residential throttle) only see
+# one stream at a time. Watches "queue" automatically.
+_WATCH_TICK_LOCK = threading.Lock()
+
 
 def _json_bytes(payload: dict) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -895,22 +903,35 @@ def _run_watch_tick_worker(
     docs_dir: Path,
 ) -> None:
     """Run a single watch tick (research_batch + optional NB refresh).
-    Wrapped in StatusTicker so the cohort dashboard updates live."""
-    from .watch import run_tick
 
+    Serializes via _WATCH_TICK_LOCK so multiple POSTs from the dashboard's
+    "선택 업데이트" don't fan out into parallel YouTube / Gemini calls
+    that would blow API quotas. Wrapped in StatusTicker so the cohort
+    dashboard updates live."""
+    from .watch import run_tick
+    from .. import watch_registry as reg
+
+    # Mark as queued before we acquire the lock so the dashboard polling
+    # can show "대기중" instead of pretending nothing happened.
     try:
-        with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
-                           logs_root=logs_root):
-            run_tick(
-                domain,
-                data_store_root=data_store,
-                logs_root=logs_root,
-                registry_path=registry_path,
-                out_dir=out_dir,
-            )
-    except Exception as e:  # noqa: BLE001
-        sys.stderr.write(f"[watch-tick worker] {domain}: {e}\n")
-        traceback.print_exc()
+        reg.upsert(domain, path=registry_path, last_status="queued")
+    except Exception:  # noqa: BLE001
+        pass
+
+    with _WATCH_TICK_LOCK:
+        try:
+            with _StatusTicker(docs_dir=docs_dir, data_store=data_store,
+                               logs_root=logs_root):
+                run_tick(
+                    domain,
+                    data_store_root=data_store,
+                    logs_root=logs_root,
+                    registry_path=registry_path,
+                    out_dir=out_dir,
+                )
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[watch-tick worker] {domain}: {e}\n")
+            traceback.print_exc()
 
 
 def reset_run_state_for_tests() -> None:

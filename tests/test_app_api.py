@@ -760,6 +760,46 @@ def test_api_watches_tick_404_when_unregistered(server):
     assert s == 404
 
 
+def test_api_watches_tick_serializes_concurrent_requests(server, layout, monkeypatch):
+    """Two ticks fired ~simultaneously must NOT run their work in
+    parallel — the WATCH_TICK_LOCK queues the second one. We assert
+    by counting overlapping critical-section entries."""
+    import threading
+    overlap = {"max_in_flight": 0, "current": 0}
+    cur_lock = threading.Lock()
+    barrier = threading.Event()
+    finished = threading.Event()
+    finishes_seen = {"n": 0}
+
+    def fake_run_tick(domain, **kw):
+        with cur_lock:
+            overlap["current"] += 1
+            overlap["max_in_flight"] = max(overlap["max_in_flight"],
+                                           overlap["current"])
+        # Hold long enough that if the lock weren't there, both ticks'
+        # critical sections would observably overlap.
+        time.sleep(0.4)
+        with cur_lock:
+            overlap["current"] -= 1
+            finishes_seen["n"] += 1
+            if finishes_seen["n"] >= 2:
+                finished.set()
+
+    monkeypatch.setattr("collector.cli.watch.run_tick", fake_run_tick)
+
+    _post(server.url("/api/watches"), {"domain": "A", "keywords": ["k"]})
+    _post(server.url("/api/watches"), {"domain": "B", "keywords": ["k"]})
+
+    s1, _ = _post(server.url("/api/watches/A/tick"), {})
+    s2, _ = _post(server.url("/api/watches/B/tick"), {})
+    assert s1 == 202 and s2 == 202
+
+    assert finished.wait(timeout=5)
+    assert overlap["max_in_flight"] == 1, (
+        f"watch ticks ran in parallel (max overlap = {overlap['max_in_flight']})"
+    )
+
+
 def test_api_records_returns_local_data_store(server, layout):
     """Local-mode dashboard reads records via /api/records, not GitHub."""
     ds = layout["data_store"]

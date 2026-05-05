@@ -1338,12 +1338,13 @@ async function loadWatches(){
         : '—';
       const pausedBadge = w.paused ? '<span class="badge paused">일시정지</span>' : '';
       const errBadge = w.last_status === 'failed' ? '<span class="badge" style="background:#fee2e2;color:#991b1b">실패</span>' : '';
+      const queuedBadge = w.last_status === 'queued' ? '<span class="badge" style="background:#fef3c7;color:#92400e">대기중</span>' : '';
       const nbLink = w.notebook_id
         ? `<a href="https://notebooklm.google.com/notebook/${esc(w.notebook_id)}" target="_blank" title="NotebookLM 열기" style="text-decoration:none">↗</a>`
         : '';
       return `<tr>
         <td><input type="checkbox" class="wn-select" data-domain="${esc(w.domain)}" /></td>
-        <td class="domain">${pausedBadge}${errBadge}${esc(w.domain)} ${nbLink}</td>
+        <td class="domain">${pausedBadge}${queuedBadge}${errBadge}${esc(w.domain)} ${nbLink}</td>
         <td class="muted">${esc(kw)}</td>
         <td>${esc(w.interval || 'manual')}</td>
         <td class="muted">${esc(md)}</td>
