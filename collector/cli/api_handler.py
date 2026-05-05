@@ -585,7 +585,9 @@ def make_handler(
                     files.append({
                         "name": p.name,
                         "size": p.stat().st_size,
-                        "rel": str(p.relative_to(project_root)),
+                        # Always POSIX so Windows backslashes don't end up in
+                        # browser URLs (would 404 — '%5C' != '/').
+                        "rel": p.relative_to(project_root).as_posix(),
                     })
             self._send_json(200, {"out_dir": str(target), "files": files})
 

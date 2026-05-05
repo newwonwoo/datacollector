@@ -363,6 +363,11 @@ def test_workflow_files_lists_artifacts(server, layout, monkeypatch):
     names = sorted(f["name"] for f in obj["files"])
     assert "spec_NB_monetize.md" in names
     assert "step4_spec_0.md" in names
+    # Windows regression: the `rel` URL must use forward slashes only,
+    # otherwise the browser sends '%5C' which 404s on the static handler.
+    for f in obj["files"]:
+        assert "\\" not in f["rel"], f"rel {f['rel']!r} contains backslash"
+        assert f["rel"].startswith("exports/"), f["rel"]
 
 
 def test_resolve_channel_passes_uc_id_through(server, monkeypatch):
