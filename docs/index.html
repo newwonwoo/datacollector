@@ -411,6 +411,107 @@
     .stage.in_progress .stage-bar i.shimmer {
       animation: barShimmer 2.2s ease-in-out infinite;
     }
+    /* ====== 코호트 진행 대시보드 ====== */
+    .coh-banner {
+      background:#fff; border:1px solid #e7e5e0; border-radius:12px;
+      padding:16px 18px; margin:6px 0 10px;
+      transition: opacity .5s;
+    }
+    .coh-banner.resetting { opacity:.3 }
+    .coh-banner-row {
+      display:flex; flex-wrap:wrap; align-items:baseline;
+      gap: 0 36px; row-gap:8px;
+    }
+    .coh-stat { display:inline-flex; align-items:baseline; gap:8px;
+      font-variant-numeric: tabular-nums; }
+    .coh-stat b { font-size:10.5px; letter-spacing:.18em;
+      text-transform:uppercase; color:#78716c; font-weight:500; }
+    .coh-stat span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight:600; }
+    .coh-stat-big span { font-size:28px; color:#1c1917; }
+    .coh-stat:not(.coh-stat-big) span { font-size:22px; }
+    .coh-stat.emerald span { color:#047857; }
+    .coh-stat.amber span   { color:#b45309; }
+    .coh-stat.rose span    { color:#be123c; }
+    .coh-runid { margin-left:auto; font-family: ui-monospace, monospace;
+      font-size:10.5px; color:#a8a29e; }
+    .coh-invariant {
+      margin-top:14px; padding-top:12px; border-top:1px solid #f5f5f4;
+      font-family: ui-monospace, monospace; font-size:11.5px; color:#78716c;
+      transition: color .5s;
+    }
+    .coh-invariant.bad { color:#be123c; }
+
+    .coh-legend {
+      display:flex; align-items:center; gap:14px; padding:0 4px 6px;
+      font-family: ui-monospace, monospace; font-size:10px; color:#78716c;
+    }
+    .coh-legend .dot { display:inline-block; width:6px; height:6px;
+      border-radius:50%; margin-right:4px; vertical-align:middle; }
+    .coh-legend .dot.emerald { background:#10b981; }
+    .coh-legend .dot.amber   { background:#f59e0b; }
+    .coh-legend .dot.rose    { background:#f43f5e; }
+    .coh-legend .muted-r { margin-left:auto; color:#a8a29e; }
+
+    .coh-grid {
+      display:grid; gap:6px;
+      grid-template-columns: repeat(2, 1fr);
+      transition: opacity .5s;
+    }
+    .coh-grid.resetting { opacity:0; }
+    @media (min-width:640px){ .coh-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width:1024px){ .coh-grid { grid-template-columns: repeat(7, 1fr); } }
+
+    .coh-card {
+      position:relative; display:flex; background:#fff;
+      border:1px solid #e7e5e0; border-radius:6px; overflow:hidden;
+      box-shadow:0 1px 2px rgba(0,0,0,.03);
+      animation: cohFadeIn .5s ease-out;
+    }
+    @keyframes cohFadeIn {
+      from { opacity:0; transform:translateY(2px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .coh-strip { width:2px; background:#e7e5e0; transition: background-color .7s; }
+    .coh-card.has-fail   .coh-strip { background:#fda4af; }
+    .coh-card.has-flight .coh-strip { background:#fcd34d; }
+    .coh-card.has-pass   .coh-strip { background:#6ee7b7; }
+    .coh-body { flex:1; padding:6px 8px; min-width:0; }
+    .coh-stage-label {
+      font-family: ui-monospace, monospace; font-size:9.5px;
+      letter-spacing:.14em; color:#57534e; font-weight:600;
+    }
+    .coh-counts {
+      display:flex; align-items:baseline; gap:6px; margin-top:4px;
+      font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+      line-height:1;
+    }
+    .coh-counts .pass    { color:#047857; font-size:13px; font-weight:600; }
+    .coh-counts .flight  { color:#b45309; font-size:10.5px; }
+    .coh-counts .flight.zero  { color:#d6d3d1; }
+    .coh-counts .fail    { color:#be123c; font-size:10.5px; font-weight:600; }
+    .coh-counts .fail.zero    { color:#d6d3d1; font-weight:400; }
+    .coh-counts .sep     { color:#d6d3d1; font-size:10px; }
+    .coh-bar {
+      height:2px; background:#f5f5f4; border-radius:99px;
+      overflow:hidden; display:flex; margin-top:4px;
+    }
+    .coh-bar > i { display:block; height:100%; transition: width .7s; }
+    .coh-bar > .b-pass   { background:#6ee7b7; }
+    .coh-bar > .b-flight { background:#fcd34d; }
+    .coh-bar > .b-fail   { background:#fda4af; }
+    .coh-reasons {
+      margin-top:4px; line-height:1.25;
+    }
+    .coh-reasons div {
+      display:flex; justify-content:space-between;
+      font-size:9.5px; color:#be123c;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .coh-reasons span.code { overflow:hidden; text-overflow:ellipsis; }
+    .coh-reasons span.cnt  { font-family: ui-monospace, monospace;
+      margin-left:4px; font-variant-numeric: tabular-nums; }
+
     .run-busy {
       margin: 10px 0 0; padding: 10px 14px; border-radius: 10px;
       background: var(--info-bg); color: var(--accent); font-size: 13px;
@@ -624,41 +725,27 @@
       <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
     </div>
 
-    <!-- 🎯 funnel banner — requested 모수 → discover → … → promoted -->
-    <div id="funnel" style="display:none;margin:6px 0 10px;font-size:13px;color:var(--text-2);
-                            background:rgba(0,0,0,0.03);border-radius:8px;padding:8px 12px;">
-      <span id="funnel-text"></span>
+    <!-- 🎯 코호트 진행 대시보드 (events.jsonl 결정론적 replay) -->
+    <div id="cohort-banner" class="coh-banner">
+      <div class="coh-banner-row">
+        <span class="coh-stat coh-stat-big"><b>요청</b><span id="coh-N">—</span></span>
+        <span class="coh-stat amber"><b>진행중</b><span id="coh-flight">0</span></span>
+        <span class="coh-stat emerald"><b>완료</b><span id="coh-done">0</span></span>
+        <span class="coh-stat rose"><b>드랍</b><span id="coh-drop">0</span></span>
+        <span class="coh-runid" id="coh-runid">run_id: —</span>
+      </div>
+      <div id="coh-invariant" class="coh-invariant">검산 — = — (완료) + — (드랍) + — (진행중) = —</div>
     </div>
 
-    <div class="pipeline-stages" id="pipeline-stages">
-      <div class="stage" data-stage="discover">DISCOVER
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="discover">›</div>
-      <div class="stage" data-stage="collect">COLLECT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="collect">›</div>
-      <div class="stage" data-stage="extract">EXTRACT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="extract">›</div>
-      <div class="stage" data-stage="normalize">NORMALIZE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="normalize">›</div>
-      <div class="stage" data-stage="review">REVIEW
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="review">›</div>
-      <div class="stage" data-stage="promote">PROMOTE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="promote">›</div>
-      <div class="stage" data-stage="package">PACKAGE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
+    <div class="coh-legend">
+      <span><span class="dot emerald"></span>통과</span>
+      <span><span class="dot amber"></span>진행중</span>
+      <span><span class="dot rose"></span>드랍</span>
+      <span class="muted-r">통과 · 진행중 · 드랍</span>
     </div>
+
+    <div id="cohort-stages" class="coh-grid"></div>
+
     <div class="run-label" id="run-label">
       <span>최근 run: —</span>
     </div>
@@ -1022,19 +1109,10 @@ function startLocalRunPolling(){
         const base = `실행 중 · ${s.query || ''}`;
         txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
       }
-      // Live-sync the pipeline diagram (DISCOVER/COLLECT/...) while the
-      // run is in flight. Backend rewrites status.json every ~2.5s.
-      try {
-        await loadLatest();
-        // Funnel banner — requested → per-stage drop-off, in real time.
-        try {
-          const sj = await fetch('status.json?t=' + Date.now(), {cache:'no-store'});
-          if (sj.ok){
-            const detail = (await sj.json()).latest_run_detail || null;
-            updateFunnelBanner(s, detail);
-          }
-        } catch (_) {}
-      } catch (_) {}
+      // Cohort dashboard — events.jsonl deterministic replay.
+      // Counts/colors only update with each fresh full snapshot, so no
+      // race-induced flicker like the previous incremental approach.
+      try { await cohPollOnce(); } catch (_) {}
       if (s.status === 'completed' || s.status === 'failed' || s.status === 'idle'){
         clearInterval(__localRunPoll);
         __localRunPoll = null;
@@ -1110,11 +1188,9 @@ function startWorkflowPolling(){
         const base = `워크플로 진행 중 · ${s.domain || ''} · 모드 [${(s.modes||[]).join(',') || '없음'}]`;
         txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
       }
-      // Live-sync the pipeline diagram while the workflow runs. The
-      // backend ticker rewrites status.json every ~2.5s; pulling it
-      // here keeps the stage counts (DISCOVER 3/3 etc.) honest instead
-      // of frozen on the previous run.
-      try { await loadLatest(); } catch (_) {}
+      // Cohort dashboard during workflow runs (same deterministic replay
+      // — the inner research_batch's run_query writes the same events).
+      try { await cohPollOnce(); } catch (_) {}
       if (s.status === 'completed' || s.status === 'failed'){
         clearInterval(__wfPoll); __wfPoll = null;
         if (busy) busy.classList.remove('show');
@@ -1661,10 +1737,202 @@ function resetPipelineDiagram(){
   if (lbl) lbl.innerHTML = '<span>최근 run: —</span>';
 }
 
-// Render the funnel banner showing requested → per-stage drop-off.
-// `runState` comes from /api/run/status (has requested_count), `detail`
-// from /status.json (has per_stage counts). Shown only when a run is in
-// flight or just completed; hidden on idle.
+// ====== 코호트 진행 대시보드 (events.jsonl deterministic replay) ======
+// 결정론적 replay — 같은 events 입력이면 항상 같은 snapshot.
+// 단조 증가 보장: ✓ ✗ 카운트는 절대 감소하지 않음.
+const COH_STAGES = ['discover','collect','extract','normalize','review','promote','package'];
+const COH_REASON_KO = {
+  HTTP_429:'API 한도 초과',
+  HTTP_5XX:'서버 일시 오류',
+  YT_NO_TRANSCRIPT:'자막 없음',
+  YT_SHORTS_DROP:'쇼츠 제외',
+  YT_STREAM_DROP:'장시간 라이브 제외',
+  LLM_HTTP_400:'LLM 요청 거부',
+  LLM_HTTP_401:'LLM 인증 실패',
+  LLM_HTTP_403:'LLM 차단',
+  LLM_HTTP_413:'LLM 입력 초과',
+  LLM_HTTP_429:'LLM 한도 초과',
+  llm_low:'AI 점수 미달',
+  schema_invalid:'포맷 오류',
+  no_caption:'자막 없음',
+  search_short:'검색결과 부족',
+  network_timeout:'네트워크 타임아웃',
+  unknown:'원인 불명',
+};
+const cohReasonKo = (code) => COH_REASON_KO[code] || code;
+
+let __cohRunEpoch = 0;
+let __cohLastRunId = null;
+
+function cohEmptySnapshot(N){
+  return {
+    cards: COH_STAGES.map(s => ({stage:s, completed:0, in_flight:0, failed:0, reasons:{}})),
+    finished:0, totalInFlight:0, totalFailed:0, sumCheck:0,
+    invariantOk: (N === 0 || N === null),
+  };
+}
+
+function cohReplay(events, runId, requestedN){
+  if (!runId) return cohEmptySnapshot(requestedN);
+  // video_id → {stage → {status, reason}} (last event wins)
+  const map = new Map();
+  for (const ev of events){
+    if (ev.run_id !== runId) continue;
+    const eid = ev.entity_id || '';
+    if (!eid.includes(':')) continue;
+    const [videoId, stage] = eid.split(':');
+    const st = (stage || '').toLowerCase();
+    if (!COH_STAGES.includes(st)) continue;
+    if (!map.has(videoId)) map.set(videoId, {});
+    map.get(videoId)[st] = {status: ev.to_status, reason: ev.reason};
+  }
+  // Aggregate per stage
+  const buckets = {};
+  for (const s of COH_STAGES) buckets[s] = {in_flight:0, failed:0, reasons:{}};
+  let finished = 0;
+  for (const [, stages] of map){
+    let lastIdx = -1, lastStatus = null, lastReason = null;
+    for (let i = 0; i < COH_STAGES.length; i++){
+      if (stages[COH_STAGES[i]]){
+        lastIdx = i;
+        lastStatus = stages[COH_STAGES[i]].status;
+        lastReason = stages[COH_STAGES[i]].reason;
+      }
+    }
+    if (lastIdx === -1) continue;
+    if (lastStatus === 'failed'){
+      buckets[COH_STAGES[lastIdx]].failed += 1;
+      const r = lastReason || 'unknown';
+      buckets[COH_STAGES[lastIdx]].reasons[r] = (buckets[COH_STAGES[lastIdx]].reasons[r] || 0) + 1;
+    } else if (lastStatus === 'started'){
+      buckets[COH_STAGES[lastIdx]].in_flight += 1;
+    } else if (lastStatus === 'completed' || lastStatus === 'skipped'){
+      if (lastIdx === COH_STAGES.length - 1){
+        finished += 1;
+      } else {
+        buckets[COH_STAGES[lastIdx + 1]].in_flight += 1;
+      }
+    }
+  }
+  // Card.completed = sum of in_flight + failed in subsequent stages + finished
+  const cards = COH_STAGES.map(() => null);
+  let cum = finished;
+  for (let i = COH_STAGES.length - 1; i >= 0; i--){
+    cards[i] = {
+      stage: COH_STAGES[i],
+      completed: cum,
+      in_flight: buckets[COH_STAGES[i]].in_flight,
+      failed:    buckets[COH_STAGES[i]].failed,
+      reasons:   buckets[COH_STAGES[i]].reasons,
+    };
+    cum += buckets[COH_STAGES[i]].in_flight + buckets[COH_STAGES[i]].failed;
+  }
+  const totalInFlight = COH_STAGES.reduce((a,s) => a + buckets[s].in_flight, 0);
+  const totalFailed   = COH_STAGES.reduce((a,s) => a + buckets[s].failed, 0);
+  const sumCheck = finished + totalInFlight + totalFailed;
+  return {
+    cards, finished, totalInFlight, totalFailed, sumCheck,
+    invariantOk: (requestedN === null || sumCheck === requestedN),
+  };
+}
+
+function cohRenderCard(card){
+  const total = card.completed + card.in_flight + card.failed;
+  const compPct = total ? (card.completed/total)*100 : 0;
+  const inflPct = total ? (card.in_flight/total)*100 : 0;
+  const failPct = total ? (card.failed/total)*100 : 0;
+  let cls = 'coh-card';
+  if (card.failed > 0)      cls += ' has-fail';
+  else if (card.in_flight)  cls += ' has-flight';
+  else if (card.completed)  cls += ' has-pass';
+  const reasons = Object.entries(card.reasons).sort((a,b) => b[1]-a[1]);
+  const reasonHtml = reasons.length
+    ? `<div class="coh-reasons">${reasons.map(([code,n]) =>
+         `<div><span class="code" title="${code}">${cohReasonKo(code)}</span><span class="cnt">×${n}</span></div>`
+       ).join('')}</div>`
+    : '';
+  return `<div class="${cls}" data-stage="${card.stage}">
+    <div class="coh-strip"></div>
+    <div class="coh-body">
+      <div class="coh-stage-label">${card.stage.toUpperCase()}</div>
+      <div class="coh-counts">
+        <span class="pass">${card.completed}</span>
+        <span class="sep">·</span>
+        <span class="flight ${card.in_flight ? '' : 'zero'}">${card.in_flight}</span>
+        <span class="sep">·</span>
+        <span class="fail ${card.failed ? '' : 'zero'}">${card.failed}</span>
+      </div>
+      <div class="coh-bar">
+        <i class="b-pass"   style="width:${compPct}%"></i>
+        <i class="b-flight" style="width:${inflPct}%"></i>
+        <i class="b-fail"   style="width:${failPct}%"></i>
+      </div>
+      ${reasonHtml}
+    </div>
+  </div>`;
+}
+
+function cohRender(snapshot, runId, requestedN){
+  const grid = document.getElementById('cohort-stages');
+  if (grid) grid.innerHTML = snapshot.cards.map(cohRenderCard).join('');
+  document.getElementById('coh-N').textContent = (requestedN ?? '—');
+  document.getElementById('coh-flight').textContent = snapshot.totalInFlight;
+  document.getElementById('coh-done').textContent = snapshot.finished;
+  document.getElementById('coh-drop').textContent = snapshot.totalFailed;
+  document.getElementById('coh-runid').textContent = 'run_id: ' + (runId || '—');
+  const inv = document.getElementById('coh-invariant');
+  if (inv){
+    inv.classList.toggle('bad', !snapshot.invariantOk);
+    const ok = snapshot.invariantOk ? '✓' : '✗ INVARIANT 위배';
+    inv.innerHTML = `검산 <b>${requestedN ?? '—'}</b> = `
+      + `<span class="emerald">${snapshot.finished}</span> (완료) + `
+      + `<span class="rose">${snapshot.totalFailed}</span> (드랍) + `
+      + `<span class="amber">${snapshot.totalInFlight}</span> (진행중) = `
+      + `<b>${snapshot.sumCheck}</b> ${ok}`;
+  }
+}
+
+async function cohPollOnce(){
+  // 1. /api/run/status — get requested_count + check for new run
+  let runState = null;
+  try {
+    const r = await fetch('/api/run/status', {cache:'no-store'});
+    if (r.ok) runState = await r.json();
+  } catch(_){}
+  const requestedN = runState ? runState.requested_count ?? null : null;
+  // Detect new run → fade out + reset visually before drawing fresh data
+  if (runState && runState.run_id && runState.run_id !== __cohLastRunId){
+    if (__cohLastRunId !== null){
+      const grid = document.getElementById('cohort-stages');
+      const banner = document.getElementById('cohort-banner');
+      if (grid) grid.classList.add('resetting');
+      if (banner) banner.classList.add('resetting');
+      cohRender(cohEmptySnapshot(requestedN), runState.run_id, requestedN);
+      setTimeout(() => {
+        if (grid) grid.classList.remove('resetting');
+        if (banner) banner.classList.remove('resetting');
+      }, 450);
+    }
+    __cohLastRunId = runState.run_id;
+    __cohRunEpoch++;
+  }
+  // 2. /api/events — fetch raw events for the run (default = latest run)
+  let events = [], serverRunId = null;
+  try {
+    const r = await fetch('/api/events', {cache:'no-store'});
+    if (r.ok){
+      const j = await r.json();
+      events = j.events || [];
+      serverRunId = j.run_id || null;
+    }
+  } catch(_){}
+  const runId = (runState && runState.run_id) || serverRunId;
+  const snap = cohReplay(events, runId, requestedN);
+  cohRender(snap, runId, requestedN);
+}
+
+// Replaced — old funnel banner is no longer rendered; cohPollOnce
+// drives the whole banner+stage view through deterministic replay.
 function updateFunnelBanner(runState, detail){
   const host = document.getElementById('funnel');
   if (!host) return;
@@ -2196,6 +2464,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (pat) pat.value = token();
   bootstrapLocalMode();
   updateConn(); loadLatest();
+  // Render whatever the latest run looks like on page load — even
+  // if no run is in flight, the user sees the previous outcome
+  // instead of an empty pipeline.
+  try { cohPollOnce(); } catch (_) {}
   if (!isLocalMode){
     loadRuns();
     setInterval(loadRuns, 10000);

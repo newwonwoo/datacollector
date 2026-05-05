@@ -613,6 +613,59 @@ def test_run_post_400_when_channel_unresolvable(server, monkeypatch):
     assert "인식" in body or "channel" in body
 
 
+def test_api_events_returns_latest_run_by_default(server, layout):
+    """When run_id is omitted, /api/events should return only the
+    most-recently-started run's events. Older runs must not leak in
+    (or the cohort replay would mix runs)."""
+    events_path = layout["logs"] / "events.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    events_path.write_text("\n".join([
+        json.dumps({"run_id": "OLD", "entity_type": "run",
+                    "to_status": "running", "recorded_at": "2026-01-01T00:00:00Z"}),
+        json.dumps({"run_id": "OLD", "entity_type": "stage",
+                    "entity_id": "v1:collect", "to_status": "completed",
+                    "recorded_at": "2026-01-01T00:00:01Z"}),
+        json.dumps({"run_id": "NEW", "entity_type": "run",
+                    "to_status": "running", "recorded_at": "2026-05-05T00:00:00Z"}),
+        json.dumps({"run_id": "NEW", "entity_type": "stage",
+                    "entity_id": "v2:collect", "to_status": "started",
+                    "recorded_at": "2026-05-05T00:00:01Z"}),
+    ]) + "\n", encoding="utf-8")
+
+    status, _h, body = _get(server.url("/api/events"))
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["run_id"] == "NEW"
+    assert all(e["run_id"] == "NEW" for e in obj["events"])
+    assert any(e.get("entity_id") == "v2:collect" for e in obj["events"])
+
+
+def test_api_events_filters_by_run_id(server, layout):
+    events_path = layout["logs"] / "events.jsonl"
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    events_path.write_text("\n".join([
+        json.dumps({"run_id": "A", "entity_type": "run",
+                    "to_status": "running", "recorded_at": "2026-01-01T00:00:00Z"}),
+        json.dumps({"run_id": "A", "entity_type": "stage",
+                    "entity_id": "vA:collect", "to_status": "completed",
+                    "recorded_at": "2026-01-01T00:00:01Z"}),
+        json.dumps({"run_id": "B", "entity_type": "run",
+                    "to_status": "running", "recorded_at": "2026-02-01T00:00:00Z"}),
+    ]) + "\n", encoding="utf-8")
+
+    status, _h, body = _get(server.url("/api/events?run_id=A"))
+    obj = json.loads(body)
+    assert obj["run_id"] == "A"
+    assert all(e["run_id"] == "A" for e in obj["events"])
+
+
+def test_api_events_returns_empty_when_no_events(server):
+    status, _h, body = _get(server.url("/api/events"))
+    assert status == 200
+    obj = json.loads(body)
+    assert obj["events"] == []
+
+
 def test_api_records_returns_local_data_store(server, layout):
     """Local-mode dashboard reads records via /api/records, not GitHub."""
     ds = layout["data_store"]

@@ -151,6 +151,8 @@ def make_handler(
                     return self._handle_workflow_files()
                 if path == "/api/resolve_channel":
                     return self._handle_resolve_channel_get()
+                if path == "/api/events":
+                    return self._handle_events_get()
                 if path == "/api/run/status":
                     return self._handle_run_status()
                 if path == "/api/records":
@@ -495,6 +497,63 @@ def make_handler(
                     "error": "인식 불가 — UC.../@핸들/채널 URL 중 하나여야 합니다.",
                 })
             return self._send_json(200, {"ok": True, "channel_id": cid})
+
+        def _handle_events_get(self) -> None:
+            """GET /api/events?run_id=… — return events.jsonl entries.
+
+            The dashboard uses these to do a deterministic replay (no
+            race-induced flicker). When run_id is omitted, returns
+            events for the most-recently-started run only — bounded by
+            limit=2000 so very long histories don't bloat the response."""
+            from urllib.parse import parse_qs
+            qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            requested_run = (qs.get("run_id", [""])[0] or "").strip() or None
+            try:
+                limit = int(qs.get("limit", ["2000"])[0])
+            except (TypeError, ValueError):
+                limit = 2000
+            limit = max(1, min(limit, 50000))
+
+            events_path = logs_root / "events.jsonl"
+            if not events_path.exists():
+                return self._send_json(200, {"events": [], "run_id": None})
+
+            # First pass: parse each line (cheap), find latest run_id.
+            all_events: list[dict] = []
+            try:
+                raw = events_path.read_text(encoding="utf-8")
+            except OSError as e:
+                return self._send_json(500, {"error": str(e)})
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                all_events.append(e)
+
+            target_run = requested_run
+            if target_run is None:
+                latest_ts = ""
+                for e in all_events:
+                    if e.get("entity_type") == "run" and e.get("to_status") == "running":
+                        ts = e.get("recorded_at", "")
+                        if ts >= latest_ts:
+                            latest_ts = ts
+                            target_run = e.get("run_id") or e.get("entity_id")
+
+            filtered = [e for e in all_events if e.get("run_id") == target_run]
+            if len(filtered) > limit:
+                # Keep the most recent `limit` events (events.jsonl is
+                # append-order; recent are at the tail).
+                filtered = filtered[-limit:]
+            self._send_json(200, {
+                "events": filtered,
+                "run_id": target_run,
+                "total": len(filtered),
+            })
 
         def _handle_workflow_status(self) -> None:
             with _WORKFLOW_LOCK:
