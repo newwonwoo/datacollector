@@ -323,6 +323,10 @@ def run_query(
     # Build structured query (P1-d)
     q_obj = build_query(query, target_channel_id=target_channel_id)
 
+    # run_id must exist before any logger.log() call, including the
+    # pre-collect filter loggers below — EventLogger.log() requires it.
+    run_id = f"run_{uuid.uuid4().hex[:8]}"
+
     real = _real_services_or_none(llm_choice)
     if real is not None:
         services = real
@@ -364,6 +368,7 @@ def run_query(
                         and c.get("subscriber_count", 0) >= min_subscribers
                     ]
                     logger.log(
+                        run_id=run_id,
                         entity_type="run", entity_id="pre_filter",
                         from_status=None, to_status="quality_filtered",
                         reason=f"min_views={min_views} min_subs={min_subscribers}",
@@ -382,6 +387,7 @@ def run_query(
                           or c.get("duration_sec", 0) >= 240]
             if shorts_before != len(candidates):
                 logger.log(
+                    run_id=run_id,
                     entity_type="run", entity_id="pre_shorts_filter",
                     from_status=None, to_status="shorts_dropped",
                     reason="duration_sec < 240",
@@ -391,8 +397,6 @@ def run_query(
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)
         mode = "mock"
-
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
 
     # Build Payloads and rank by priority (P1-c)
     payloads = []
