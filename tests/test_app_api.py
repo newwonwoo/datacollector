@@ -154,10 +154,11 @@ def test_api_config_post_empty_body_rejected(server):
     assert "no keys" in body
 
 
-def test_api_run_requires_query(server):
+def test_api_run_requires_query_or_channel(server):
+    """At least one of (query, channel) must be supplied."""
     status, body = _post(server.url("/api/run"), {})
     assert status == 400
-    assert "query" in body
+    assert "검색어" in body or "채널" in body
 
 
 def test_api_run_mock_pipeline_smoke(server, layout, monkeypatch):
@@ -445,6 +446,95 @@ def test_run_post_resolves_channel_url(server, layout, monkeypatch):
     assert status == 202, body
     assert started.wait(timeout=5)
     assert captured.get("target_channel_id") == "UCRESOLVEDFROMURL12345A"
+
+
+def test_resolve_channel_handles_korean_handle(server, monkeypatch):
+    """@슈카월드 should reach the YouTube adapter — earlier ASCII-only
+    regex silently dropped Korean handles."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    captured = {}
+
+    def fake_resolve(self, raw):
+        captured["raw"] = raw
+        return "UCSHUKAWORLD0000000000A1"
+
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        fake_resolve,
+    )
+    status, _h, body = _get(server.url(
+        "/api/resolve_channel?q=" + urllib.parse.quote("@슈카월드")
+    ))
+    assert status == 200, body
+    obj = json.loads(body)
+    assert obj["ok"] is True
+    assert obj["channel_id"] == "UCSHUKAWORLD0000000000A1"
+    assert "슈카월드" in (captured.get("raw") or "")
+
+
+def test_run_post_allows_empty_query_when_channel_set(server, monkeypatch):
+    """Channel-only run: no keyword needed — pipeline pulls the
+    channel's latest videos, dedup'd against vault as usual."""
+    monkeypatch.setenv("YOUTUBE_API_KEY", "FAKE")
+    monkeypatch.setattr(
+        "collector.adapters.youtube.YouTubeAdapter.resolve_channel",
+        lambda self, raw: "UCABCDEFGHIJKLMNOPQRSTUV",
+    )
+
+    captured = {}
+    started = threading.Event()
+
+    def fake_run_query(query, **kw):
+        captured["query"] = query
+        captured["target_channel_id"] = kw.get("target_channel_id")
+        started.set()
+        return {"requested_count": kw.get("count", 0), "promoted": 0,
+                "processed": 0, "candidates": 0, "skipped_duplicates": 0,
+                "per_video": []}
+
+    monkeypatch.setattr("collector.cli.run.run_query", fake_run_query)
+
+    status, body = _post(server.url("/api/run"), {
+        "query": "",  # blank — allowed because channel is set
+        "count": 5,
+        "channel_id": "https://www.youtube.com/@somechan",
+    })
+    assert status == 202, body
+    assert started.wait(timeout=5)
+    assert captured.get("query") == ""
+    assert captured.get("target_channel_id") == "UCABCDEFGHIJKLMNOPQRSTUV"
+
+
+def test_run_post_400_when_neither_query_nor_channel(server):
+    s, body = _post(server.url("/api/run"), {"query": "", "count": 5})
+    assert s == 400
+    assert "검색어" in body or "채널" in body
+
+
+def test_youtube_search_omits_q_param_when_channel_only(monkeypatch):
+    """Channel-only browse: drop `q` so the API returns the channel's
+    actual recent uploads (not noise from an empty query) and order=date."""
+    from collector.adapters.youtube import YouTubeAdapter
+
+    seen_params: list[dict] = []
+
+    def fake_http(method, url):
+        from urllib.parse import urlparse, parse_qs
+        seen_params.append({k: v[0] for k, v in parse_qs(urlparse(url).query).items()})
+        return {"status": 200, "headers": {}, "body": json.dumps({"items": []})}
+
+    yt = YouTubeAdapter(api_key="K", http=fake_http)
+    yt.search({
+        "topic": "",
+        "exclude_terms": [],
+        "max_results": 5,
+        "target_channel_id": "UCxxx",
+    })
+    assert seen_params, "no API call made"
+    p = seen_params[0]
+    assert "q" not in p, f"q should be omitted: {p}"
+    assert p.get("channelId") == "UCxxx"
+    assert p.get("order") == "date"
 
 
 def test_run_post_400_when_channel_unresolvable(server, monkeypatch):

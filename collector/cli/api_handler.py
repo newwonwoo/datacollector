@@ -263,8 +263,9 @@ def make_handler(
                     })
             body = self._read_json_body()
             query = (body.get("query") or "").strip()
-            if not query:
-                return self._send_json(400, {"ok": False, "error": "query required"})
+            # Empty query is allowed *iff* a channel is provided — in that
+            # case we just collect the channel's latest videos. Validate
+            # that combination after channel resolution below.
             try:
                 count = int(body.get("count") or 10)
             except (TypeError, ValueError):
@@ -305,6 +306,12 @@ def make_handler(
                         "ok": False,
                         "error": f"channel 변환 실패: {channel_resolve_error}",
                     })
+            # Must have at least one of: keyword, channel.
+            if not query and not target_channel_id:
+                return self._send_json(400, {
+                    "ok": False,
+                    "error": "검색어 또는 채널 둘 중 하나는 필요합니다.",
+                })
             run_id = f"api_{uuid.uuid4().hex[:8]}"
 
             with _RUN_LOCK:

@@ -532,7 +532,7 @@
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
     <div class="form-row">
-      <input id="query" type="text" placeholder="검색어 입력 (예: 단타매매전략)" />
+      <input id="query" type="text" placeholder="검색어 (예: 단타매매전략) — 채널 입력 시 비워도 OK" />
       <input id="count" type="number" value="10" min="1" max="200" title="수집 후보 영상 수 (최대 200)" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
     </div>
@@ -1143,7 +1143,11 @@ async function runQuery(){
   const q = document.getElementById('query').value.trim();
   const c = document.getElementById('count').value || '5';
   const btn = document.getElementById('run-btn');
-  if (!q) return toast('검색어를 입력하세요');
+  // Either keyword OR channel is required. Channel-only mode just
+  // pulls the latest videos from that channel (still dedup-aware).
+  const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
+  const hasChannel = !!(__channelResolved || channelRaw);
+  if (!q && !hasChannel) return toast('검색어 또는 채널 둘 중 하나는 필요합니다');
   if (isLocalMode){
     if (!localKeyState.has_youtube || !_hasAnyLLM()){
       showWizard();

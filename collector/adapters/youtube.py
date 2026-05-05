@@ -158,8 +158,11 @@ class YouTubeAdapter:
     #   https://youtube.com/user/legacyname  → channels.list?forUsername=
     #   https://youtube.com/watch?v=VIDEOID  → videos.list → snippet.channelId
     _UC_RX = __import__("re").compile(r"\b(UC[0-9A-Za-z_\-]{22})\b")
-    _HANDLE_RX = __import__("re").compile(r"@([A-Za-z0-9._\-]{3,30})")
-    _CUSTOM_RX = __import__("re").compile(r"youtube\.com/(?:c|user)/([A-Za-z0-9._\-]+)")
+    # YouTube handles allow ASCII letters/digits + Korean (Hangul syllables)
+    # + a small punctuation set. Just accept "anything that isn't a URL
+    # delimiter" so we don't reject Korean / Japanese / emoji handles.
+    _HANDLE_RX = __import__("re").compile(r"@([^\s/?#&=]{2,30})")
+    _CUSTOM_RX = __import__("re").compile(r"youtube\.com/(?:c|user)/([^\s/?#&=]+)")
     _VIDEO_RX = __import__("re").compile(
         r"(?:youtube\.com/watch\?[^ ]*v=|youtu\.be/)([A-Za-z0-9_\-]{11})"
     )
@@ -247,11 +250,18 @@ class YouTubeAdapter:
                 "part": "snippet",
                 "type": "video",
                 "maxResults": str(batch),
-                "q": f"{q} {excludes}".strip(),
                 "relevanceLanguage": "ko",
             }
+            q_combined = f"{q} {excludes}".strip()
+            if q_combined:
+                params["q"] = q_combined
             if channel_id:
                 params["channelId"] = channel_id
+                # Channel-only browse: order by date so we get the
+                # newest uploads first instead of YouTube's relevance
+                # default (which is meaningless without a query).
+                if not q_combined:
+                    params["order"] = "date"
             if page_token:
                 params["pageToken"] = page_token
             url = f"{self.SEARCH_URL}?{urllib.parse.urlencode(params)}"

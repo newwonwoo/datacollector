@@ -339,7 +339,7 @@ def run_query(
             candidates = []
         # P4-5: fallback query on empty result (Master_02 §1)
         if not candidates:
-            fb = fallback_query(query)
+            fb = fallback_query(query, target_channel_id=target_channel_id)
             fb_dict = fb.to_dict()
             fb_dict["max_results"] = max(count * 3, count)
             try:
