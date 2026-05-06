@@ -740,7 +740,7 @@
               onchange="toggleAllWatchSelect(this.checked)"
               title="전체 선택" /></th>
           <th>도메인</th><th>키워드</th><th>주기</th><th>모드</th>
-          <th>마지막 실행</th><th>증분</th><th></th>
+          <th>마지막 실행</th><th>증분</th><th>관리</th>
         </tr>
       </thead>
       <tbody id="watch-tbody">
@@ -1300,6 +1300,23 @@ function startWorkflowPolling(){
 }
 
 // ====== 감시 중인 도메인 (watches grid) ======
+// Mirror the backend `vault.vault_filename` helper so dashboard links
+// land on the same '{title-prefix}__{video_id}.md' files the pipeline
+// writes. Backend stores `vault_filename` on the payload after first
+// write, so we prefer that when present.
+function vaultFilename(p){
+  if (p && p.vault_filename) return p.vault_filename;
+  const title = (p && p.title) || '';
+  const vid = (p && p.video_id) || 'noid';
+  // Sanitize: strip OS-illegal chars + collapse whitespace, cap 30 chars.
+  let slug = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+                  .replace(/\s+/g, '_')
+                  .replace(/^[._-]+|[._-]+$/g, '')
+                  .slice(0, 30);
+  if (!slug) slug = 'untitled';
+  return `${slug}__${vid}.md`;
+}
+
 function fmtTimeShort(iso){
   if (!iso) return '—';
   try {
@@ -1810,7 +1827,7 @@ function renderKnowledge(valid){
   host.innerHTML = bannerHtml + pool.slice(0, 3).map(p => {
     const vid = p.video_id || '';
     const sk  = p.source_key || '';
-    const vaultName = sk.replace(':', '__') + '.md';
+    const vaultName = vaultFilename(p);
     const conf = p.confidence || 'unverified';
     const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
     const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
@@ -2364,7 +2381,7 @@ function openModal(encodedSk){
   const p = window.__recordsBySk?.[sk];
   if (!p) return;
   const vid = p.video_id || '';
-  const vaultName = sk.replace(':', '__') + '.md';
+  const vaultName = vaultFilename(p);
   const body = document.getElementById('modal-body');
   const ctype = (p.content_type || '').toLowerCase();
   const llmConf = (p.llm_confidence || '').toLowerCase();

@@ -55,7 +55,41 @@ def test_write_note_creates_markdown_file(tmp_path):
     out = write_note(_fixture(), tmp_path)
     assert out.exists()
     assert out.parent.name == "strategies"
-    assert out.name == "youtube__VAULT001.md"
+    # New scheme: filename starts with the title prefix, ends with __video_id.md
+    assert out.name == "단타_전략__VAULT001.md", out.name
+
+
+def test_write_note_sets_vault_filename_on_payload(tmp_path):
+    p = _fixture()
+    write_note(p, tmp_path)
+    assert p.get("vault_filename") == "단타_전략__VAULT001.md"
+
+
+def test_write_note_removes_legacy_source_key_filename(tmp_path):
+    """If a previous version of collector wrote the legacy
+    `youtube__VAULT001.md`, the new write should clean it up so the
+    vault doesn't show duplicates after upgrade."""
+    p = _fixture()
+    legacy = (tmp_path / "strategies"); legacy.mkdir(parents=True)
+    (legacy / "youtube__VAULT001.md").write_text("# old", encoding="utf-8")
+    write_note(p, tmp_path)
+    assert not (legacy / "youtube__VAULT001.md").exists()
+    assert (legacy / "단타_전략__VAULT001.md").exists()
+
+
+def test_vault_filename_sanitizes_os_illegal_chars():
+    from collector.vault import vault_filename
+    p = {"title": 'A/B:C"D|E', "video_id": "VID42"}
+    name = vault_filename(p)
+    assert name.endswith("__VID42.md")
+    for bad in '/:"|':
+        assert bad not in name
+
+
+def test_vault_filename_handles_empty_title():
+    from collector.vault import vault_filename
+    name = vault_filename({"title": "", "video_id": "ABC"})
+    assert name == "untitled__ABC.md"
 
 
 def test_regenerate_moc_builds_readme(tmp_path):
@@ -70,8 +104,9 @@ def test_regenerate_moc_builds_readme(tmp_path):
     assert readme.exists()
     body = readme.read_text(encoding="utf-8")
     assert "총 **2개** 노트" in body
-    assert "[[youtube__VAULT001]]" in body
-    assert "[[youtube__VAULT002]]" in body
+    # MOC links use the new title-prefixed filenames (sans .md ext).
+    assert "단타_전략__VAULT001" in body
+    assert "두_번째_노트__VAULT002" in body
 
 
 def test_pipeline_writes_vault_on_promote(tmp_path):
@@ -85,9 +120,10 @@ def test_pipeline_writes_vault_on_promote(tmp_path):
     )
     p = new_payload(video_id="VIDVAULT001", run_id="rv", title="Vault 통합 테스트")
     run_pipeline(p, services, store, logger, use_lock=False, vault_root=vault)
-    assert (vault / "strategies" / "youtube__VIDVAULT001.md").exists()
+    expected = vault / "strategies" / "Vault_통합_테스트__VIDVAULT001.md"
+    assert expected.exists(), f"missing {expected}"
     assert (vault / "README.md").exists()
-    assert "r1" in (vault / "strategies" / "youtube__VIDVAULT001.md").read_text(encoding="utf-8")
+    assert "r1" in expected.read_text(encoding="utf-8")
 
 
 def test_pipeline_skips_vault_when_disabled(tmp_path):

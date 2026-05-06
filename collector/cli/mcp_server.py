@@ -414,7 +414,17 @@ def _resource_read(uri: str) -> dict:
         raise ValueError(f"unknown URI scheme: {uri}")
     name = uri[len("vault://strategies/"):]
     safe = name.replace("/", "_").replace("..", "")
-    p = _vault_root() / "strategies" / f"{safe}.md"
+    strat_dir = _vault_root() / "strategies"
+    p = strat_dir / f"{safe}.md"
+    if not p.exists() and "__" not in safe:
+        # Legacy: caller passed only the source_key suffix or a video
+        # id. Glob for `*__{token}.md` so the title-prefixed filenames
+        # written by current vault.write_note are still resolvable.
+        token = safe.split("__")[-1].split(":")[-1]
+        if token:
+            matches = list(strat_dir.glob(f"*__{token}.md"))
+            if matches:
+                p = matches[0]
     if not p.exists():
         raise ValueError(f"resource not found: {uri}")
     return {
