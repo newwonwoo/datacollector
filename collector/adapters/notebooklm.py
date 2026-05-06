@@ -11,6 +11,7 @@ once (which prints the install/login instructions).
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -164,6 +165,42 @@ def replace_source(
             # and a stale leftover source won't break grounding.
             pass
     return add_source(notebook_id, file_path, timeout=timeout_add)
+
+
+def replace_sources(
+    notebook_id: str, file_paths: list[Path],
+    *, timeout_list: float = 60,
+    timeout_remove: float = 60,
+    timeout_add: float = DEFAULT_TIMEOUT_ADD,
+) -> list[str]:
+    """Drop ALL existing sources, then add the given files (in order).
+
+    Used when `collector watch` produces a chunked bundle ({label}_part01.md,
+    _part02.md, …) — NotebookLM's free tier rejects single sources >500K
+    words, so we split and upload N parts. Returns the list of source ids
+    nlm assigned (best-effort; missing ids are returned as empty strings)."""
+    try:
+        existing = list_sources(notebook_id, timeout=timeout_list)
+    except NotebookLMUnavailable:
+        existing = []
+    for src in existing:
+        sid = src.get("id") or src.get("source_id")
+        if not sid:
+            continue
+        try:
+            remove_source(notebook_id, sid, timeout=timeout_remove)
+        except NotebookLMUnavailable:
+            pass
+    added: list[str] = []
+    for p in file_paths:
+        try:
+            added.append(add_source(notebook_id, p, timeout=timeout_add))
+        except NotebookLMUnavailable as e:
+            # Continue uploading the rest — partial coverage > none.
+            import sys as _sys
+            _sys.stderr.write(f"[nlm] add_source failed for {p.name}: {e}\n")
+            added.append("")
+    return added
 
 
 _ID_PATTERNS = [

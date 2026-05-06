@@ -141,10 +141,18 @@ def export_raw_bundle(
     channel_id: str | None = None,
     only_promoted: bool = True,
     label: str = "",
+    limit: int | None = None,
+    max_chars_per_record: int | None = None,
 ) -> Path:
     """Bundle RAW transcripts (not extracted bullets) into one .md ready
     for NotebookLM upload. NotebookLM does its own analysis — we should
-    feed it the source material, not our pre-chewed bullet points."""
+    feed it the source material, not our pre-chewed bullet points.
+
+    `limit`: keep only the N most-recent records (by collected_at desc).
+    None = all. Use a small N (e.g. 30) when uploading to NotebookLM —
+    free tier rejects sources beyond ~500K words.
+    `max_chars_per_record`: per-transcript truncation as a second
+    safety net for ridiculously long videos. None = full transcript."""
     records: list[dict[str, Any]] = []
     for rec in _iter_payloads(data_store_root):
         if only_promoted and rec.get("record_status") != "promoted":
@@ -153,6 +161,8 @@ def export_raw_bundle(
             continue
         records.append(rec)
     records.sort(key=lambda r: (r.get("collected_at") or ""), reverse=True)
+    if limit is not None and limit > 0:
+        records = records[:limit]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -176,6 +186,8 @@ def export_raw_bundle(
         vid = r.get("video_id", "")
         ch = r.get("channel_id", "")
         transcript = (r.get("transcript") or "").strip()
+        if max_chars_per_record and len(transcript) > max_chars_per_record:
+            transcript = transcript[:max_chars_per_record] + "\n\n[…truncated…]"
         total_chars += len(transcript)
         lines += [
             f"## {title}",
@@ -193,3 +205,107 @@ def export_raw_bundle(
     lines.insert(2, f"_total_transcript_chars: {total_chars}_")
     out.write_text("\n".join(lines), encoding="utf-8")
     return out
+
+
+import re as _re_export
+
+
+def _sanitize_label(s: str) -> str:
+    """File-safe label — ASCII/Korean/digits only, hyphens for the rest."""
+    cleaned = _re_export.sub(r"[^\w가-힣\-]+", "_", (s or "").strip())
+    return cleaned.strip("_-") or "bundle"
+
+
+def _render_chunk_md(records: list[dict[str, Any]], *,
+                     label: str, part: int, total_parts: int) -> str:
+    lines = [
+        f"# {label} — part {part}/{total_parts} ({len(records)}건)",
+        f"_export_at: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}_",
+        "",
+    ]
+    for r in records:
+        title = r.get("title") or r.get("source_key", "?")
+        vid = r.get("video_id", "")
+        ch = r.get("channel_id", "")
+        transcript = (r.get("transcript") or "").strip()
+        lines += [
+            f"## {title}",
+            f"- video: https://www.youtube.com/watch?v={vid}",
+            f"- channel: `{ch}`",
+            f"- collected: {r.get('collected_at', '')}",
+            "",
+        ]
+        if transcript:
+            lines += ["```", transcript, "```", ""]
+        else:
+            lines += ["_(no transcript captured)_", ""]
+        lines += ["---", ""]
+    return "\n".join(lines)
+
+
+def export_raw_bundles(
+    *,
+    data_store_root: Path = Path("data_store"),
+    out_dir: Path = Path("exports"),
+    label: str = "bundle",
+    only_promoted: bool = True,
+    channel_id: str | None = None,
+    max_chars_per_bundle: int = 300_000,
+    max_parts: int = 50,
+    max_chars_per_record: int = 30_000,
+) -> list[Path]:
+    """Split raw transcripts into multiple bundles for NotebookLM upload.
+
+    NotebookLM free tier: 50 sources/notebook, ~500K words/source. We
+    target ~300K chars per chunk (≈ 200K words, safe margin) and stop
+    at 50 parts. Files are written as `{label}_part01.md`, `_part02.md`
+    so they're easily identifiable in the NotebookLM source list.
+
+    Per-record transcripts longer than `max_chars_per_record` are
+    truncated with a `[…truncated…]` marker.
+
+    Returns the list of written paths (most-recent records first)."""
+    records: list[dict[str, Any]] = []
+    for rec in _iter_payloads(data_store_root):
+        if only_promoted and rec.get("record_status") != "promoted":
+            continue
+        if channel_id and rec.get("channel_id") != channel_id:
+            continue
+        records.append(rec)
+    records.sort(key=lambda r: (r.get("collected_at") or ""), reverse=True)
+
+    # Truncate per-record up front so the chunk-fit math is honest.
+    for r in records:
+        t = (r.get("transcript") or "").strip()
+        if max_chars_per_record and len(t) > max_chars_per_record:
+            r["transcript"] = t[:max_chars_per_record] + "\n\n[…truncated…]"
+
+    # Greedy fit: walk records, push to current chunk if it fits, else
+    # start a new one. Stop after `max_parts` chunks (drop the rest).
+    chunks: list[list[dict[str, Any]]] = [[]]
+    cur = 0
+    for r in records:
+        rec_size = (len(r.get("transcript") or "")
+                    + len(r.get("title") or "")
+                    + 200)  # constant overhead per record
+        if cur + rec_size > max_chars_per_bundle and chunks[-1]:
+            if len(chunks) >= max_parts:
+                break
+            chunks.append([])
+            cur = 0
+        chunks[-1].append(r)
+        cur += rec_size
+
+    chunks = [c for c in chunks if c]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_label = _sanitize_label(label)
+    paths: list[Path] = []
+    for i, chunk in enumerate(chunks, 1):
+        name = f"{safe_label}_part{i:02d}.md"
+        path = out_dir / name
+        path.write_text(
+            _render_chunk_md(chunk, label=label, part=i, total_parts=len(chunks)),
+            encoding="utf-8",
+        )
+        paths.append(path)
+    return paths

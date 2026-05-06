@@ -919,6 +919,136 @@ def test_export_raw_bundle_includes_transcript_field(tmp_path):
     assert p.name.startswith("notebook_raw_")
 
 
+def test_export_raw_bundle_limit_keeps_most_recent(tmp_path):
+    """`limit` caps to the N most-recent records (by collected_at desc)
+    so a vault with hundreds of promoted videos still produces a bundle
+    NotebookLM will accept (~500K word limit per source)."""
+    from collector.workflows.export import export_raw_bundle
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    for i in range(5):
+        (ds / f"v{i}.json").write_text(json.dumps({
+            "source_key": f"youtube:V{i}",
+            "video_id": f"V{i}",
+            "record_status": "promoted",
+            "title": f"TITLE_{i}_MARKER",
+            "transcript": f"transcript {i}",
+            "collected_at": f"2026-05-0{i+1}T00:00:00Z",
+        }), encoding="utf-8")
+    p = export_raw_bundle(data_store_root=ds, out_dir=tmp_path / "out",
+                          only_promoted=True, limit=2)
+    body = p.read_text(encoding="utf-8")
+    # Most-recent 2 (V4, V3) should be in; V0/V1/V2 should not.
+    assert "TITLE_4_MARKER" in body and "TITLE_3_MARKER" in body
+    for n in (0, 1, 2):
+        assert f"TITLE_{n}_MARKER" not in body
+
+
+def test_export_raw_bundle_max_chars_truncates_long_transcripts(tmp_path):
+    from collector.workflows.export import export_raw_bundle
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    long_text = "X" * 1000
+    (ds / "v.json").write_text(json.dumps({
+        "source_key": "youtube:V", "video_id": "V",
+        "record_status": "promoted", "transcript": long_text,
+    }), encoding="utf-8")
+    p = export_raw_bundle(data_store_root=ds, out_dir=tmp_path / "out",
+                          only_promoted=True, max_chars_per_record=200)
+    body = p.read_text(encoding="utf-8")
+    assert "[…truncated…]" in body
+    assert body.count("X") <= 200 + 5  # truncated to ~200
+
+
+def test_export_raw_bundles_chunks_by_char_budget(tmp_path):
+    """export_raw_bundles splits records into multiple files when the
+    total exceeds max_chars_per_bundle. Each file is named
+    `{label}_partNN.md` for easy identification in NotebookLM."""
+    from collector.workflows.export import export_raw_bundles
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    big_transcript = "X" * 1000
+    for i in range(10):
+        (ds / f"v{i}.json").write_text(json.dumps({
+            "source_key": f"youtube:V{i}",
+            "video_id": f"V{i}",
+            "record_status": "promoted",
+            "title": f"TITLE_{i}",
+            "transcript": big_transcript,
+            "collected_at": f"2026-05-0{i+1:02d}T00:00:00Z",
+        }), encoding="utf-8")
+    parts = export_raw_bundles(
+        data_store_root=ds, out_dir=tmp_path / "out",
+        label="블로그 자동화",
+        max_chars_per_bundle=2500,  # ~2 records per chunk
+        max_parts=10,
+        max_chars_per_record=100_000,
+    )
+    assert len(parts) >= 3, f"expected multiple parts, got {len(parts)}"
+    # Filename: sanitized label + partNN
+    for i, p in enumerate(parts, 1):
+        assert p.name.startswith("블로그_자동화_part")
+        assert f"part{i:02d}" in p.name
+    # Together they cover all 10 records (most-recent ordering preserved)
+    bodies = [p.read_text(encoding="utf-8") for p in parts]
+    titles_seen = sum(b.count("TITLE_") for b in bodies)
+    assert titles_seen == 10
+
+
+def test_export_raw_bundles_caps_at_max_parts(tmp_path):
+    from collector.workflows.export import export_raw_bundles
+    ds = tmp_path / "ds"
+    ds.mkdir()
+    for i in range(20):
+        (ds / f"v{i}.json").write_text(json.dumps({
+            "source_key": f"y:V{i}", "video_id": f"V{i}",
+            "record_status": "promoted", "title": f"T{i}",
+            "transcript": "Z" * 500,
+            "collected_at": f"2026-05-{i+1:02d}T00:00:00Z",
+        }), encoding="utf-8")
+    parts = export_raw_bundles(
+        data_store_root=ds, out_dir=tmp_path / "out", label="x",
+        max_chars_per_bundle=600, max_parts=3, max_chars_per_record=100_000,
+    )
+    assert len(parts) == 3  # capped
+
+
+def test_notebooklm_replace_sources_lists_then_deletes_then_adds(monkeypatch, tmp_path):
+    """replace_sources flow: list → delete each → add each new file.
+    Order matters because nlm 'source delete' takes only a source id."""
+    import collector.adapters.notebooklm as nb
+    calls: list[list[str]] = []
+
+    class _R:
+        returncode = 0
+        stdout = '[{"id": "old-1"}, {"id": "old-2"}]'
+        stderr = ""
+
+    class _R2:
+        returncode = 0
+        stdout = '{"id": "new-1"}'
+        stderr = ""
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        # First call is `source list` → return existing
+        if argv[1:3] == ["source", "list"]:
+            return _R()
+        return _R2()
+
+    monkeypatch.setattr(nb.shutil, "which", lambda _n: "/usr/local/bin/nlm")
+    monkeypatch.setattr(nb.subprocess, "run", fake_run)
+    p1 = tmp_path / "x_part01.md"; p1.write_text("a", encoding="utf-8")
+    p2 = tmp_path / "x_part02.md"; p2.write_text("b", encoding="utf-8")
+    nb.replace_sources("nb-X", [p1, p2])
+    # Should have: list, delete old-1, delete old-2, add p1, add p2
+    verbs = [c[1:3] for c in calls]
+    assert verbs[0] == ["source", "list"]
+    assert ["source", "delete"] in verbs
+    assert sum(1 for v in verbs if v == ["source", "delete"]) == 2
+    assert sum(1 for v in verbs if v == ["source", "add"]) == 2
+
+
 def test_export_raw_bundle_skips_non_promoted_by_default(tmp_path):
     from collector.workflows.export import export_raw_bundle
     ds = tmp_path / "ds"

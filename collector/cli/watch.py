@@ -25,7 +25,7 @@ from typing import Iterable
 
 from .. import watch_registry as reg
 from ..workflows import research_batch
-from ..workflows.export import export_raw_bundle
+from ..workflows.export import export_raw_bundle, export_raw_bundles
 
 
 _INTERVAL_SECONDS = {
@@ -113,21 +113,43 @@ def run_tick(
         try:
             from ..adapters import notebooklm
             from ..workflows._nb_specs import generate_specs
-            bundle = export_raw_bundle(
+            # NotebookLM free tier: 50 sources/notebook, ~500K words/source.
+            # Split into chunks of ~300K chars (~200K words, safe margin)
+            # and upload each as `{domain}_partNN.md` so the source list
+            # is identifiable. Per-record cap protects against pathological
+            # 100K-char single transcripts. All overridable per-watch.
+            chunk_chars = int(entry.get("bundle_chunk_chars", 300_000) or 300_000)
+            max_parts = int(entry.get("bundle_max_parts", 50) or 50)
+            per_record_cap = int(entry.get("bundle_max_chars_per_record", 30_000) or 30_000)
+            bundles = export_raw_bundles(
                 data_store_root=data_store_root,
                 out_dir=out_dir / domain,
-                only_promoted=True,
                 label=domain,
+                only_promoted=True,
+                max_chars_per_bundle=chunk_chars,
+                max_parts=max_parts,
+                max_chars_per_record=per_record_cap,
             )
+            promoted_total = sum(1 for s in cur_snap.values() if s == "promoted")
+            total_kb = sum(p.stat().st_size for p in bundles) / 1024 if bundles else 0
+            sys.stderr.write(
+                f"[watch] {domain}: split into {len(bundles)} part(s), "
+                f"~{total_kb:.0f} KB total (of {promoted_total} promoted)\n"
+            )
+            if not bundles:
+                raise RuntimeError("export_raw_bundles produced no chunks")
             if not notebook_id:
                 from datetime import datetime, timezone
                 title = f"{domain}_collector_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
                 notebook_id = notebooklm.create_notebook(title)
-                notebooklm.add_source(notebook_id, bundle)
+                for p in bundles:
+                    notebooklm.add_source(notebook_id, p)
             else:
-                notebooklm.replace_source(notebook_id, bundle)
+                notebooklm.replace_sources(notebook_id, bundles)
+            # generate_specs takes ONE bundle (the prompt is per-mode);
+            # use part01 as the reference for the design-spec call.
             generate_specs(
-                domain=domain, bundle_path=bundle, modes=md,
+                domain=domain, bundle_path=bundles[0], modes=md,
                 out_dir=out_dir / domain,
             )
         except Exception as e:  # noqa: BLE001
