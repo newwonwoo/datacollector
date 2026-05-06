@@ -2164,29 +2164,17 @@ function cohRender(snapshot, runId, requestedN){
 }
 
 async function cohPollOnce(){
-  // 1. /api/run/status — get requested_count + check for new run
+  // 1. /api/run/status — get requested_count + check for new run.
+  // Note: /api/run/status returns an `api_xxx` id from the HTTP layer,
+  // but events.jsonl is keyed by `run_xxx` (the collector pipeline id).
+  // We use events' run_id for replay because that's where the real
+  // stage events live. The api id only drives requested_count display.
   let runState = null;
   try {
     const r = await fetch('/api/run/status', {cache:'no-store'});
     if (r.ok) runState = await r.json();
   } catch(_){}
   const requestedN = runState ? runState.requested_count ?? null : null;
-  // Detect new run → fade out + reset visually before drawing fresh data
-  if (runState && runState.run_id && runState.run_id !== __cohLastRunId){
-    if (__cohLastRunId !== null){
-      const grid = document.getElementById('cohort-stages');
-      const banner = document.getElementById('cohort-banner');
-      if (grid) grid.classList.add('resetting');
-      if (banner) banner.classList.add('resetting');
-      cohRender(cohEmptySnapshot(requestedN), runState.run_id, requestedN);
-      setTimeout(() => {
-        if (grid) grid.classList.remove('resetting');
-        if (banner) banner.classList.remove('resetting');
-      }, 450);
-    }
-    __cohLastRunId = runState.run_id;
-    __cohRunEpoch++;
-  }
   // 2. /api/events — fetch raw events for the run (default = latest run)
   let events = [], serverRunId = null;
   try {
@@ -2197,7 +2185,26 @@ async function cohPollOnce(){
       serverRunId = j.run_id || null;
     }
   } catch(_){}
-  const runId = (runState && runState.run_id) || serverRunId;
+  // Source of truth = serverRunId (from events.jsonl). Fall back to
+  // runState only when no events exist yet (very fresh run before
+  // run_query emits its first event).
+  const runId = serverRunId || (runState && runState.run_id) || null;
+  // Detect new run → fade out + reset visually before drawing fresh data.
+  if (runId && runId !== __cohLastRunId){
+    if (__cohLastRunId !== null){
+      const grid = document.getElementById('cohort-stages');
+      const banner = document.getElementById('cohort-banner');
+      if (grid) grid.classList.add('resetting');
+      if (banner) banner.classList.add('resetting');
+      cohRender(cohEmptySnapshot(requestedN), runId, requestedN);
+      setTimeout(() => {
+        if (grid) grid.classList.remove('resetting');
+        if (banner) banner.classList.remove('resetting');
+      }, 450);
+    }
+    __cohLastRunId = runId;
+    __cohRunEpoch++;
+  }
   const snap = cohReplay(events, runId, requestedN);
   cohRender(snap, runId, requestedN);
 }
