@@ -2144,7 +2144,13 @@ function cohRender(snapshot, runId, requestedN){
   document.getElementById('coh-flight').textContent = snapshot.totalInFlight;
   document.getElementById('coh-done').textContent = snapshot.finished;
   document.getElementById('coh-drop').textContent = snapshot.totalFailed;
-  document.getElementById('coh-runid').textContent = 'run_id: ' + (runId || '—');
+  // Show the run id AND a heartbeat so the user can confirm the
+  // dashboard is actually polling (was the #1 complaint: cards looked
+  // frozen even though backend was working).
+  const now = new Date();
+  const hb = now.toLocaleTimeString('ko-KR', {hour12: false});
+  document.getElementById('coh-runid').textContent =
+    `run_id: ${runId || '—'} · 갱신 ${hb}`;
   const inv = document.getElementById('coh-invariant');
   if (inv){
     inv.classList.toggle('bad', !snapshot.invariantOk);
@@ -2736,6 +2742,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
   // if no run is in flight, the user sees the previous outcome
   // instead of an empty pipeline.
   try { cohPollOnce(); } catch (_) {}
+  // Cohort dashboard global poller — fires every 3s in local mode so
+  // ANY active worker (run/workflow/watch tick) is reflected without
+  // each call site having to wire its own polling. Tiny network cost
+  // (events.jsonl read) and fixes the "stale forever after click"
+  // complaint.
+  if (isLocalMode){
+    setInterval(() => { try { cohPollOnce(); } catch (_) {} }, 3000);
+  }
   // Watches grid: load now + refresh every 30s.
   if (isLocalMode){
     loadWatches();

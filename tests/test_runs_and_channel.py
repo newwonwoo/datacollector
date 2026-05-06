@@ -151,7 +151,8 @@ def test_captions_returns_error_details_when_all_paths_fail(monkeypatch):
 
 
 def test_captions_http_calls_end_at_timedtext_after_libs_missing(monkeypatch):
-    """With no Python libs, should still attempt timedtext URLs (last resort)."""
+    """With no Python libs, should attempt 4 timedtext variants (last
+    resort) plus one description fallback fetch (added in v15)."""
     from collector.adapters.youtube import YouTubeAdapter
     import sys
     monkeypatch.setitem(sys.modules, "yt_dlp", None)
@@ -161,6 +162,7 @@ def test_captions_http_calls_end_at_timedtext_after_libs_missing(monkeypatch):
         calls.append(url); return {"status": 404, "body": ""}
     yt = YouTubeAdapter("KEY", http=fake_http)
     yt.captions("vid")
-    # timedtext tried 4 variants (ko/en × manual/asr)
-    assert len(calls) == 4
-    assert all("timedtext" in u for u in calls)
+    timedtext_calls = [u for u in calls if "timedtext" in u]
+    assert len(timedtext_calls) == 4  # ko/en × manual/asr
+    # Plus one description-fallback videos.list call.
+    assert any("/youtube/v3/videos" in u and "part=snippet" in u for u in calls)

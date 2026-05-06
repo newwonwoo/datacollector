@@ -429,7 +429,38 @@ class YouTubeAdapter:
                             "text": text,
                         }
         errors.append("timedtext:all-empty")
+
+        # 4th: video DESCRIPTION as transcript. Many Korean creators
+        # (esp. lecture / 사주 / 풍수 channels) skip captions entirely
+        # but paste a long timeline + summary into the description box.
+        # We only accept descriptions that look like real content
+        # (≥500 chars) — promo-only blurbs are useless and noisy.
+        try:
+            desc = self._description_for(video_id)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"description:{type(e).__name__}")
+            desc = ""
+        if desc and len(desc) >= 500:
+            return {"source": "description", "text": desc}
+        if desc:
+            errors.append(f"description:too_short({len(desc)}c)")
+        else:
+            errors.append("description:empty")
+
         return {"source": "none", "text": "", "error": " | ".join(errors)}
+
+    def _description_for(self, video_id: str) -> str:
+        """Fetch the YouTube video description via Data API. 1 quota
+        unit. Used as a last-resort transcript when no captions exist."""
+        params = {"key": self.api_key, "part": "snippet", "id": video_id}
+        url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+        resp = self.http("GET", url)
+        self._raise_for(resp)
+        body = json.loads(resp["body"])
+        items = body.get("items") or []
+        if not items:
+            return ""
+        return ((items[0].get("snippet") or {}).get("description") or "").strip()
 
     def _captions_via_yt_transcript(self, video_id: str) -> dict[str, Any]:
         """youtube-transcript-api 1.x — uses list()/fetch() (not list_transcripts)."""
