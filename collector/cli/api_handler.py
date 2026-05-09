@@ -106,11 +106,22 @@ def make_handler(
     env_path = env_path.resolve()
     dashboard_html = dashboard_html.resolve()
 
+    # 매초 호출되는 폴링 endpoint 들의 access log 를 끔으로써
+    # collector run 의 실제 진행 메시지가 노이즈에 묻히지 않게 한다.
+    QUIET_PATHS = ("/api/run/status", "/api/events", "/api/watches",
+                   "/status.json", "/api/health")
+
     class _Handler(http.server.BaseHTTPRequestHandler):
         server_version = "collector-app/1.0"
 
         # ---- logging ----
         def log_message(self, fmt: str, *args: Any) -> None:
+            try:
+                first = str(args[0]) if args else ""
+                if any(q in first for q in QUIET_PATHS):
+                    return
+            except Exception:
+                pass
             sys.stderr.write(f"[app] {self.address_string()} - {fmt % args}\n")
 
         # ---- response helpers ----

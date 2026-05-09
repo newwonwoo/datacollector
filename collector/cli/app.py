@@ -91,6 +91,17 @@ def main(argv: list[str] | None = None) -> int:
 
     n, out = prepare_dashboard(data_store, db, html)
     print(f"[app] indexed {n} records → {out}")
+    # 빌드 식별자 — 사용자가 'git pull 후 서버를 재시작했더니 변경이
+    # 적용됐는지' 한눈에 확인할 수 있게 시작 시 출력한다.
+    try:
+        import subprocess
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(project_root), stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        print(f"[app] build: {sha} (이 SHA 가 git log 의 최신과 다르면 코드 미반영)")
+    except Exception:
+        pass
 
     port = _pick_port(args.port)
     if port != args.port:

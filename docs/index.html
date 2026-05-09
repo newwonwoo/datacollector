@@ -1546,17 +1546,39 @@ async function runQuery(){
   const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
   const hasChannel = _splitChannelInput(channelRaw).length > 0;
   if (!q && !hasChannel) return toast('검색어 또는 채널 둘 중 하나는 필요합니다');
+  // 사용자가 "왜 새 run 이 안 도는지 모르겠다"고 답답해할 때를 대비해
+  // 분기 결정을 mini-fail-strip 에 즉시 띄워준다.
+  function _showWhyBlocked(msg){
+    const strip   = document.getElementById('mini-fail-strip');
+    const sIcon   = document.getElementById('mini-fail-icon');
+    const sTitle  = document.getElementById('mini-fail-title');
+    const sDetail = document.getElementById('mini-fail-detail');
+    const sAge    = document.getElementById('mini-fail-age');
+    if (!strip) return;
+    strip.style.display = 'flex';
+    strip.className = 'mini-fail-strip warn';
+    sIcon.textContent  = '⚠️';
+    sTitle.textContent = '새 run 시작 안 됨';
+    sDetail.textContent = msg;
+    sAge.textContent = new Date().toLocaleTimeString('ko-KR', {hour12:false});
+  }
   if (isLocalMode){
     if (!localKeyState.has_youtube || !_hasAnyLLM()){
+      _showWhyBlocked('API 키 미등록 — 화면 위 🔑 초기 설정 카드를 먼저 작성하세요');
       showWizard();
       return toast('API 키부터 등록하세요');
     }
     return runQueryLocal(q, c);
   }
-  if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
+  if (!token()) {
+    _showWhyBlocked('GitHub 토큰 미설정 — 우측 ‘토큰 설정’ 누르고 PAT 입력');
+    document.getElementById('settings').open = true;
+    return toast('토큰부터 설정');
+  }
   if (__lastActiveGARun){
     if (!confirm(`이미 실행 중인 run이 있습니다 (${__lastActiveGARun.display_title || ''}).\n`+
                  `그래도 병렬로 새 run을 큐에 올릴까요?`)) {
+      _showWhyBlocked('이미 실행 중인 run 이 있어 사용자가 취소함');
       return;
     }
   }
@@ -2496,7 +2518,15 @@ function updatePipelineFromStatus(detail, activeGARun){
   const hb = new Date().toLocaleTimeString('ko-KR', {hour12:false});
   const liveDot = `<span class="pill" style="background:#dcfce7;color:#166534;font-size:11px"><span class="dot" style="background:#16a34a"></span>LIVE ${hb}</span>`;
 
-  runLabel.innerHTML = `${pill} ${liveDot} <span>run_id: ${rid}</span> <span>${timeInfo}</span>${failLine}`;
+  // 사용자가 새 run 을 요청했어도 백엔드 도달 전이거나 실패해서 옛 run
+  // 이 latest 인 경우, 표시 자체를 약하게 처리해 "현재 진행" 으로 오해
+  // 하지 않게 한다 (사용자 피드백: "왜 옛 데이터가 그대로냐").
+  const stalePrefix = (toneDown || isStale)
+    ? '<span class="pill" style="background:#f5f5f4;color:#78716c;font-size:11px">📜 이전 실행</span> '
+    : '';
+  const dimStyle = (toneDown || isStale) ? 'opacity:.65;' : '';
+  runLabel.style.cssText = dimStyle;
+  runLabel.innerHTML = `${stalePrefix}${pill} ${liveDot} <span>run_id: ${rid}</span> <span>${timeInfo}</span>${failLine}`;
 }
 
 function openModal(encodedSk){
