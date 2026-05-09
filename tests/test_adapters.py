@@ -16,14 +16,66 @@ from collector.services import MockError
 
 def test_youtube_search_parses_items():
     def fake_http(method, url, **kw):
-        assert method == "GET" and "youtube/v3/search" in url
-        return {"status": 200, "body": json.dumps({"items": [
-            {"id": {"videoId": "abc"}, "snippet": {"channelId": "ch", "title": "t", "publishedAt": "2026-04-19T00:00:00Z"}},
-            {"id": {}, "snippet": {}},  # filtered out
-        ]})}
+        assert method == "GET"
+        if "youtube/v3/search" in url:
+            return {"status": 200, "body": json.dumps({"items": [
+                {"id": {"videoId": "abc"}, "snippet": {"channelId": "ch", "title": "t", "publishedAt": "2026-04-19T00:00:00Z"}},
+                {"id": {}, "snippet": {}},  # filtered out
+            ]})}
+        if "youtube/v3/videos" in url:
+            return {"status": 200, "body": json.dumps({"items": [
+                {"id": "abc", "contentDetails": {"duration": "PT5M30S"}},
+            ]})}
+        raise AssertionError(f"unexpected url {url}")
     yt = YouTubeAdapter("KEY", http=fake_http)
     out = yt.search({"topic": "단타", "exclude_terms": ["코인"]})
     assert [o["video_id"] for o in out] == ["abc"]
+    # P1: duration enrichment for stage_collect's shorts/long-stream gates.
+    assert out[0]["duration_sec"] == 330
+
+
+def test_youtube_search_enriches_shorts_duration():
+    """Shorts (< 4 min) must surface duration_sec so stage_collect can drop them."""
+    def fake_http(method, url, **kw):
+        if "youtube/v3/search" in url:
+            return {"status": 200, "body": json.dumps({"items": [
+                {"id": {"videoId": "shortie"}, "snippet": {"channelId": "ch", "title": "tiny", "publishedAt": ""}},
+                {"id": {"videoId": "long"},    "snippet": {"channelId": "ch", "title": "lng",  "publishedAt": ""}},
+            ]})}
+        if "youtube/v3/videos" in url:
+            return {"status": 200, "body": json.dumps({"items": [
+                {"id": "shortie", "contentDetails": {"duration": "PT45S"}},
+                {"id": "long",    "contentDetails": {"duration": "PT12M0S"}},
+            ]})}
+        raise AssertionError(url)
+    yt = YouTubeAdapter("KEY", http=fake_http)
+    out = yt.search({"topic": "x"})
+    by_id = {o["video_id"]: o["duration_sec"] for o in out}
+    assert by_id == {"shortie": 45, "long": 720}
+
+
+def test_youtube_search_videos_list_failure_does_not_break_search():
+    """If videos.list fails, search still returns items (without duration_sec)."""
+    def fake_http(method, url, **kw):
+        if "youtube/v3/search" in url:
+            return {"status": 200, "body": json.dumps({"items": [
+                {"id": {"videoId": "abc"}, "snippet": {"channelId": "c", "title": "t", "publishedAt": ""}},
+            ]})}
+        return {"status": 500, "body": "boom"}
+    yt = YouTubeAdapter("KEY", http=fake_http)
+    out = yt.search({"topic": "x"})
+    assert [o["video_id"] for o in out] == ["abc"]
+    assert "duration_sec" not in out[0]
+
+
+def test_iso8601_duration_parser():
+    from collector.adapters.youtube import _iso8601_duration_to_sec as f
+    assert f("PT45S") == 45
+    assert f("PT4M") == 240
+    assert f("PT5M30S") == 330
+    assert f("PT1H2M3S") == 3723
+    assert f("") is None
+    assert f("garbage") is None
 
 
 def test_youtube_captions_falls_back_to_asr():
