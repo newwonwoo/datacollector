@@ -1266,6 +1266,12 @@ function startLocalRunPolling(){
         }
         loadLatest();
         loadOpStrip();
+        // race-condition fix: completed 가 매우 빨리 와서(1건만 처리되는
+        // dedup 케이스) cohort polling 이 events.jsonl 의 stage 이벤트를
+        // 보기 전에 멈추는 경우를 대비해, 종료 후 두 번 더 폴링한다.
+        // 1초/3초 후에 한 번씩 — 그 사이 _StatusTicker 가 events 를 다 쓴다.
+        setTimeout(() => { cohPollOnce().catch(()=>{}); loadOpStrip(); }, 1000);
+        setTimeout(() => { cohPollOnce().catch(()=>{}); loadOpStrip(); }, 3000);
       }
     } catch(_){}
   }, 1500);
@@ -2797,10 +2803,14 @@ async function loadOpStrip(){
     }
     if (!s){ host.innerHTML = '<span class="muted">운영 상태 없음 (첫 Run 후 생성)</span>'; return; }
     // Top-of-page health summary (수집 됨? 안됨?)
-    updateHealth(s);
-    // Pipeline live view from events-derived detail
+    // 사용자 피드백 ("운영 상태 로드 실패") 대응: updateHealth /
+    // updatePipelineFromStatus 가 throw 해서 op-strip 전체가 죽지 않게
+    // 각각 try 로 격리. 한 위젯이 깨져도 나머지 chips 는 표시되어야 한다.
+    try { updateHealth(s); } catch (e) { console.error('updateHealth failed:', e); }
     if (s.latest_run_detail){
-      updatePipelineFromStatus(s.latest_run_detail, __lastActiveGARun);
+      try {
+        updatePipelineFromStatus(s.latest_run_detail, __lastActiveGARun);
+      } catch (e) { console.error('updatePipelineFromStatus failed:', e); }
     }
     const chips = [];
     // Kill switch
@@ -2849,7 +2859,9 @@ async function loadOpStrip(){
     chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at ? fmtTime(s.updated_at) : '?'}</span>`);
     host.innerHTML = chips.join('');
   } catch(e){
-    host.innerHTML = '<span class="muted">운영 상태 로드 실패</span>';
+    console.error('loadOpStrip failed:', e);
+    // 사용자가 F12 안 열어도 즉시 진단 가능하도록 에러 메시지 노출.
+    host.innerHTML = `<span class="muted">운영 상태 로드 실패 — ${(e && e.message) ? e.message : e}</span>`;
   }
 }
 
