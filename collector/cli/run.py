@@ -484,20 +484,49 @@ def run_query(
         # candidates 가 0 인 케이스(검색 결과 없음 또는 dedup 으로 전부 스킵)
         # 도 사용자에게 명확히 알려준다 — 이전엔 cmd 창이 침묵해서 사용자가
         # "왜 화면이 안 바뀌지?" 로 답답해함.
-        if skipped_duplicates and len(candidates) == skipped_duplicates:
-            print(f"[run] 신규 후보 0건 — 이미 처리된 영상 {skipped_duplicates}건 (Rule C dedup)",
+        n_cand = len(candidates)
+        if skipped_duplicates and n_cand == skipped_duplicates:
+            # UX 핵심: discover 단계는 N/N 통과, collect 단계는 모두 중복으로
+            # 스킵으로 명시. 화면 단계 카드가 한눈에 "검색은 됐고 신규가 없다"
+            # 라는 스토리를 보여줘야 한다 (사용자: "디스커버리 단계는 최소한
+            # 떠야지").
+            print(f"[run] discover ({n_cand}/{n_cand}, 100%) — 검색 완료",
                   flush=True)
-        elif len(candidates) == 0:
+            print(f"[run] collect (0/{n_cand}, 0%) — 모두 중복(Rule C) → 수집 중단",
+                  flush=True)
+            for c in candidates:
+                sk = f"youtube:{c['video_id']}"
+                logger.log(
+                    entity_type="stage", entity_id=f"{sk}:discover",
+                    from_status="not_started", to_status="completed",
+                    run_id=run_id, reason="search_hit",
+                )
+                logger.log(
+                    entity_type="stage", entity_id=f"{sk}:collect",
+                    from_status="not_started", to_status="failed",
+                    run_id=run_id, reason="rule_c_duplicate",
+                    metrics={"detail": "이미 처리된 영상"},
+                )
+        elif n_cand == 0:
             print(f"[run] 검색 결과 0건 — 검색어/채널 조건 확인 필요",
                   flush=True)
         else:
-            print(f"[run] 신규 후보 0건 (후보 {len(candidates)} · 이미 처리됨 {skipped_duplicates})",
+            # 부분 dedup: 검색 N · 신규 0 · 일부 사유 미상 (예외 케이스)
+            print(f"[run] 신규 후보 0건 (검색 {n_cand} · 이미 처리됨 {skipped_duplicates})",
                   flush=True)
+            for c in candidates:
+                sk = f"youtube:{c['video_id']}"
+                logger.log(
+                    entity_type="stage", entity_id=f"{sk}:discover",
+                    from_status="not_started", to_status="completed",
+                    run_id=run_id, reason="search_hit",
+                )
         # run-end 이벤트도 emit — 화면이 새 run 으로 갱신되도록.
         logger.log(
             entity_type="run", entity_id=run_id,
             from_status="running", to_status="completed",
             run_id=run_id, reason="no_new_candidates",
+            metrics={"candidates": n_cand, "skipped_duplicates": skipped_duplicates},
         )
     for idx, payload in enumerate(payloads, 1):
         pct = int(idx * 100 / total) if total else 0

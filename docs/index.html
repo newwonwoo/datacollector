@@ -2118,6 +2118,9 @@ const COH_REASON_KO = {
   no_caption:'자막 없음',
   search_short:'검색결과 부족',
   network_timeout:'네트워크 타임아웃',
+  rule_c_duplicate:'이미 처리됨 (중복)',
+  search_hit:'검색됨',
+  no_new_candidates:'신규 영상 없음',
   unknown:'원인 불명',
 };
 const cohReasonKo = (code) => COH_REASON_KO[code] || code;
@@ -2661,11 +2664,22 @@ function updateHealth(s){
     const code = c.reason || Object.keys(c.failure_reasons||{})[0] || '?';
     subTxt = `성공 ${colOk} · 실패 ${colBad} (${code})`;
   } else {
-    // All failed
+    // 사용자 요구: "전부 중복이라면 디스커버리는 최소한 떠야지. 검색된 N건
+    // 모두 중복으로 수집 중단합니다." — collect.failure_reasons 가
+    // rule_c_duplicate 만이라면 실패가 아니라 정보성 메시지로 격상.
+    const fr = c.failure_reasons || {};
+    const reasonKeys = Object.keys(fr);
+    const allRuleC = reasonKeys.length > 0 && reasonKeys.every(k => k === 'rule_c_duplicate');
+    if (allRuleC){
+      cls = 'warn'; iconCh = '🔁';
+      titleTxt = `검색된 ${colAtt}건 모두 이미 처리됨 — 수집 중단`;
+      titleCls = 'warn';
+      subTxt = `Discover ${colAtt}/${colAtt} 통과 · Collect 0/${colAtt} (모두 Rule C 중복)`;
+      hintTxt = '신규 영상이 없어 파이프라인이 즉시 종료됩니다. 다른 검색어/채널을 시도하거나, 기존 데이터(data_store/) 를 확인하세요.';
+    } else {
     cls = 'err'; iconCh = '❌';
     titleTxt = `자막 수집 실패 (0/${colAtt})`;
     titleCls = 'err';
-    const fr = c.failure_reasons || {};
     const codes = Object.entries(fr).map(([k,v]) => `${k}×${v}`).join(', ') || c.reason || '?';
     subTxt = `실패 코드: ${codes}`;
     // Prefer the actual error detail from adapter (ytdlp:X | ytapi:Y | timedtext:Z)
@@ -2680,6 +2694,7 @@ function updateHealth(s){
     } else {
       hintTxt = 'Actions 로그 확인 필요';
     }
+    }  // close inner else (allRuleC=false branch)
   }
 
   // Tone down stale failures (>1 hour old) — informational, not alarming
