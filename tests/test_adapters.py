@@ -30,14 +30,50 @@ def test_youtube_captions_falls_back_to_asr():
     calls = []
     def fake_http(method, url, **kw):
         calls.append(url)
-        # Fail manual, succeed asr
+        # Fail manual, succeed asr — return XML; adapter must strip tags
+        # before returning so the LLM sees plain text (G-16).
         if "kind=asr" in url:
             return {"status": 200, "body": "<transcript>hi</transcript>"}
         return {"status": 404, "body": ""}
     yt = YouTubeAdapter("KEY", http=fake_http)
     out = yt.captions("vid")
     assert out["source"] == "asr"
-    assert "transcript" in out["text"]
+    # Plain-text conversion strips the surrounding tags.
+    assert out["text"] == "hi"
+
+
+def test_youtube_captions_falls_back_to_description_when_no_captions():
+    """When yt-dlp + transcript-api + timedtext all fail, but the video
+    has a long description (lecture notes / timeline / summary often
+    pasted by Korean creators), use it as the transcript source."""
+    long_desc = "타임라인\n00:00 인사\n00:30 주제\n" + ("내용 본문 " * 200)
+    def fake_http(method, url, **kw):
+        if "/youtube/v3/videos" in url:
+            # description-fallback fetch
+            return {"status": 200, "headers": {}, "body": json.dumps({
+                "items": [{"snippet": {"description": long_desc}}],
+            })}
+        # All caption sources empty
+        return {"status": 404, "body": ""}
+    yt = YouTubeAdapter("KEY", http=fake_http)
+    out = yt.captions("vid42")
+    assert out["source"] == "description"
+    assert "내용 본문" in out["text"]
+
+
+def test_youtube_captions_rejects_short_description_as_transcript():
+    """Short descriptions (promo/blurb only) should NOT be used —
+    we'd just be feeding the LLM 'Subscribe!' noise."""
+    def fake_http(method, url, **kw):
+        if "/youtube/v3/videos" in url:
+            return {"status": 200, "headers": {}, "body": json.dumps({
+                "items": [{"snippet": {"description": "구독해주세요"}}],
+            })}
+        return {"status": 404, "body": ""}
+    yt = YouTubeAdapter("KEY", http=fake_http)
+    out = yt.captions("vid42")
+    assert out["source"] == "none"
+    assert "description:too_short" in out.get("error", "")
 
 
 def test_youtube_429_raises_mock_error():

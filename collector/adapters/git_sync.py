@@ -87,7 +87,10 @@ class GitSyncAdapter:
         # write markdown
         md_dir = work / "notes"
         md_dir.mkdir(parents=True, exist_ok=True)
-        md_path = md_dir / f"{payload['source_key'].replace(':', '__')}.md"
+        # Mirror the vault's title-prefix naming so the git mirror and
+        # the local Obsidian vault use identical filenames.
+        from ..vault import vault_filename
+        md_path = md_dir / vault_filename(payload)
         md_path.write_text(self._render_markdown(payload), encoding="utf-8")
         self.run(["git", "-C", str(work), "add", str(md_path.relative_to(work))])
         self.run([

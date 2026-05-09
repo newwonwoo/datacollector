@@ -8,6 +8,8 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <meta name="build" content="v2-live-pipeline" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
   <title>Collector — YouTube 지식 파이프라인</title>
   <style>
     :root {
@@ -409,6 +411,132 @@
     .stage.in_progress .stage-bar i.shimmer {
       animation: barShimmer 2.2s ease-in-out infinite;
     }
+    /* ====== 코호트 진행 대시보드 ====== */
+    .coh-banner {
+      background:#fff; border:1px solid #e7e5e0; border-radius:12px;
+      padding:16px 18px; margin:6px 0 10px;
+      transition: opacity .5s;
+    }
+    .coh-banner.resetting { opacity:.3 }
+    .coh-banner-row {
+      display:flex; flex-wrap:wrap; align-items:baseline;
+      gap: 0 36px; row-gap:8px;
+    }
+    .coh-stat { display:inline-flex; align-items:baseline; gap:8px;
+      font-variant-numeric: tabular-nums; }
+    .coh-stat b { font-size:10.5px; letter-spacing:.18em;
+      text-transform:uppercase; color:#78716c; font-weight:500; }
+    .coh-stat span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight:600; }
+    .coh-stat-big span { font-size:28px; color:#1c1917; }
+    .coh-stat:not(.coh-stat-big) span { font-size:22px; }
+    .coh-stat.emerald span { color:#047857; }
+    .coh-stat.amber span   { color:#b45309; }
+    .coh-stat.rose span    { color:#be123c; }
+    .coh-runid { margin-left:auto; font-family: ui-monospace, monospace;
+      font-size:10.5px; color:#a8a29e; }
+    .coh-invariant {
+      margin-top:14px; padding-top:12px; border-top:1px solid #f5f5f4;
+      font-family: ui-monospace, monospace; font-size:11.5px; color:#78716c;
+      transition: color .5s;
+    }
+    .coh-invariant.bad { color:#be123c; }
+
+    .coh-legend {
+      display:flex; align-items:center; gap:14px; padding:0 4px 6px;
+      font-family: ui-monospace, monospace; font-size:10px; color:#78716c;
+    }
+    .coh-legend .dot { display:inline-block; width:6px; height:6px;
+      border-radius:50%; margin-right:4px; vertical-align:middle; }
+    .coh-legend .dot.emerald { background:#10b981; }
+    .coh-legend .dot.amber   { background:#f59e0b; }
+    .coh-legend .dot.rose    { background:#f43f5e; }
+    .coh-legend .muted-r { margin-left:auto; color:#a8a29e; }
+
+    .coh-grid {
+      display:grid; gap:6px;
+      grid-template-columns: repeat(2, 1fr);
+      transition: opacity .5s;
+    }
+    .coh-grid.resetting { opacity:0; }
+    @media (min-width:640px){ .coh-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (min-width:1024px){ .coh-grid { grid-template-columns: repeat(7, 1fr); } }
+
+    .coh-card {
+      position:relative; display:flex; background:#fff;
+      border:1px solid #e7e5e0; border-radius:6px; overflow:hidden;
+      box-shadow:0 1px 2px rgba(0,0,0,.03);
+      animation: cohFadeIn .5s ease-out;
+    }
+    @keyframes cohFadeIn {
+      from { opacity:0; transform:translateY(2px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .coh-strip { width:2px; background:#e7e5e0; transition: background-color .7s; }
+    .coh-card.has-fail   .coh-strip { background:#fda4af; }
+    .coh-card.has-flight .coh-strip { background:#fcd34d; }
+    .coh-card.has-pass   .coh-strip { background:#6ee7b7; }
+    .coh-body { flex:1; padding:6px 8px; min-width:0; }
+    .coh-stage-label {
+      font-family: ui-monospace, monospace; font-size:9.5px;
+      letter-spacing:.14em; color:#57534e; font-weight:600;
+    }
+    .coh-counts {
+      display:flex; align-items:baseline; gap:6px; margin-top:4px;
+      font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums;
+      line-height:1;
+    }
+    .coh-counts .pass    { color:#047857; font-size:13px; font-weight:600; }
+    .coh-counts .flight  { color:#b45309; font-size:10.5px; }
+    .coh-counts .flight.zero  { color:#d6d3d1; }
+    .coh-counts .fail    { color:#be123c; font-size:10.5px; font-weight:600; }
+    .coh-counts .fail.zero    { color:#d6d3d1; font-weight:400; }
+    .coh-counts .sep     { color:#d6d3d1; font-size:10px; }
+    .coh-bar {
+      height:2px; background:#f5f5f4; border-radius:99px;
+      overflow:hidden; display:flex; margin-top:4px;
+    }
+    .coh-bar > i { display:block; height:100%; transition: width .7s; }
+    .coh-bar > .b-pass   { background:#6ee7b7; }
+    .coh-bar > .b-flight { background:#fcd34d; }
+    .coh-bar > .b-fail   { background:#fda4af; }
+    .coh-reasons {
+      margin-top:4px; line-height:1.25;
+    }
+    .coh-reasons div {
+      display:flex; justify-content:space-between;
+      font-size:9.5px; color:#be123c;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .coh-reasons span.code { overflow:hidden; text-overflow:ellipsis; }
+    .coh-reasons span.cnt  { font-family: ui-monospace, monospace;
+      margin-left:4px; font-variant-numeric: tabular-nums; }
+
+    /* ====== 감시 중인 도메인 그리드 ====== */
+    .watch-table { width:100%; border-collapse:collapse; font-size:13px;
+      margin-top:6px; }
+    .watch-table th, .watch-table td {
+      text-align:left; padding:8px 10px; border-bottom:1px solid #f1f0ec;
+    }
+    .watch-table th { font-size:10.5px; letter-spacing:.12em;
+      text-transform:uppercase; color:#78716c; font-weight:500; }
+    .watch-table td.center { text-align:center; color:#a8a29e; padding:18px; }
+    .watch-table .domain { font-weight:600; }
+    .watch-table .badge { display:inline-block; padding:1px 6px;
+      border-radius:99px; font-size:10.5px; background:#f5f5f4; color:#57534e;
+      margin-right:4px; }
+    .watch-table .badge.paused { background:#fef3c7; color:#92400e; }
+    .watch-table .delta-pos { color:#047857; font-weight:600; }
+    .watch-table .delta-zero { color:#a8a29e; }
+    .watch-table .actions button {
+      font-size:11px; padding:3px 8px; margin-left:4px;
+      border:1px solid var(--border); background:#fff; border-radius:6px;
+      cursor:pointer;
+    }
+    .watch-table .actions button.danger { color:#be123c; }
+    .watch-form { padding:10px; background:#fafaf9; border-radius:8px;
+      margin-top:8px; }
+
     .run-busy {
       margin: 10px 0 0; padding: 10px 14px; border-radius: 10px;
       background: var(--info-bg); color: var(--accent); font-size: 13px;
@@ -463,10 +591,58 @@
       <span class="tag">YouTube 지식 파이프라인 · v10</span>
     </div>
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="mode-badge" class="pill" style="display:none"></span>
     <span id="mini-health" class="pill" style="display:none"></span>
     <span id="conn" class="pill warn"><span class="dot"></span>연결 대기</span>
   </span>
   </header>
+
+  <!-- 초기 설정 마법사 (로컬 모드에서 API 키 미설정 시만 표시) -->
+  <div id="setup-wizard" class="card" style="display:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.08)">
+    <div class="section-title" style="color:var(--accent)">🔑 초기 설정 필요 · 최초 1회</div>
+    <p class="desc" style="margin-top:4px">
+      아래에 API 키 2개를 붙여넣으면 이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다.
+      키는 <strong>브라우저 바깥으로 나가지 않으며</strong>, Git에도 커밋되지 않습니다.
+    </p>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">YouTube Data API v3 키</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-youtube" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a>
+        → "API 키 만들기" · 무료 (10,000 units/day)
+      </p>
+    </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Gemini API 키 (LLM, 선택)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-gemini" type="password" placeholder="AIza..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>
+        → "Create API key" · 무료 티어 (15 RPM / 1500 RPD)
+      </p>
+    </div>
+    <div style="margin-top:14px">
+      <label style="font-size:12px;color:var(--text-2);font-weight:600">Groq API 키 (LLM 대체, 선택)</label>
+      <div class="form-row" style="margin-top:6px">
+        <input id="setup-groq" type="password" placeholder="gsk_..." autocomplete="off" />
+      </div>
+      <p class="desc" style="margin:4px 0 0;font-size:12px">
+        발급: <a href="https://console.groq.com/keys" target="_blank">Groq Console</a>
+        → "Create API Key" · 무료 (Llama 3.3 70B) · Gemini 와 별도 카운터
+      </p>
+    </div>
+    <p class="desc" style="margin-top:10px;font-size:12px;color:var(--text-2)">
+      Gemini · Groq 둘 중 하나만 있어도 동작합니다. 둘 다 있으면 Gemini 가 우선,
+      <code class="kbd">--llm groq</code> 또는 <code class="kbd">COLLECTOR_LLM=groq</code> 으로 강제 가능.
+    </p>
+    <div class="form-row" style="margin-top:16px">
+      <button onclick="saveKeys()">저장 후 시작 ▶</button>
+      <button class="ghost" onclick="hideWizard(true)">일단 닫기</button>
+    </div>
+  </div>
 
   <!-- 완료 배너 (동적 — 실행 성공/실패 알림, 새 이벤트만) -->
   <div id="banner-host"></div>
@@ -482,32 +658,136 @@
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
     <div class="form-row">
-      <input id="query" type="text" placeholder="검색어 입력 (예: 단타매매전략)" />
+      <input id="query" type="text" placeholder="검색어 (예: 단타매매전략) — 채널 입력 시 비워도 OK" />
       <input id="count" type="number" value="10" min="1" max="200" title="수집 후보 영상 수 (최대 200)" />
       <button id="run-btn" onclick="runQuery()">실행 ▶</button>
+    </div>
+    <div class="form-row" style="margin-top:8px;align-items:center">
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px">최소 조회수</label>
+      <input id="min-views" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 영상은 검색 단에서 제외 (0=필터 없음)"
+             style="max-width:140px" />
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:78px;margin-left:6px">최소 구독자수</label>
+      <input id="min-subs" type="number" value="0" min="0" step="1000"
+             title="이 수치 미만 채널의 영상은 제외 (0=필터 없음)"
+             style="max-width:140px" />
+    </div>
+    <div class="form-row" style="margin-top:8px;align-items:flex-start">
+      <label class="muted" style="font-size:12px;color:var(--text-2);min-width:62px;padding-top:6px">채널 한정</label>
+      <textarea id="channel-id" rows="2"
+             placeholder="채널 URL / @핸들 / UC…  (여러 개면 줄바꿈 또는 콤마로 구분, 비우면 전체 YouTube 검색)"
+             title="채널 페이지 URL, @핸들, 영상 URL, 또는 UC… 어느 것이든 OK. 여러 개 가능. 비우면 전체 검색."
+             style="flex:1;font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:6px;resize:vertical"
+             oninput="resolveChannelDebounced()"></textarea>
+      <span id="channel-resolved" class="muted" style="font-size:11px;min-width:140px;padding-top:6px"></span>
     </div>
     <div id="run-busy" class="run-busy">
       <span class="dots"><span></span><span></span><span></span></span>
       <span id="run-busy-text">실행 중…</span>
     </div>
-    <p class="desc">
+    <p class="desc" id="run-desc">
       GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요.
       최초 1회만 <a href="#" onclick="document.getElementById('settings').open=true;return false;">토큰 설정</a>이 필요합니다.
     </p>
   </div>
 
-  <!-- 최종 산출물: 가공된 지식 내용물 -->
-  <div class="card">
-    <div class="section-title">📚 최종 산출물 — 가공된 지식
-      <span class="muted" style="font-weight:400;font-size:11px">YouTube 자막 → 요약 + 규칙 + 태그</span>
+  <!-- 워크플로 실행: 도메인 → brainstorm → research → synthesize → design → NotebookLM 자동 (로컬 모드) -->
+  <div class="card" id="wf-card" style="display:none">
+    <div class="section-title">🧭 워크플로 실행 — 도메인 한 줄로 끝까지
+      <span class="muted" style="font-weight:400;font-size:11px">brainstorm → research → synthesize → 설계서 → NotebookLM</span>
     </div>
-    <div style="margin-bottom:12px">
-      <input id="search" type="text" placeholder="🔍 제목·요약·규칙·태그 검색" style="width:100%" />
+    <div class="form-row">
+      <input id="wf-domain" type="text" placeholder="도메인 (예: 사주, 단타매매, 영어회화)" />
+      <input id="wf-count" type="number" value="3" min="1" max="20" title="아이디어 수 (각 아이디어 = 키워드 묶음)" style="max-width:120px" />
+      <button id="wf-run-btn" onclick="runWorkflow()">워크플로 실행 ▶</button>
     </div>
-    <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
+    <div class="form-row" style="margin-top:8px;align-items:center;flex-wrap:wrap;gap:14px">
+      <span class="muted" style="font-size:12px;font-weight:600">설계서 종류 (NotebookLM 자동 호출)</span>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="monetize" checked /> 수익화</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="textbook" /> 교과서</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="summary" /> 정리</label>
+      <label style="font-size:12px"><input type="checkbox" class="wf-mode" value="presentation" /> 발표</label>
+    </div>
+    <div id="wf-busy" class="run-busy">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span id="wf-busy-text">워크플로 실행 중…</span>
+    </div>
+    <div id="wf-results" style="margin-top:10px;display:none">
+      <div class="muted" style="font-size:12px;margin-bottom:6px">산출물</div>
+      <ul id="wf-files" style="font-size:13px;margin:0;padding-left:18px"></ul>
+    </div>
+    <p class="desc">
+      체크된 모드별로 NotebookLM 노트북에 자막을 자동 업로드 → 프롬프트 자동 호출 → spec_NB_*.md 생성.
+      <code class="kbd">nlm</code> CLI 가 설치되어 있어야 합니다 (없으면 cheap-LLM 설계서로 폴백).
+      자세한 내용은 <a href="#" onclick="document.getElementById('settings').open=true;return false;">설정</a> 참고.
+    </p>
   </div>
 
-  <!-- 파이프라인 흐름 다이어그램 + 수집 상태 요약 -->
+  <!-- 🛰️ 감시 중인 도메인 (루틴화 등록 그리드) — 로컬 모드 전용 -->
+  <div class="card" id="watch-card" style="display:none">
+    <div class="section-title">🛰️ 감시 중인 도메인 — 자동 갱신 루틴
+      <span class="muted" style="font-weight:400;font-size:11px">
+        등록한 도메인은 cron / Task Scheduler 로 주기 실행
+      </span>
+      <button class="ghost" id="watch-refresh-selected"
+              onclick="tickSelected()" style="margin-left:auto;font-size:12px"
+              title="체크된 도메인만 한번에 업데이트">↻ 선택 업데이트</button>
+    </div>
+    <table class="watch-table" id="watch-table">
+      <thead>
+        <tr>
+          <th style="width:24px"><input type="checkbox" id="wn-select-all"
+              onchange="toggleAllWatchSelect(this.checked)"
+              title="전체 선택" /></th>
+          <th>도메인</th><th>키워드</th><th>주기</th><th>모드</th>
+          <th>마지막 실행</th><th>증분</th><th>관리</th>
+        </tr>
+      </thead>
+      <tbody id="watch-tbody">
+        <tr><td colspan="8" class="muted center">등록된 watch 없음</td></tr>
+      </tbody>
+    </table>
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px">+ 새 watch 등록</summary>
+      <div class="watch-form">
+        <div class="form-row">
+          <input id="wn-domain"   type="text" placeholder="도메인 (예: 사주)" style="flex:1" />
+          <select id="wn-interval">
+            <option value="manual">수동만</option>
+            <option value="daily" selected>매일</option>
+            <option value="weekly">매주</option>
+            <option value="monthly">매월</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-top:6px">
+          <input id="wn-keywords" type="text"
+                 placeholder="키워드 (쉼표 구분, 예: 사주 결혼, 사주 직업) — 비워도 OK (채널만 지정 가능)"
+                 style="flex:1" />
+          <input id="wn-vpk" type="number" value="10" min="1" max="50"
+                 title="키워드당 영상 수" style="max-width:90px" />
+        </div>
+        <div class="form-row" style="margin-top:6px;align-items:flex-start">
+          <textarea id="wn-channels" rows="2"
+                 placeholder="채널 (선택, 줄바꿈/콤마로 여러개. URL/@핸들/UC… 어떤 형식이든)"
+                 style="flex:1;font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:6px;resize:vertical"></textarea>
+        </div>
+        <div class="form-row" style="margin-top:6px;align-items:center;gap:14px">
+          <span class="muted" style="font-size:11px">모드</span>
+          <label style="font-size:12px"><input type="checkbox" class="wn-mode" value="monetize" checked /> 수익화</label>
+          <label style="font-size:12px"><input type="checkbox" class="wn-mode" value="textbook" /> 교과서</label>
+          <label style="font-size:12px"><input type="checkbox" class="wn-mode" value="summary" /> 정리</label>
+          <label style="font-size:12px"><input type="checkbox" class="wn-mode" value="presentation" /> 발표</label>
+          <button onclick="registerWatch()" style="margin-left:auto">등록</button>
+        </div>
+      </div>
+    </details>
+    <p class="desc" style="margin-top:8px">
+      "지금 실행" 버튼은 일회성 tick. 진정한 자동화는 Windows Task Scheduler 또는 cron 으로
+      <code class="kbd">collector watch run --domain X --once</code> 등록.
+    </p>
+  </div>
+
+  <!-- 파이프라인 흐름 다이어그램 + 수집 상태 요약 (감시 중인 도메인 바로 아래) -->
   <div class="card">
     <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
 
@@ -523,38 +803,41 @@
       <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
     </div>
 
-    <div class="pipeline-stages" id="pipeline-stages">
-      <div class="stage" data-stage="discover">DISCOVER
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="discover">›</div>
-      <div class="stage" data-stage="collect">COLLECT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="collect">›</div>
-      <div class="stage" data-stage="extract">EXTRACT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="extract">›</div>
-      <div class="stage" data-stage="normalize">NORMALIZE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="normalize">›</div>
-      <div class="stage" data-stage="review">REVIEW
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="review">›</div>
-      <div class="stage" data-stage="promote">PROMOTE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="promote">›</div>
-      <div class="stage" data-stage="package">PACKAGE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
+    <!-- 🎯 코호트 진행 대시보드 (events.jsonl 결정론적 replay) -->
+    <div id="cohort-banner" class="coh-banner">
+      <div class="coh-banner-row">
+        <span class="coh-stat coh-stat-big"><b>요청</b><span id="coh-N">—</span></span>
+        <span class="coh-stat amber"><b>진행중</b><span id="coh-flight">0</span></span>
+        <span class="coh-stat emerald"><b>완료</b><span id="coh-done">0</span></span>
+        <span class="coh-stat rose"><b>드랍</b><span id="coh-drop">0</span></span>
+        <span class="coh-runid" id="coh-runid">run_id: —</span>
+      </div>
+      <div id="coh-invariant" class="coh-invariant">검산 — = — (완료) + — (드랍) + — (진행중) = —</div>
     </div>
+
+    <div class="coh-legend">
+      <span><span class="dot emerald"></span>통과</span>
+      <span><span class="dot amber"></span>진행중</span>
+      <span><span class="dot rose"></span>드랍</span>
+      <span class="muted-r">통과 · 진행중 · 드랍</span>
+    </div>
+
+    <div id="cohort-stages" class="coh-grid"></div>
+
     <div class="run-label" id="run-label">
       <span>최근 run: —</span>
     </div>
+  </div>
+
+  <!-- 최종 산출물: 가공된 지식 내용물 -->
+  <div class="card">
+    <div class="section-title">📚 최종 산출물 — 가공된 지식
+      <span class="muted" style="font-weight:400;font-size:11px">YouTube 자막 → 요약 + 규칙 + 태그</span>
+    </div>
+    <div style="margin-bottom:12px">
+      <input id="search" type="text" placeholder="🔍 제목·요약·규칙·태그 검색" style="width:100%" />
+    </div>
+    <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
   </div>
 
   <!-- 요약 KPI -->
@@ -583,6 +866,16 @@
         <div class="ctitle">실패 원인 분포</div>
         <svg id="chart-fail" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
         <div class="legend" id="legend-fail"></div>
+      </div>
+      <div class="chart-card">
+        <div class="ctitle">콘텐츠 타입 분포</div>
+        <svg id="chart-ctype" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-ctype"></div>
+      </div>
+      <div class="chart-card">
+        <div class="ctitle">LLM 자평 분포</div>
+        <svg id="chart-llmconf" viewBox="0 0 300 140" preserveAspectRatio="none"></svg>
+        <div class="legend" id="legend-llmconf"></div>
       </div>
     </div>
     <!-- DLQ 재처리 버튼 -->
@@ -618,8 +911,22 @@
 
   <!-- 설정 -->
   <div class="card" style="margin-top: 20px;">
-    <details id="settings">
-      <summary>토큰 설정 (최초 1회)</summary>
+    <!-- 로컬 모드: API 키 (서버가 .env에 저장) -->
+    <details id="local-settings" style="display:none">
+      <summary>API 키 설정 (로컬)</summary>
+      <p class="desc" style="margin-top:0">
+        이 PC의 <code class="kbd">.env</code> 파일에 저장됩니다. Git에는 커밋되지 않습니다.
+      </p>
+      <div id="local-key-status" style="margin:10px 0;display:flex;gap:14px;font-size:13px;color:var(--text-2)"></div>
+      <div class="form-row">
+        <button class="ghost" onclick="showWizard()">🔑 API 키 재설정</button>
+        <button class="ghost" onclick="fetchKeyState().then(s=>{if(s){localKeyState=s;renderLocalKeyStatus();toast('상태 새로고침');}})">↻ 상태 확인</button>
+      </div>
+    </details>
+
+    <!-- 클라우드 모드: PAT -->
+    <details id="settings" style="margin-top:14px">
+      <summary>토큰 설정 (최초 1회, 클라우드 모드)</summary>
       <p class="desc" style="margin-top:0">
         실행·상태조회 API에 GitHub Personal Access Token이 필요합니다.
         값은 <strong>이 브라우저에만 저장</strong>되고 서버로 전송되지 않습니다.
@@ -652,6 +959,14 @@ const OWNER = 'newwonwoo';
 const REPO  = 'datacollector';
 const WF    = 'collect.yml';
 const API   = `https://api.github.com/repos/${OWNER}/${REPO}`;
+
+// ---- Local vs Cloud mode ----
+// Local mode: the UI is served by `collector app` on 127.0.0.1. The same
+// origin exposes /api/run and /api/config so no PAT is required and YouTube
+// is fetched from the user's residential IP (avoids GH Actions blocks).
+const isLocalMode = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(location.hostname);
+let localKeyState = { has_youtube: false, has_gemini: false, has_groq: false, has_anthropic: false };
+let __localRunPoll = null;
 
 // State: track which runs we've already announced so the banner doesn't spam
 let lastAnnouncedRun = null;
@@ -693,6 +1008,11 @@ async function gh(path, opts={}){
 
 async function updateConn(){
   const el = document.getElementById('conn');
+  if (isLocalMode){
+    el.className = 'pill ok';
+    el.textContent = '● 로컬 서버';
+    return;
+  }
   if (!token()){
     el.className='pill warn'; el.innerHTML='<span class="dot"></span>토큰 필요'; return;
   }
@@ -704,11 +1024,482 @@ async function updateConn(){
   } catch(e){ el.className='pill err'; el.textContent='● 네트워크 오류'; }
 }
 
+// ---- Local-mode helpers: API keys + pipeline run ----
+async function fetchKeyState(){
+  try {
+    const r = await fetch('/api/config', {cache: 'no-store'});
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e){ return null; }
+}
+
+function showWizard(){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = '';
+}
+function hideWizard(manual){
+  const w = document.getElementById('setup-wizard');
+  if (w) w.style.display = 'none';
+  if (manual) sessionStorage.setItem('wizard_dismissed', '1');
+}
+
+async function saveKeys(){
+  const yt = (document.getElementById('setup-youtube').value || '').trim();
+  const gem = (document.getElementById('setup-gemini').value || '').trim();
+  const groqEl = document.getElementById('setup-groq');
+  const groq = groqEl ? (groqEl.value || '').trim() : '';
+  if (!yt && !gem && !groq) return toast('최소 1개 키를 입력하세요');
+  const body = {};
+  if (yt) body.youtube = yt;
+  if (gem) body.google = gem;
+  if (groq) body.groq = groq;
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    // Wipe inputs immediately — the value is now on disk.
+    document.getElementById('setup-youtube').value = '';
+    document.getElementById('setup-gemini').value = '';
+    if (groqEl) groqEl.value = '';
+    if (!r.ok){
+      const txt = await r.text();
+      return toast('저장 실패 ' + r.status + ': ' + txt.slice(0, 120));
+    }
+    const st = await r.json();
+    localKeyState = st;
+    toast('✓ 키 저장됨 (.env)');
+    renderLocalKeyStatus();
+    if (localKeyState.has_youtube && _hasAnyLLM()){
+      hideWizard(false);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+function renderLocalKeyStatus(){
+  const host = document.getElementById('local-key-status');
+  if (!host) return;
+  const mark = (ok) => ok ? '<span style="color:var(--ok)">✅</span>'
+                           : '<span style="color:var(--err)">❌</span>';
+  host.innerHTML = `
+    <span>${mark(localKeyState.has_youtube)} YouTube</span>
+    <span>${mark(localKeyState.has_gemini)} Gemini</span>
+    <span>${mark(localKeyState.has_groq)} Groq</span>
+    ${localKeyState.has_anthropic ? `<span>${mark(true)} Anthropic</span>` : ''}
+  `;
+}
+
+function _hasAnyLLM(){
+  return localKeyState.has_gemini || localKeyState.has_groq || localKeyState.has_anthropic;
+}
+
+// --- 채널 입력 자동 변환 (URL / @handle / UC…) ---
+let __channelResolveTimer = null;
+let __channelResolved = null;  // last successful UC… (or null)
+function resolveChannelDebounced(){
+  clearTimeout(__channelResolveTimer);
+  __channelResolveTimer = setTimeout(resolveChannelNow, 400);
+}
+function _splitChannelInput(raw){
+  return (raw || '').replace(/,/g, '\n').split('\n')
+    .map(s => s.trim()).filter(Boolean);
+}
+async function resolveChannelNow(){
+  const inp = document.getElementById('channel-id');
+  const out = document.getElementById('channel-resolved');
+  if (!inp || !out) return;
+  const lines = _splitChannelInput(inp.value);
+  if (!lines.length){ out.textContent = ''; out.style.color = ''; __channelResolved = null; return; }
+  out.style.color = 'var(--text-2)';
+  out.textContent = `변환 중… (${lines.length}개)`;
+  let ok = 0, fail = 0;
+  for (const line of lines){
+    if (line.startsWith('UC') && line.length >= 22 && line.length <= 26){
+      ok++; continue;
+    }
+    try {
+      const r = await fetch('/api/resolve_channel?q=' + encodeURIComponent(line),
+                            {cache: 'no-store'});
+      if (r.ok){
+        const j = await r.json();
+        if (j.ok && j.channel_id) { ok++; continue; }
+      }
+      fail++;
+    } catch(_) { fail++; }
+  }
+  if (lines.length === 1){
+    if (ok === 1){ out.style.color = 'var(--ok)'; out.textContent = '✓ 인식 OK'; }
+    else { out.style.color = 'var(--err)'; out.textContent = '✗ 인식 불가'; }
+  } else {
+    out.style.color = fail ? 'var(--err)' : 'var(--ok)';
+    out.textContent = `✓ ${ok}개${fail ? ` · ✗ ${fail}` : ''}`;
+  }
+  // Cache is no longer used at submit time (backend re-resolves anyway).
+  __channelResolved = null;
+}
+
+async function runQueryLocal(q, c){
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  // Visually reset the pipeline diagram the moment the user clicks
+  // so they don't see the previous run's stale state.
+  resetPipelineDiagram();
+  try {
+    const minViews = parseInt(document.getElementById('min-views')?.value || '0', 10) || 0;
+    const minSubs = parseInt(document.getElementById('min-subs')?.value || '0', 10) || 0;
+    const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
+    const channelLines = _splitChannelInput(channelRaw);
+    const resp = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        query: q,
+        count: parseInt(c, 10) || 10,
+        min_views: minViews,
+        min_subscribers: minSubs,
+        channels: channelLines,
+      }),
+    });
+    if (resp.status === 202){
+      toast('✓ 로컬 실행 시작');
+      document.getElementById('query').value = '';
+      startLocalRunPolling();
+    } else if (resp.status === 409){
+      toast('이미 실행 중');
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '실행 ▶'; }
+}
+
+function startLocalRunPolling(){
+  if (__localRunPoll) clearInterval(__localRunPoll);
+  const busy = document.getElementById('run-busy');
+  const txt  = document.getElementById('run-busy-text');
+  if (busy) busy.classList.add('show');
+  __localRunPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/run/status', {cache: 'no-store'});
+      if (!r.ok) return;
+      const s = await r.json();
+      if (txt){
+        const base = `실행 중 · ${s.query || ''}`;
+        txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
+      }
+      // Cohort dashboard — events.jsonl deterministic replay.
+      // Counts/colors only update with each fresh full snapshot, so no
+      // race-induced flicker like the previous incremental approach.
+      try { await cohPollOnce(); } catch (_) {}
+      if (s.status === 'completed' || s.status === 'failed' || s.status === 'idle'){
+        clearInterval(__localRunPoll);
+        __localRunPoll = null;
+        if (busy) busy.classList.remove('show');
+        if (s.status === 'completed'){
+          // Surface dedup stats so the user understands why "asked 10, got 1"
+          const sm = s.summary || {};
+          const ask = sm.requested_count;
+          const skip = sm.skipped_duplicates || 0;
+          const proc = sm.processed || 0;
+          let msg = '✅ 로컬 실행 완료';
+          if (ask !== undefined && skip > 0){
+            msg += ` (요청 ${ask} · 신규 ${proc} · 이미 처리됨 ${skip})`;
+          }
+          toast(msg);
+        } else if (s.status === 'failed'){
+          toast('❌ 실행 실패: ' + (s.error || ''));
+        }
+        loadLatest();
+        loadOpStrip();
+      }
+    } catch(_){}
+  }, 1500);
+}
+
+// --- 워크플로 (로컬 모드 전용) ---
+let __wfPoll = null;
+async function runWorkflow(){
+  const dom = document.getElementById('wf-domain').value.trim();
+  const cnt = parseInt(document.getElementById('wf-count').value || '3', 10) || 3;
+  if (!dom) return toast('도메인을 입력하세요');
+  if (!localKeyState.has_youtube || !_hasAnyLLM()){
+    showWizard();
+    return toast('API 키부터 등록하세요');
+  }
+  const modes = Array.from(document.querySelectorAll('.wf-mode'))
+    .filter(el => el.checked).map(el => el.value);
+  const btn = document.getElementById('wf-run-btn');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  document.getElementById('wf-results').style.display = 'none';
+  document.getElementById('wf-files').innerHTML = '';
+  try {
+    const resp = await fetch('/api/workflow', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({domain: dom, count: cnt, modes: modes}),
+    });
+    if (resp.status === 202){
+      toast('✓ 워크플로 시작 (수 분 소요)');
+      startWorkflowPolling();
+    } else if (resp.status === 409){
+      toast('이미 워크플로가 진행 중');
+      startWorkflowPolling();
+    } else {
+      const txt = await resp.text();
+      toast(`실패 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '워크플로 실행 ▶'; }
+}
+
+function startWorkflowPolling(){
+  if (__wfPoll) clearInterval(__wfPoll);
+  const busy = document.getElementById('wf-busy');
+  const txt = document.getElementById('wf-busy-text');
+  if (busy) busy.classList.add('show');
+  __wfPoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/workflow/status', {cache: 'no-store'});
+      if (!r.ok) return;
+      const s = await r.json();
+      if (txt){
+        const base = `워크플로 진행 중 · ${s.domain || ''} · 모드 [${(s.modes||[]).join(',') || '없음'}]`;
+        txt.textContent = s.status === 'running' ? base : base + ' · ' + s.status;
+      }
+      // Cohort dashboard during workflow runs (same deterministic replay
+      // — the inner research_batch's run_query writes the same events).
+      try { await cohPollOnce(); } catch (_) {}
+      if (s.status === 'completed' || s.status === 'failed'){
+        clearInterval(__wfPoll); __wfPoll = null;
+        if (busy) busy.classList.remove('show');
+        if (s.status === 'completed') toast('✅ 워크플로 완료');
+        else toast('❌ 워크플로 실패: ' + (s.error || ''));
+        // List artifacts.
+        try {
+          const f = await fetch('/api/workflow/files', {cache: 'no-store'});
+          if (f.ok){
+            const fj = await f.json();
+            const ul = document.getElementById('wf-files');
+            ul.innerHTML = '';
+            (fj.files || []).forEach(it => {
+              const li = document.createElement('li');
+              const a = document.createElement('a');
+              a.href = '/' + it.rel; a.target = '_blank'; a.textContent = it.name;
+              li.appendChild(a);
+              li.append(` · ${(it.size/1024).toFixed(1)} KB`);
+              ul.appendChild(li);
+            });
+            document.getElementById('wf-results').style.display = (fj.files || []).length ? '' : 'none';
+          }
+        } catch(_){}
+      }
+    } catch(_){}
+  }, 2000);
+}
+
+// ====== 감시 중인 도메인 (watches grid) ======
+// Mirror the backend `vault.vault_filename` helper so dashboard links
+// land on the same '{title-prefix}__{video_id}.md' files the pipeline
+// writes. Backend stores `vault_filename` on the payload after first
+// write, so we prefer that when present.
+function vaultFilename(p){
+  if (p && p.vault_filename) return p.vault_filename;
+  const title = (p && p.title) || '';
+  const vid = (p && p.video_id) || 'noid';
+  // Sanitize: strip OS-illegal chars + collapse whitespace, cap 30 chars.
+  let slug = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+                  .replace(/\s+/g, '_')
+                  .replace(/^[._-]+|[._-]+$/g, '')
+                  .slice(0, 30);
+  if (!slug) slug = 'untitled';
+  return `${slug}__${vid}.md`;
+}
+
+function fmtTimeShort(iso){
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('ko-KR', {month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit'});
+  } catch (_) { return iso; }
+}
+
+async function loadWatches(){
+  if (!isLocalMode) return;
+  const tbody = document.getElementById('watch-tbody');
+  if (!tbody) return;
+  try {
+    const r = await fetch('/api/watches', {cache:'no-store'});
+    if (!r.ok) return;
+    const j = await r.json();
+    const ws = j.watches || [];
+    if (!ws.length){
+      tbody.innerHTML = '<tr><td colspan="8" class="center">등록된 watch 없음</td></tr>';
+      return;
+    }
+    const esc = (s) => String(s ?? '').replace(/[<>&"']/g, c =>
+      ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    tbody.innerHTML = ws.map(w => {
+      const kwArr = w.keywords || [];
+      const chArr = w.channels || [];
+      const kw = (kwArr.length ? kwArr.join(', ') : '(키워드 없음)')
+        + (chArr.length ? ` · 📡${chArr.length}개 채널` : '');
+      const md = (w.modes || []).join(', ') || '—';
+      const last = fmtTimeShort(w.last_run);
+      const d = w.last_diff || {};
+      const delta = (d.new_videos !== undefined)
+        ? `<span class="${d.new_videos > 0 ? 'delta-pos' : 'delta-zero'}">+${d.new_videos || 0}</span> (✓${d.promoted || 0})`
+        : '—';
+      const pausedBadge = w.paused ? '<span class="badge paused">일시정지</span>' : '';
+      const errBadge = w.last_status === 'failed' ? '<span class="badge" style="background:#fee2e2;color:#991b1b">실패</span>' : '';
+      const queuedBadge = w.last_status === 'queued' ? '<span class="badge" style="background:#fef3c7;color:#92400e">대기중</span>' : '';
+      const nbLink = w.notebook_id
+        ? `<a href="https://notebooklm.google.com/notebook/${esc(w.notebook_id)}" target="_blank" title="NotebookLM 열기" style="text-decoration:none">↗</a>`
+        : '';
+      return `<tr>
+        <td><input type="checkbox" class="wn-select" data-domain="${esc(w.domain)}" /></td>
+        <td class="domain">${pausedBadge}${queuedBadge}${errBadge}${esc(w.domain)} ${nbLink}</td>
+        <td class="muted">${esc(kw)}</td>
+        <td>${esc(w.interval || 'manual')}</td>
+        <td class="muted">${esc(md)}</td>
+        <td class="muted">${esc(last)}</td>
+        <td>${delta}</td>
+        <td class="actions">
+          <button onclick="tickWatch('${esc(w.domain)}')">지금 실행</button>
+          <button onclick="pauseWatch('${esc(w.domain)}', ${!w.paused})">${w.paused ? '재개' : '일시정지'}</button>
+          <button class="danger" onclick="deleteWatch('${esc(w.domain)}')">삭제</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e){
+    tbody.innerHTML = `<tr><td colspan="7" class="center">로드 오류: ${e.message}</td></tr>`;
+  }
+}
+
+async function registerWatch(){
+  const domain = document.getElementById('wn-domain').value.trim();
+  const keywords = document.getElementById('wn-keywords').value.trim();
+  const channelsRaw = document.getElementById('wn-channels').value.trim();
+  const channels = _splitChannelInput(channelsRaw);
+  const interval = document.getElementById('wn-interval').value;
+  const vpk = parseInt(document.getElementById('wn-vpk').value || '10', 10);
+  const modes = Array.from(document.querySelectorAll('.wn-mode'))
+    .filter(el => el.checked).map(el => el.value);
+  if (!domain) return toast('도메인을 입력하세요');
+  if (!keywords && !channels.length) return toast('키워드 또는 채널 둘 중 하나는 필요합니다');
+  try {
+    const r = await fetch('/api/watches', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({domain, keywords, channels, modes, interval,
+                            videos_per_keyword: vpk}),
+    });
+    if (!r.ok){
+      const t = await r.text();
+      return toast(`등록 실패 ${r.status}: ${t.slice(0,120)}`);
+    }
+    const j = await r.json();
+    if (j.channel_errors){
+      toast(`✓ 등록 (일부 채널 인식 실패: ${j.channel_errors.length}개)`);
+    } else {
+      toast('✓ watch 등록됨');
+    }
+    document.getElementById('wn-domain').value = '';
+    document.getElementById('wn-keywords').value = '';
+    document.getElementById('wn-channels').value = '';
+    loadWatches();
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+async function tickWatch(domain){
+  try {
+    const r = await fetch(`/api/watches/${encodeURIComponent(domain)}/tick`,
+                          {method: 'POST'});
+    if (r.status === 202){
+      toast(`✓ ${domain} 실행 시작 (수 분 소요)`);
+      // Cohort dashboard reflects the inner research_batch progress.
+      try { cohPollOnce(); } catch(_){}
+      // Refresh the watches table after the tick completes
+      // (poll status table again every 3s while running).
+      const refresher = setInterval(loadWatches, 3000);
+      setTimeout(() => clearInterval(refresher), 5 * 60 * 1000);
+    } else {
+      const t = await r.text();
+      toast(`실패 ${r.status}: ${t.slice(0,120)}`);
+    }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+async function pauseWatch(domain, paused){
+  try {
+    const r = await fetch(`/api/watches/${encodeURIComponent(domain)}/pause`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({paused}),
+    });
+    if (r.ok){ toast(paused ? '일시정지' : '재개'); loadWatches(); }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+async function deleteWatch(domain){
+  if (!confirm(`watch '${domain}' 삭제할까요?`)) return;
+  try {
+    const r = await fetch(`/api/watches/${encodeURIComponent(domain)}`,
+                          {method: 'DELETE'});
+    if (r.ok){ toast('삭제됨'); loadWatches(); }
+  } catch(e){ toast('오류: ' + e.message); }
+}
+
+function toggleAllWatchSelect(on){
+  document.querySelectorAll('.wn-select').forEach(el => { el.checked = on; });
+}
+
+async function tickSelected(){
+  const selected = Array.from(document.querySelectorAll('.wn-select'))
+    .filter(el => el.checked)
+    .map(el => el.dataset.domain);
+  if (!selected.length){
+    return toast('체크된 도메인이 없습니다');
+  }
+  const btn = document.getElementById('watch-refresh-selected');
+  if (btn) { btn.disabled = true; btn.textContent = '실행 중…'; }
+  let started = 0, failed = 0;
+  // Fire sequentially — each /tick returns 202 immediately, so we don't
+  // wait for the full run to finish; we just stagger the kick-offs so
+  // research_batch instances don't all hammer YouTube on second 0.
+  for (const domain of selected){
+    try {
+      const r = await fetch(`/api/watches/${encodeURIComponent(domain)}/tick`,
+                            {method: 'POST'});
+      if (r.status === 202) started++;
+      else failed++;
+    } catch(_) { failed++; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '↻ 선택 업데이트'; }
+  toast(`✓ ${started}개 실행 시작${failed ? ` · ${failed}개 실패` : ''}`);
+  // Cohort dashboard reflects the inner pipeline progress.
+  try { cohPollOnce(); } catch(_){}
+  // Refresh the watches table while ticks are running.
+  const refresher = setInterval(loadWatches, 3000);
+  setTimeout(() => clearInterval(refresher), 5 * 60 * 1000);
+}
+
 async function runQuery(){
   const q = document.getElementById('query').value.trim();
   const c = document.getElementById('count').value || '5';
   const btn = document.getElementById('run-btn');
-  if (!q) return toast('검색어를 입력하세요');
+  // Either keyword OR (one or more) channels is required. Channel-only
+  // mode pulls the latest videos from those channels (still dedup-aware).
+  const channelRaw = (document.getElementById('channel-id')?.value || '').trim();
+  const hasChannel = _splitChannelInput(channelRaw).length > 0;
+  if (!q && !hasChannel) return toast('검색어 또는 채널 둘 중 하나는 필요합니다');
+  if (isLocalMode){
+    if (!localKeyState.has_youtube || !_hasAnyLLM()){
+      showWizard();
+      return toast('API 키부터 등록하세요');
+    }
+    return runQueryLocal(q, c);
+  }
   if (!token()) { document.getElementById('settings').open = true; return toast('토큰부터 설정'); }
   if (__lastActiveGARun){
     if (!confirm(`이미 실행 중인 run이 있습니다 (${__lastActiveGARun.display_title || ''}).\n`+
@@ -812,39 +1603,64 @@ function announceCompletion(run){
 }
 
 async function loadLatest(){
-  const r = await gh('/contents/data_store');
   const host = document.getElementById('records');
   const kpi = document.getElementById('kpi');
 
-  if (!r.ok){
-    host.innerHTML = r.status===404
-      ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
-      : '<div class="empty">data_store/ 조회 실패</div>';
-    return;
-  }
-  const dirs = await r.json();
-  if (!Array.isArray(dirs) || !dirs.length){
-    host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
-  }
-  dirs.sort((a,b)=>b.name.localeCompare(a.name));
-  const r2 = await gh(`/contents/${dirs[0].path}`);
-  if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
-  const files = await r2.json();
-  const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
-
-  const records = await Promise.all(recent.map(async f => {
-    const cr = await gh(`/contents/${f.path}`);
-    if (!cr.ok) return null;
-    const cb = await cr.json();
+  // Local mode: read from the local server's /api/records — much faster
+  // than the GitHub Contents API and works for the user's own runs that
+  // are not yet pushed.
+  let valid = [];
+  let totalFiles = 0;
+  if (isLocalMode){
     try {
-      const raw = atob(cb.content.replace(/\n/g,''));
-      const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
-      const text = new TextDecoder('utf-8').decode(bytes);
-      return JSON.parse(text);
-    } catch(e){ return null; }
-  }));
+      const r = await fetch('/api/records?limit=50', {cache: 'no-store'});
+      if (!r.ok){
+        host.innerHTML = '<div class="empty">/api/records 조회 실패 ('+r.status+')</div>';
+        return;
+      }
+      const body = await r.json();
+      valid = (body.records || []).filter(Boolean);
+      totalFiles = body.total_files || valid.length;
+    } catch(e){
+      host.innerHTML = '<div class="empty">로컬 records 로드 실패: '+e.message+'</div>';
+      return;
+    }
+  } else {
+    const r = await gh('/contents/data_store');
+    if (!r.ok){
+      host.innerHTML = r.status===404
+        ? '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>'
+        : '<div class="empty">data_store/ 조회 실패</div>';
+      return;
+    }
+    const dirs = await r.json();
+    if (!Array.isArray(dirs) || !dirs.length){
+      host.innerHTML = '<div class="empty">아직 레코드가 없습니다</div>'; return;
+    }
+    dirs.sort((a,b)=>b.name.localeCompare(a.name));
+    const r2 = await gh(`/contents/${dirs[0].path}`);
+    if (!r2.ok){ host.innerHTML='<div class="empty">월별 조회 실패</div>'; return; }
+    const files = await r2.json();
+    totalFiles = files.length;
+    const recent = files.sort((a,b)=>b.name.localeCompare(a.name)).slice(0,5);
 
-  const valid = records.filter(Boolean);
+    const records = await Promise.all(recent.map(async f => {
+      const cr = await gh(`/contents/${f.path}`);
+      if (!cr.ok) return null;
+      const cb = await cr.json();
+      try {
+        const raw = atob(cb.content.replace(/\n/g,''));
+        const bytes = new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
+        const text = new TextDecoder('utf-8').decode(bytes);
+        return JSON.parse(text);
+      } catch(e){ return null; }
+    }));
+    valid = records.filter(Boolean);
+  }
+
+  if (!valid.length){
+    host.innerHTML = '<div class="empty">아직 데이터가 없습니다 — 위에서 실행해보세요</div>';
+  }
 
   // detect newly-seen source_keys (NEW badge)
   const freshKeys = new Set();
@@ -876,7 +1692,7 @@ async function loadLatest(){
 
   const promoted = valid.filter(p=>p.record_status==='promoted').length;
   const cost = valid.reduce((s,p)=>s + (p.llm_context?.cost_usd||0), 0);
-  kpi.children[0].querySelector('.value').textContent = files.length;
+  kpi.children[0].querySelector('.value').textContent = totalFiles;
   kpi.children[1].querySelector('.value').textContent = promoted;
   kpi.children[2].querySelector('.value').textContent = '$'+cost.toFixed(4);
   kpi.children[3].querySelector('.value').textContent = fmtTime(valid[0]?.collected_at||'');
@@ -891,6 +1707,12 @@ async function loadLatest(){
   renderStackBar('chart-fail',   'legend-fail',
                  countBy(valid.filter(p=>p.failure_reason_code), 'failure_reason_code'),
                  FAIL_COLORS);
+  renderStackBar('chart-ctype',   'legend-ctype',
+                 countBy(valid.filter(p=>p.content_type), 'content_type'),
+                 CTYPE_COLORS);
+  renderStackBar('chart-llmconf', 'legend-llmconf',
+                 countBy(valid.filter(p=>p.llm_confidence), 'llm_confidence'),
+                 LLM_CONF_COLORS);
 
   // Knowledge cards (final product) — respects current search
   applySearchAndRender();
@@ -926,11 +1748,13 @@ function renderRecordsList(valid){
   }
   // Maintain NEW badges + modal open behaviour from earlier render
   host.innerHTML = valid.slice(0, 10).map(p => {
+    const ctype = (p.content_type || '').toLowerCase();
+    const ctLabel = ctype && CTYPE_LABEL[ctype] ? CTYPE_LABEL[ctype] : '';
     return `
       <div class="rec-item" onclick="openModal('${encodeURIComponent(p.source_key)}')">
         <div class="head">
           <span>${p.source_key || '?'}</span>
-          <span>${p.record_status || '?'} · ${p.confidence || '?'}</span>
+          <span>${p.record_status || '?'} · ${p.confidence || '?'}${ctLabel ? ' · '+ctLabel : ''}</span>
         </div>
         <div class="title-line">${escapeHtml((p.title||'').slice(0,80) || '(제목 없음)')}</div>
         <div class="summary">${escapeHtml((p.summary||'').slice(0,140))}${(p.summary||'').length>140?'…':''}</div>
@@ -1003,11 +1827,24 @@ function renderKnowledge(valid){
   host.innerHTML = bannerHtml + pool.slice(0, 3).map(p => {
     const vid = p.video_id || '';
     const sk  = p.source_key || '';
-    const vaultName = sk.replace(':', '__') + '.md';
+    const vaultName = vaultFilename(p);
     const conf = p.confidence || 'unverified';
     const tags = (p.tags || []).map(t => `<span class="ktag">#${t}</span>`).join('');
     const rules = (p.rules || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
     const isPromoted = p.record_status === 'promoted';
+    // v2 sections
+    const knowledge = (p.knowledge || []).map(k => `<li>${escapeHtml(k)}</li>`).join('');
+    const examples  = (p.examples  || []).map(e => `<li>${escapeHtml(e)}</li>`).join('');
+    const claims    = (p.claims    || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+    const unclear   = (p.unclear   || []).map(u => `<li>${escapeHtml(u)}</li>`).join('');
+    const ctype = (p.content_type || '').toLowerCase();
+    const llmConf = (p.llm_confidence || '').toLowerCase();
+    const ctypeBadge = ctype && CTYPE_LABEL[ctype]
+      ? `<span class="kbadge" style="background:${CTYPE_COLORS[ctype]||'#94a3b8'}22;color:${CTYPE_COLORS[ctype]||'#475569'}">${CTYPE_LABEL[ctype]}</span>`
+      : '';
+    const llmConfBadge = llmConf
+      ? `<span class="kbadge" style="background:${LLM_CONF_COLORS[llmConf]||'#94a3b8'}22;color:${LLM_CONF_COLORS[llmConf]||'#475569'}">LLM ${llmConf}</span>`
+      : '';
     const failRow = p.failure_reason_code
       ? `<div class="ksection">실패 사유</div>
          <div class="ksummary" style="background:var(--err-bg);color:var(--err)">
@@ -1015,16 +1852,25 @@ function renderKnowledge(valid){
            ${p.failure_reason_detail ? '<br>'+escapeHtml(String(p.failure_reason_detail).slice(0,200)) : ''}
          </div>`
       : '';
-    // Obsidian / JSON links only make sense for promoted records
+    // Obsidian / JSON links only make sense for promoted records.
+    // Local mode: resolve to the local HTTP server so files open even without git.
+    const vaultHref = isLocalMode
+      ? `/vault/strategies/${vaultName}`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
+    const jsonHref = isLocalMode
+      ? `/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`
+      : `https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json`;
     const promotedLinks = isPromoted
-      ? `<a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Obsidian Markdown</a>
-         <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/data_store/${(p.collected_at||'').slice(0,7).replace('-','')}/${sk.replace(':', '__')}.json" target="_blank">📦 원본 JSON</a>`
+      ? `<a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Obsidian Markdown</a>
+         <a class="link-btn" href="${jsonHref}" ${isLocalMode ? '' : 'target="_blank"'}>📦 원본 JSON</a>`
       : '';
     return `
       <div class="know-card">
         <div class="kh">
           <div class="ktitle">${escapeHtml(p.title || sk || '(제목 없음)')}</div>
           <div class="kbadge ${conf}">${p.record_status || conf}</div>
+          ${ctypeBadge}
+          ${llmConfBadge}
         </div>
         <div class="kmeta">
           <span>📺 ${sk}</span>
@@ -1034,8 +1880,11 @@ function renderKnowledge(valid){
         ${failRow}
         <div class="ksection">요약</div>
         <div class="ksummary">${escapeHtml(p.summary || '(아직 요약 없음 — 이 영상은 ' + (p.failure_reason_code ? p.failure_reason_code + ' 단계에서 중단됨' : '처리 중') + ')')}</div>
-        <div class="ksection">규칙 (${(p.rules||[]).length})</div>
-        <ol class="krules">${rules || '<li style="color:var(--text-dim)">아직 추출 안 됨</li>'}</ol>
+        ${knowledge ? `<div class="ksection">핵심 개념 (${(p.knowledge||[]).length})</div><ol class="krules">${knowledge}</ol>` : ''}
+        ${rules ? `<div class="ksection">행동 지침 (${(p.rules||[]).length})</div><ol class="krules">${rules}</ol>` : ''}
+        ${examples ? `<div class="ksection">사례 (${(p.examples||[]).length})</div><ol class="krules">${examples}</ol>` : ''}
+        ${claims ? `<div class="ksection">화자의 주장 (${(p.claims||[]).length})</div><ol class="krules">${claims}</ol>` : ''}
+        ${unclear ? `<div class="ksection">불명확 (${(p.unclear||[]).length})</div><ol class="krules">${unclear}</ol>` : ''}
         ${tags ? `<div class="ksection">태그</div><div class="ktags">${tags}</div>` : ''}
         <div class="kactions">
           <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube 원본</a>
@@ -1059,6 +1908,19 @@ const STATUS_COLORS = {
 const CONF_COLORS = {
   'confirmed': '#16a34a', 'inferred': '#eab308',
   'unverified': '#94a3b8', 'rejected': '#dc2626',
+};
+// extract_generic_v2 metas
+const CTYPE_COLORS = {
+  'concept': '#2563eb', 'howto': '#16a34a', 'case': '#0891b2',
+  'opinion': '#7c3aed', 'mixed': '#94a3b8',
+  'ad': '#dc2626', 'chat': '#9ca3af',
+};
+const LLM_CONF_COLORS = {
+  'high': '#16a34a', 'medium': '#eab308', 'low': '#dc2626',
+};
+const CTYPE_LABEL = {
+  'concept': '📘 개념', 'howto': '🎯 행동', 'case': '📋 사례',
+  'opinion': '💬 주장', 'mixed': '🧩 혼합', 'ad': '🚫 광고', 'chat': '💭 잡담',
 };
 
 function countBy(items, key){
@@ -1117,6 +1979,280 @@ function updatePipelineDiagram(valid){
 
 const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
 
+function resetPipelineDiagram(){
+  // Wipe every stage card back to the '대기' (idle) look. Called on
+  // (a) initial dashboard load — so a refresh after a finished run
+  //     doesn't show the previous progress as if it were live, and
+  // (b) the moment the user clicks 실행 — so a new run replaces the
+  //     last one's badges immediately instead of after the first poll.
+  for (const st of STAGE_ORDER){
+    const node = document.querySelector(`.stage[data-stage="${st}"]`);
+    if (!node) continue;
+    node.className = 'stage';
+    const c = node.querySelector('.stage-count'); if (c) c.textContent = '—';
+    const s = node.querySelector('.stage-sub');   if (s) s.textContent = '대기';
+    const bar = node.querySelector('.stage-bar i');
+    if (bar){ bar.style.width = '0%'; bar.classList.remove('shimmer'); }
+  }
+  for (const st of STAGE_ORDER){
+    const a = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
+    if (a) a.className = 'stage-arrow';
+  }
+  const lbl = document.getElementById('run-label');
+  if (lbl) lbl.innerHTML = '<span>최근 run: —</span>';
+}
+
+// ====== 코호트 진행 대시보드 (events.jsonl deterministic replay) ======
+// 결정론적 replay — 같은 events 입력이면 항상 같은 snapshot.
+// 단조 증가 보장: ✓ ✗ 카운트는 절대 감소하지 않음.
+const COH_STAGES = ['discover','collect','extract','normalize','review','promote','package'];
+const COH_REASON_KO = {
+  HTTP_429:'API 한도 초과',
+  HTTP_5XX:'서버 일시 오류',
+  YT_NO_TRANSCRIPT:'자막 없음',
+  YT_SHORTS_DROP:'쇼츠 제외',
+  YT_STREAM_DROP:'장시간 라이브 제외',
+  LLM_HTTP_400:'LLM 요청 거부',
+  LLM_HTTP_401:'LLM 인증 실패',
+  LLM_HTTP_403:'LLM 차단',
+  LLM_HTTP_413:'LLM 입력 초과',
+  LLM_HTTP_429:'LLM 한도 초과',
+  llm_low:'AI 점수 미달',
+  schema_invalid:'포맷 오류',
+  no_caption:'자막 없음',
+  search_short:'검색결과 부족',
+  network_timeout:'네트워크 타임아웃',
+  unknown:'원인 불명',
+};
+const cohReasonKo = (code) => COH_REASON_KO[code] || code;
+
+let __cohRunEpoch = 0;
+let __cohLastRunId = null;
+
+function cohEmptySnapshot(N){
+  return {
+    cards: COH_STAGES.map(s => ({stage:s, completed:0, in_flight:0, failed:0, reasons:{}})),
+    finished:0, totalInFlight:0, totalFailed:0, sumCheck:0,
+    invariantOk: (N === 0 || N === null),
+  };
+}
+
+function cohReplay(events, runId, requestedN){
+  if (!runId) return cohEmptySnapshot(requestedN);
+  // video_id → {stage → {status, reason}} (last event wins)
+  const map = new Map();
+  for (const ev of events){
+    if (ev.run_id !== runId) continue;
+    const eid = ev.entity_id || '';
+    if (!eid.includes(':')) continue;
+    const [videoId, stage] = eid.split(':');
+    const st = (stage || '').toLowerCase();
+    if (!COH_STAGES.includes(st)) continue;
+    if (!map.has(videoId)) map.set(videoId, {});
+    map.get(videoId)[st] = {status: ev.to_status, reason: ev.reason};
+  }
+  // Aggregate per stage
+  const buckets = {};
+  for (const s of COH_STAGES) buckets[s] = {in_flight:0, failed:0, reasons:{}};
+  let finished = 0;
+  for (const [, stages] of map){
+    let lastIdx = -1, lastStatus = null, lastReason = null;
+    for (let i = 0; i < COH_STAGES.length; i++){
+      if (stages[COH_STAGES[i]]){
+        lastIdx = i;
+        lastStatus = stages[COH_STAGES[i]].status;
+        lastReason = stages[COH_STAGES[i]].reason;
+      }
+    }
+    if (lastIdx === -1) continue;
+    if (lastStatus === 'failed'){
+      buckets[COH_STAGES[lastIdx]].failed += 1;
+      const r = lastReason || 'unknown';
+      buckets[COH_STAGES[lastIdx]].reasons[r] = (buckets[COH_STAGES[lastIdx]].reasons[r] || 0) + 1;
+    } else if (lastStatus === 'started'){
+      buckets[COH_STAGES[lastIdx]].in_flight += 1;
+    } else if (lastStatus === 'completed' || lastStatus === 'skipped'){
+      if (lastIdx === COH_STAGES.length - 1){
+        finished += 1;
+      } else {
+        buckets[COH_STAGES[lastIdx + 1]].in_flight += 1;
+      }
+    }
+  }
+  // Card.completed = sum of in_flight + failed in subsequent stages + finished
+  const cards = COH_STAGES.map(() => null);
+  let cum = finished;
+  for (let i = COH_STAGES.length - 1; i >= 0; i--){
+    cards[i] = {
+      stage: COH_STAGES[i],
+      completed: cum,
+      in_flight: buckets[COH_STAGES[i]].in_flight,
+      failed:    buckets[COH_STAGES[i]].failed,
+      reasons:   buckets[COH_STAGES[i]].reasons,
+    };
+    cum += buckets[COH_STAGES[i]].in_flight + buckets[COH_STAGES[i]].failed;
+  }
+  const totalInFlight = COH_STAGES.reduce((a,s) => a + buckets[s].in_flight, 0);
+  const totalFailed   = COH_STAGES.reduce((a,s) => a + buckets[s].failed, 0);
+  const sumCheck = finished + totalInFlight + totalFailed;
+  return {
+    cards, finished, totalInFlight, totalFailed, sumCheck,
+    invariantOk: (requestedN === null || sumCheck === requestedN),
+  };
+}
+
+function cohRenderCard(card){
+  const total = card.completed + card.in_flight + card.failed;
+  const compPct = total ? (card.completed/total)*100 : 0;
+  const inflPct = total ? (card.in_flight/total)*100 : 0;
+  const failPct = total ? (card.failed/total)*100 : 0;
+  let cls = 'coh-card';
+  if (card.failed > 0)      cls += ' has-fail';
+  else if (card.in_flight)  cls += ' has-flight';
+  else if (card.completed)  cls += ' has-pass';
+  const reasons = Object.entries(card.reasons).sort((a,b) => b[1]-a[1]);
+  const reasonHtml = reasons.length
+    ? `<div class="coh-reasons">${reasons.map(([code,n]) =>
+         `<div><span class="code" title="${code}">${cohReasonKo(code)}</span><span class="cnt">×${n}</span></div>`
+       ).join('')}</div>`
+    : '';
+  return `<div class="${cls}" data-stage="${card.stage}">
+    <div class="coh-strip"></div>
+    <div class="coh-body">
+      <div class="coh-stage-label">${card.stage.toUpperCase()}</div>
+      <div class="coh-counts">
+        <span class="pass">${card.completed}</span>
+        <span class="sep">·</span>
+        <span class="flight ${card.in_flight ? '' : 'zero'}">${card.in_flight}</span>
+        <span class="sep">·</span>
+        <span class="fail ${card.failed ? '' : 'zero'}">${card.failed}</span>
+      </div>
+      <div class="coh-bar">
+        <i class="b-pass"   style="width:${compPct}%"></i>
+        <i class="b-flight" style="width:${inflPct}%"></i>
+        <i class="b-fail"   style="width:${failPct}%"></i>
+      </div>
+      ${reasonHtml}
+    </div>
+  </div>`;
+}
+
+function cohRender(snapshot, runId, requestedN){
+  const grid = document.getElementById('cohort-stages');
+  if (grid) grid.innerHTML = snapshot.cards.map(cohRenderCard).join('');
+  document.getElementById('coh-N').textContent = (requestedN ?? '—');
+  document.getElementById('coh-flight').textContent = snapshot.totalInFlight;
+  document.getElementById('coh-done').textContent = snapshot.finished;
+  document.getElementById('coh-drop').textContent = snapshot.totalFailed;
+  // Show the run id AND a heartbeat so the user can confirm the
+  // dashboard is actually polling (was the #1 complaint: cards looked
+  // frozen even though backend was working).
+  const now = new Date();
+  const hb = now.toLocaleTimeString('ko-KR', {hour12: false});
+  document.getElementById('coh-runid').textContent =
+    `run_id: ${runId || '—'} · 갱신 ${hb}`;
+  const inv = document.getElementById('coh-invariant');
+  if (inv){
+    inv.classList.toggle('bad', !snapshot.invariantOk);
+    const ok = snapshot.invariantOk ? '✓' : '✗ INVARIANT 위배';
+    inv.innerHTML = `검산 <b>${requestedN ?? '—'}</b> = `
+      + `<span class="emerald">${snapshot.finished}</span> (완료) + `
+      + `<span class="rose">${snapshot.totalFailed}</span> (드랍) + `
+      + `<span class="amber">${snapshot.totalInFlight}</span> (진행중) = `
+      + `<b>${snapshot.sumCheck}</b> ${ok}`;
+  }
+}
+
+async function cohPollOnce(){
+  // 1. /api/run/status — get requested_count + check for new run.
+  // Note: /api/run/status returns an `api_xxx` id from the HTTP layer,
+  // but events.jsonl is keyed by `run_xxx` (the collector pipeline id).
+  // We use events' run_id for replay because that's where the real
+  // stage events live. The api id only drives requested_count display.
+  let runState = null;
+  try {
+    const r = await fetch('/api/run/status', {cache:'no-store'});
+    if (r.ok) runState = await r.json();
+  } catch(_){}
+  const requestedN = runState ? runState.requested_count ?? null : null;
+  // 2. /api/events — fetch raw events for the run (default = latest run)
+  let events = [], serverRunId = null;
+  try {
+    const r = await fetch('/api/events', {cache:'no-store'});
+    if (r.ok){
+      const j = await r.json();
+      events = j.events || [];
+      serverRunId = j.run_id || null;
+    }
+  } catch(_){}
+  // Source of truth = serverRunId (from events.jsonl). Fall back to
+  // runState only when no events exist yet (very fresh run before
+  // run_query emits its first event).
+  const runId = serverRunId || (runState && runState.run_id) || null;
+  // Detect new run → fade out + reset visually before drawing fresh data.
+  if (runId && runId !== __cohLastRunId){
+    if (__cohLastRunId !== null){
+      const grid = document.getElementById('cohort-stages');
+      const banner = document.getElementById('cohort-banner');
+      if (grid) grid.classList.add('resetting');
+      if (banner) banner.classList.add('resetting');
+      cohRender(cohEmptySnapshot(requestedN), runId, requestedN);
+      setTimeout(() => {
+        if (grid) grid.classList.remove('resetting');
+        if (banner) banner.classList.remove('resetting');
+      }, 450);
+    }
+    __cohLastRunId = runId;
+    __cohRunEpoch++;
+  }
+  const snap = cohReplay(events, runId, requestedN);
+  cohRender(snap, runId, requestedN);
+}
+
+// Replaced — old funnel banner is no longer rendered; cohPollOnce
+// drives the whole banner+stage view through deterministic replay.
+function updateFunnelBanner(runState, detail){
+  const host = document.getElementById('funnel');
+  if (!host) return;
+  if (!runState || (runState.status !== 'running' && runState.status !== 'completed' && runState.status !== 'failed')){
+    host.style.display = 'none';
+    return;
+  }
+  const req = runState.requested_count;
+  const ps  = (detail && detail.per_stage) || {};
+  const get = (st, k) => (ps[st] || {})[k] || 0;
+
+  // Cap intermediate counts at requested N — internally we oversample
+  // (×3) for dedup, but the user shouldn't see numbers larger than
+  // what they asked for.
+  const capN = (n) => (req && n > req) ? req : n;
+  const collect = capN(get('collect', 'completed'));
+  const extract = capN(get('extract', 'completed'));
+  const promote = capN(get('promote', 'completed'));
+
+  // Sum failure counts across all stages, grouped by reason.
+  const allFails = {};
+  for (const st of STAGE_ORDER){
+    const fr = (ps[st] || {}).failure_reasons || {};
+    for (const [code, n] of Object.entries(fr)){
+      allFails[code] = (allFails[code] || 0) + n;
+    }
+  }
+  const failsArr = Object.entries(allFails).sort((a,b)=>b[1]-a[1]);
+
+  // Anchor every funnel value to the requested N. "발견" line removed
+  // because the upstream search returns 3× oversample which used to
+  // confuse the count.
+  let txt = '';
+  if (req !== null && req !== undefined) txt += `📥 요청 <b>${req}</b> · `;
+  txt += `📝 자막 <b>${collect}</b> · 🤖 추출 <b>${extract}</b> · ✅ 최종 <b>${promote}</b>`;
+  if (failsArr.length){
+    txt += '<br>⚠️ 실패: ' + failsArr.map(([c,n]) => `${c}×${n}`).join(' · ');
+  }
+  host.innerHTML = '<span id="funnel-text">' + txt + '</span>';
+  host.style.display = '';
+}
+
 function updatePipelineFromStatus(detail, activeGARun){
   if (!detail || !detail.per_stage) return;
   const runLabel = document.getElementById('run-label');
@@ -1161,7 +2297,13 @@ function updatePipelineFromStatus(detail, activeGARun){
       if (failed > 0)     parts.push(`✗${failed}`);
       if (completed > 0 && failed === 0 && inProgress === 0) parts.push('✓');
       subText = parts.length ? parts.join(' · ') : (completed > 0 ? '✓' : '—');
-      if (info.reason && failed > 0) {
+      // Per-failure-type breakdown — give the user a real-time count
+      // of WHY things failed at this stage (HTTP_429, no_caption, etc.)
+      const fr = info.failure_reasons || {};
+      const top = Object.entries(fr).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      if (top.length) {
+        subText += ' · ' + top.map(([code, n]) => `${code}×${n}`).join(' ');
+      } else if (info.reason && failed > 0) {
         subText += ` · ${info.reason}`;
       }
     }
@@ -1252,25 +2394,41 @@ function openModal(encodedSk){
   const p = window.__recordsBySk?.[sk];
   if (!p) return;
   const vid = p.video_id || '';
-  const vaultName = sk.replace(':', '__') + '.md';
+  const vaultName = vaultFilename(p);
   const body = document.getElementById('modal-body');
+  const ctype = (p.content_type || '').toLowerCase();
+  const llmConf = (p.llm_confidence || '').toLowerCase();
+  const metaBits = [
+    `<span>${sk}</span>`,
+    `<span>${p.record_status} · ${p.confidence}</span>`,
+    `<span>${fmtTime(p.collected_at||'')}</span>`,
+    ctype && CTYPE_LABEL[ctype] ? `<span>${CTYPE_LABEL[ctype]}</span>` : '',
+    llmConf ? `<span>LLM: ${llmConf}</span>` : '',
+  ].filter(Boolean).join('');
+  function _list(label, arr){
+    if (!arr || !arr.length) return '';
+    return `<div class="sec-title">${label} (${arr.length})</div>` +
+           `<ol>${arr.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ol>`;
+  }
+  const vaultHref = isLocalMode
+    ? `/vault/strategies/${vaultName}`
+    : `https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}`;
   body.innerHTML = `
-    <h3>${p.title || '(제목 없음)'}</h3>
-    <div class="meta">
-      <span>${sk}</span>
-      <span>${p.record_status} · ${p.confidence}</span>
-      <span>${fmtTime(p.collected_at||'')}</span>
-    </div>
+    <h3>${escapeHtml(p.title || '(제목 없음)')}</h3>
+    <div class="meta">${metaBits}</div>
     <div class="sec-title">요약</div>
-    <div class="summary">${p.summary || '(없음)'}</div>
-    <div class="sec-title">규칙 (${(p.rules||[]).length})</div>
-    <ol>${(p.rules||[]).map(r=>`<li>${r}</li>`).join('') || '<li>(없음)</li>'}</ol>
+    <div class="summary">${escapeHtml(p.summary || '(없음)')}</div>
+    ${_list('핵심 개념', p.knowledge)}
+    ${_list('행동 지침', p.rules)}
+    ${_list('사례', p.examples)}
+    ${_list('화자의 주장', p.claims)}
+    ${_list('불명확', p.unclear)}
     <div class="sec-title">태그</div>
-    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
+    <div class="tag-list">${(p.tags||[]).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('') || '<span class="tag">(없음)</span>'}</div>
     <div class="close-row">
       <div class="links-row" style="margin:0">
         <a class="link-btn" href="https://www.youtube.com/watch?v=${vid}" target="_blank">▶ YouTube</a>
-        <a class="link-btn" href="https://github.com/${OWNER}/${REPO}/blob/main/vault/strategies/${vaultName}" target="_blank">📝 Markdown</a>
+        <a class="link-btn" href="${vaultHref}" ${isLocalMode ? '' : 'target="_blank"'}>📝 Markdown</a>
       </div>
       <button class="ghost" onclick="closeModal()">닫기</button>
     </div>
@@ -1454,12 +2612,17 @@ function updateRunBusyBanner(activeRun){
 async function loadOpStrip(){
   // Public URL, no PAT required — committed to main by the workflow.
   // Try two sources to bypass CDN/proxy 403: absolute jsDelivr → relative → raw.githubusercontent.
+  // In local mode the local server's /status.json is authoritative (the
+  // background worker rewrites it after each run); falling back to CDN
+  // would surface a stale main-branch snapshot and mislead the dashboard.
   const host = document.getElementById('op-strip');
-  const urls = [
-    `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
-    `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
-    `status.json?t=${Date.now()}`,
-  ];
+  const urls = isLocalMode
+    ? [`status.json?t=${Date.now()}`]
+    : [
+        `https://cdn.jsdelivr.net/gh/${OWNER}/${REPO}@main/docs/status.json?t=${Date.now()}`,
+        `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/docs/status.json?t=${Date.now()}`,
+        `status.json?t=${Date.now()}`,
+      ];
   try {
     let s = null;
     for (const u of urls){
@@ -1519,17 +2682,95 @@ async function loadOpStrip(){
       chips.push(`<span class="op-chip">📚 <span class="label">총:</span> <span class="val">${s.records.total}</span></span>`);
       chips.push(`<span class="op-chip">✅ <span class="label">Promoted:</span> <span class="val">${s.records.promoted}</span></span>`);
     }
-    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at?.replace('T',' ').slice(0,16) || '?'}</span>`);
+    chips.push(`<span class="muted" style="margin-left:auto;font-size:11px">업데이트 ${s.updated_at ? fmtTime(s.updated_at) : '?'}</span>`);
     host.innerHTML = chips.join('');
   } catch(e){
     host.innerHTML = '<span class="muted">운영 상태 로드 실패</span>';
   }
 }
 
+async function bootstrapLocalMode(){
+  // Badge
+  const badge = document.getElementById('mode-badge');
+  if (badge){
+    badge.style.display = 'inline-flex';
+    badge.className = 'pill ' + (isLocalMode ? 'ok' : 'run');
+    badge.textContent = isLocalMode ? '🏠 로컬 모드' : '☁ 클라우드 모드';
+    badge.title = isLocalMode
+      ? 'collector app 로컬 서버에 연결됨 — YouTube 접근에 사용자 IP 사용'
+      : 'GitHub Pages / 클라우드 API 사용 중';
+  }
+  const runDesc = document.getElementById('run-desc');
+  if (runDesc){
+    runDesc.innerHTML = isLocalMode
+      ? '이 PC에서 파이프라인이 돌아갑니다. YouTube 자막은 사용자 IP로 가져옵니다. ' +
+        '<a href="#" onclick="document.getElementById(\'local-settings\').open=true;return false;">API 키 설정</a>'
+      : 'GitHub Actions에서 파이프라인이 돌아갑니다. 약 1~2분 소요. ' +
+        '최초 1회만 <a href="#" onclick="document.getElementById(\'settings\').open=true;return false;">토큰 설정</a>이 필요합니다.';
+  }
+  // Workflow card is local-mode only (POSTs to /api/workflow).
+  const wfCard = document.getElementById('wf-card');
+  if (wfCard) wfCard.style.display = isLocalMode ? '' : 'none';
+  // Watches grid is local-mode only.
+  const watchCard = document.getElementById('watch-card');
+  if (watchCard) watchCard.style.display = isLocalMode ? '' : 'none';
+
+  // Show appropriate settings section
+  const localSettings = document.getElementById('local-settings');
+  const cloudSettings = document.getElementById('settings');
+  if (isLocalMode){
+    if (localSettings) localSettings.style.display = '';
+    if (cloudSettings) cloudSettings.style.display = 'none';
+    const st = await fetchKeyState();
+    if (st) localKeyState = st;
+    renderLocalKeyStatus();
+    const ready = localKeyState.has_youtube && _hasAnyLLM();
+    if (!ready && !sessionStorage.getItem('wizard_dismissed')){
+      showWizard();
+    }
+  } else {
+    if (localSettings) localSettings.style.display = 'none';
+    if (cloudSettings) cloudSettings.style.display = '';
+  }
+}
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {/* non-fatal */});
+  });
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
-  document.getElementById('pat').value = token();
-  updateConn(); loadLatest(); loadRuns(); loadOpStrip();
-  setInterval(loadRuns, 10000);
+  const pat = document.getElementById('pat');
+  if (pat) pat.value = token();
+  bootstrapLocalMode();
+  updateConn(); loadLatest();
+  // Render whatever the latest run looks like on page load — even
+  // if no run is in flight, the user sees the previous outcome
+  // instead of an empty pipeline.
+  try { cohPollOnce(); } catch (_) {}
+  // Cohort dashboard global poller — fires every 3s in local mode so
+  // ANY active worker (run/workflow/watch tick) is reflected without
+  // each call site having to wire its own polling. Tiny network cost
+  // (events.jsonl read) and fixes the "stale forever after click"
+  // complaint.
+  if (isLocalMode){
+    setInterval(() => { try { cohPollOnce(); } catch (_) {} }, 3000);
+  }
+  // Watches grid: load now + refresh every 30s.
+  if (isLocalMode){
+    loadWatches();
+    setInterval(loadWatches, 30000);
+  }
+  if (!isLocalMode){
+    loadRuns();
+    setInterval(loadRuns, 10000);
+  } else {
+    // Local mode: runs come from /api/run/status; hide GH runs list.
+    const runsHost = document.getElementById('runs');
+    if (runsHost) runsHost.innerHTML = '<div class="empty">로컬 모드: /api/run/status 로 진행 상태 표시</div>';
+  }
+  loadOpStrip();
   setInterval(loadLatest, 60000);
   setInterval(loadOpStrip, 30000);  // refresh every 30s
   document.getElementById('query').addEventListener('keydown', e=>{

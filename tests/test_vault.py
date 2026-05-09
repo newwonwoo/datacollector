@@ -36,7 +36,9 @@ def test_render_note_contains_frontmatter_and_sections():
     assert "source_key: youtube:VAULT001" in md
     assert "tags: [단타, 돌파매매]" in md
     assert "## 요약" in md
-    assert "## 규칙" in md
+    # v2 renames the rules section to "행동 지침" when rules are populated;
+    # legacy "## 규칙" only appears when every substance field is empty.
+    assert ("## 행동 지침" in md) or ("## 규칙" in md)
     assert "[YouTube](https://www.youtube.com/watch?v=VAULT001)" in md
     assert "[[strategies-index]]" in md
 
@@ -53,7 +55,41 @@ def test_write_note_creates_markdown_file(tmp_path):
     out = write_note(_fixture(), tmp_path)
     assert out.exists()
     assert out.parent.name == "strategies"
-    assert out.name == "youtube__VAULT001.md"
+    # New scheme: filename starts with the title prefix, ends with __video_id.md
+    assert out.name == "단타_전략__VAULT001.md", out.name
+
+
+def test_write_note_sets_vault_filename_on_payload(tmp_path):
+    p = _fixture()
+    write_note(p, tmp_path)
+    assert p.get("vault_filename") == "단타_전략__VAULT001.md"
+
+
+def test_write_note_removes_legacy_source_key_filename(tmp_path):
+    """If a previous version of collector wrote the legacy
+    `youtube__VAULT001.md`, the new write should clean it up so the
+    vault doesn't show duplicates after upgrade."""
+    p = _fixture()
+    legacy = (tmp_path / "strategies"); legacy.mkdir(parents=True)
+    (legacy / "youtube__VAULT001.md").write_text("# old", encoding="utf-8")
+    write_note(p, tmp_path)
+    assert not (legacy / "youtube__VAULT001.md").exists()
+    assert (legacy / "단타_전략__VAULT001.md").exists()
+
+
+def test_vault_filename_sanitizes_os_illegal_chars():
+    from collector.vault import vault_filename
+    p = {"title": 'A/B:C"D|E', "video_id": "VID42"}
+    name = vault_filename(p)
+    assert name.endswith("__VID42.md")
+    for bad in '/:"|':
+        assert bad not in name
+
+
+def test_vault_filename_handles_empty_title():
+    from collector.vault import vault_filename
+    name = vault_filename({"title": "", "video_id": "ABC"})
+    assert name == "untitled__ABC.md"
 
 
 def test_regenerate_moc_builds_readme(tmp_path):
@@ -68,8 +104,9 @@ def test_regenerate_moc_builds_readme(tmp_path):
     assert readme.exists()
     body = readme.read_text(encoding="utf-8")
     assert "총 **2개** 노트" in body
-    assert "[[youtube__VAULT001]]" in body
-    assert "[[youtube__VAULT002]]" in body
+    # MOC links use the new title-prefixed filenames (sans .md ext).
+    assert "단타_전략__VAULT001" in body
+    assert "두_번째_노트__VAULT002" in body
 
 
 def test_pipeline_writes_vault_on_promote(tmp_path):
@@ -83,9 +120,10 @@ def test_pipeline_writes_vault_on_promote(tmp_path):
     )
     p = new_payload(video_id="VIDVAULT001", run_id="rv", title="Vault 통합 테스트")
     run_pipeline(p, services, store, logger, use_lock=False, vault_root=vault)
-    assert (vault / "strategies" / "youtube__VIDVAULT001.md").exists()
+    expected = vault / "strategies" / "Vault_통합_테스트__VIDVAULT001.md"
+    assert expected.exists(), f"missing {expected}"
     assert (vault / "README.md").exists()
-    assert "r1" in (vault / "strategies" / "youtube__VIDVAULT001.md").read_text(encoding="utf-8")
+    assert "r1" in expected.read_text(encoding="utf-8")
 
 
 def test_pipeline_skips_vault_when_disabled(tmp_path):
@@ -100,3 +138,51 @@ def test_pipeline_skips_vault_when_disabled(tmp_path):
     p = new_payload(video_id="NOVAULT0001", run_id="rv2")
     run_pipeline(p, services, store, logger, use_lock=False, vault_root=None)
     assert not vault.exists()
+
+
+def test_render_note_includes_notes_md_when_present():
+    """When the LLM emits a detailed markdown note, the vault file should
+    surface it under '## 상세 노트' so users browsing Obsidian see the
+    full knowledge-library content, not just summary + rules."""
+    from collector.payload import new_payload
+    from collector.vault import render_note
+
+    p = new_payload(video_id="VIDNOTE0001", run_id="rn", title="자세한 노트")
+    p["summary"] = "한 줄 요약"
+    p["rules"] = ["규칙 하나"]
+    p["tags"] = ["tag1"]
+    p["notes_md"] = "## 핵심\n- 항목 A\n- 항목 B\n\n## 인용\n> 화자의 말"
+
+    out = render_note(p)
+    assert "## 상세 노트" in out
+    assert "## 핵심" in out
+    assert "항목 A" in out
+    assert "화자의 말" in out
+
+
+def test_render_note_omits_notes_section_when_empty():
+    from collector.payload import new_payload
+    from collector.vault import render_note
+
+    p = new_payload(video_id="VIDNOTE0002", run_id="rn")
+    p["summary"] = "요약"
+    p["notes_md"] = ""
+    out = render_note(p)
+    assert "## 상세 노트" not in out
+
+
+def test_reduce_outputs_combines_notes_md():
+    """When a long transcript is chunked, each chunk's notes_md must end
+    up in the final reduced output — otherwise the knowledge-library
+    intent gets thrown away on long videos."""
+    from collector.chunking import reduce_outputs
+
+    chunk_outs = [
+        {"summary": "s1", "rules": ["r1"], "tags": ["t1"],
+         "notes_md": "## 1부\n첫 번째 청크"},
+        {"summary": "s2", "rules": ["r2"], "tags": ["t2"],
+         "notes_md": "## 2부\n두 번째 청크"},
+    ]
+    reduced = reduce_outputs(chunk_outs)
+    assert "1부" in reduced["notes_md"]
+    assert "2부" in reduced["notes_md"]

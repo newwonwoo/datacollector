@@ -124,6 +124,27 @@ def stage_collect(payload: dict, services: Services, logger: EventLogger) -> dic
     return payload
 
 
+def _smallest_chain_max_chars(services: Services) -> int | None:
+    """Return the smallest `max_chars_per_request` across the LLM chain
+    that backs services.llm_extract, or None if introspection isn't
+    possible (mock services, single bound method, etc.).
+
+    The chain is exposed by run.py's llm_extract closure as a `.adapters`
+    attribute (a list of adapter instances). Each adapter exposes
+    `max_chars_per_request`. Tests using bare lambdas pass through.
+    """
+    fn = getattr(services, "llm_extract", None)
+    adapters = getattr(fn, "adapters", None)
+    if not adapters:
+        return None
+    sizes = [
+        getattr(a, "max_chars_per_request", 0)
+        for a in adapters
+    ]
+    sizes = [s for s in sizes if s and s > 0]
+    return min(sizes) if sizes else None
+
+
 def _call_llm_once(payload: dict, services: Services, text: str, attempt: int) -> dict:
     out = services.llm_extract(text, attempt)
     if not isinstance(out, dict) or "summary" not in out or "rules" not in out:
@@ -135,8 +156,22 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
     _set_stage(payload, "extract", "started", logger)
     transcript = payload["transcript"]
 
-    # P4-1: long-transcript map-reduce
-    chunks = chunk(transcript) if should_chunk(transcript) else [transcript]
+    # P4-1: long-transcript map-reduce. Chunk size is driven by the
+    # smallest adapter in the chain (e.g., Groq llama-3.1-8b-instant has
+    # a 6k TPM cap → ~4500 chars/request). Falling back to the module
+    # default lets unit tests with mock services keep their existing
+    # large-chunk semantics.
+    chain_max = _smallest_chain_max_chars(services)
+    if chain_max:
+        threshold = chain_max
+        chunk_size = max(1_000, chain_max - 500)  # leave headroom for prompt
+        chunks = (
+            chunk(transcript, chunk_chars=chunk_size)
+            if should_chunk(transcript, threshold=threshold)
+            else [transcript]
+        )
+    else:
+        chunks = chunk(transcript) if should_chunk(transcript) else [transcript]
     reason_suffix = f"chunks_{len(chunks)}" if len(chunks) > 1 else "single"
 
     attempt = 0
@@ -148,9 +183,17 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
             else:
                 chunk_outs = [_call_llm_once(payload, services, c, attempt) for c in chunks]
                 out = reduce_outputs(chunk_outs)
-            payload["summary"] = out.get("summary", "")
-            payload["rules"] = list(out.get("rules", []))
-            payload["tags"] = list(out.get("tags", []))[:5]
+            payload["summary"]        = out.get("summary", "")
+            payload["rules"]          = list(out.get("rules", []))
+            payload["tags"]           = list(out.get("tags", []))[:5]
+            payload["notes_md"]       = out.get("notes_md", "")
+            # extract_generic_v2 fields (no-op when LLM returns v1 shape)
+            payload["content_type"]   = out.get("content_type", "")
+            payload["knowledge"]      = list(out.get("knowledge", []))
+            payload["examples"]       = list(out.get("examples", []))
+            payload["claims"]         = list(out.get("claims", []))
+            payload["unclear"]        = list(out.get("unclear", []))
+            payload["llm_confidence"] = out.get("llm_confidence", "")
             payload["llm_context"]["input_tokens"] = len(transcript)
             payload["llm_context"]["output_tokens"] = len(payload["summary"]) + sum(
                 len(r) for r in payload["rules"]
@@ -174,22 +217,66 @@ def stage_extract(payload: dict, services: Services, logger: EventLogger) -> dic
 
 def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "normalize", "started", logger)
+    # Defensive coercion: an upstream LLM/reduce step may have left a list
+    # where we expect a string (some models emit notes_md as ["…","…"]).
+    raw_notes = payload.get("notes_md") or ""
+    if isinstance(raw_notes, list):
+        raw_notes = "\n\n".join(str(x) for x in raw_notes if x)
+    notes_md = str(raw_notes).strip()
+    raw_summary = payload.get("summary") or ""
+    if isinstance(raw_summary, list):
+        raw_summary = " ".join(str(x) for x in raw_summary if x)
+    summary = str(raw_summary)
+    payload["summary"] = summary
+    payload["notes_md"] = notes_md
     rules = payload.get("rules") or []
-    if not rules:
-        err = StageFail("SEMANTIC_EMPTY_RULES", "no rules")
+    if not isinstance(rules, list):
+        rules = [str(rules)]
+        payload["rules"] = rules
+
+    # Auto-archive ad / chat (extract_generic_v2 content_type signal).
+    # Don't waste promote/package on those, and don't have smart-dedup
+    # retry them forever — set archive_state=ARCHIVED so the next run's
+    # store sees them and skips immediately.
+    ctype = (payload.get("content_type") or "").strip().lower()
+    if ctype in ("ad", "chat"):
+        err = StageFail("AD_CHAT_AUTO_SKIP", f"content_type={ctype}")
         _fail(payload, "normalize", err, logger)
+        payload["archive_state"] = "ARCHIVED"
         _set_record(payload, "invalid", logger, reason=err.code)
         raise err
-    summary = payload.get("summary") or ""
-    # P2-c: summary length check (50~300 chars)
-    if len(summary) < 50 or len(summary) > 300:
-        err = StageFail("SEMANTIC_SUMMARY_LENGTH", f"len={len(summary)}")
-        _fail(payload, "normalize", err, logger)
-        _set_record(payload, "invalid", logger, reason=err.code)
-        raise err
+
+    # Strip forbidden openers ("이 영상은", "전반적으로") instead of failing
+    # the whole record on them — the prompt already discourages them, so
+    # when one slips through we clean it up.
     forbidden = ["이 영상은", "전반적으로"]
-    if any(w in summary for w in forbidden):
-        err = StageFail("SEMANTIC_FORBIDDEN_WORD", "forbidden")
+    cleaned = summary
+    for w in forbidden:
+        cleaned = cleaned.replace(w, "")
+    cleaned = cleaned.strip(" ,.　")
+    if cleaned != summary:
+        payload["summary"] = cleaned
+        summary = cleaned
+
+    # Knowledge-library content gate: require *some* substance. v2 brings
+    # `knowledge` and `examples` as legitimate substance even when `rules`
+    # is empty (concept videos, documentaries). Fail only when every
+    # substance bucket is empty AND there's no usable notes_md AND the
+    # summary is too short to carry information on its own.
+    knowledge = payload.get("knowledge") or []
+    examples  = payload.get("examples") or []
+    has_substance = bool(rules or knowledge or examples)
+    if not has_substance and len(notes_md) < 80 and len(summary) < 30:
+        err = StageFail("SEMANTIC_EMPTY_RULES", "no substance: rules/knowledge/examples/notes/summary")
+        _fail(payload, "normalize", err, logger)
+        _set_record(payload, "invalid", logger, reason=err.code)
+        raise err
+
+    # Summary length check, relaxed from the original 50–300 (LLMs commonly
+    # land between 30 and 500 chars). Cleanup runs before the check so the
+    # forbidden-opener strip doesn't accidentally drop us under the floor.
+    if len(summary) < 30 or len(summary) > 500:
+        err = StageFail("SEMANTIC_SUMMARY_LENGTH", f"len={len(summary)}")
         _fail(payload, "normalize", err, logger)
         _set_record(payload, "invalid", logger, reason=err.code)
         raise err
@@ -202,19 +289,55 @@ def stage_normalize(payload: dict, services: Services, logger: EventLogger) -> d
 def stage_review(payload: dict, services: Services, logger: EventLogger) -> dict:
     _set_stage(payload, "review", "started", logger)
     cos = services.semantic_similarity(payload.get("transcript", ""), payload.get("summary", ""))
-    rules = payload.get("rules") or []
-    if cos >= 0.60 and len(rules) >= 1 and payload.get("retry_count", 0) <= 1:
+    rules     = payload.get("rules") or []
+    knowledge = payload.get("knowledge") or []
+    examples  = payload.get("examples") or []
+    notes_md  = (payload.get("notes_md") or "").strip()
+    llm_conf  = (payload.get("llm_confidence") or "").strip().lower()
+    # Substance gate: any v2 substance bucket OR a meaningful notes body.
+    has_substance = bool(rules or knowledge or examples) or len(notes_md) >= 150
+
+    # "Substantial" content overrides a `low` LLM self-rating. The model
+    # often emits 'low' for individual chunks because each chunk is by
+    # definition only a slice of the full video, not because the
+    # extracted material is actually noisy. When the merged record has
+    # ≥3 substantive items OR a long notes body we trust it.
+    substantial = (
+        len(rules) + len(knowledge) + len(examples) >= 3
+        or len(notes_md) >= 1500
+    )
+
+    # The LLM's own confidence acts as a second signal:
+    # - 'low' (and not substantial) → never auto-confirm
+    # - 'high'                      → relax the cos threshold by 0.05
+    cos_confirm = 0.60
+    cos_inferred = 0.50
+    if llm_conf == "high":
+        cos_confirm  -= 0.05
+        cos_inferred -= 0.05
+    block_confirm = (llm_conf == "low") and not substantial
+
+    metrics = {
+        "cosine": cos,
+        "rules": len(rules),
+        "knowledge": len(knowledge),
+        "examples": len(examples),
+        "notes_chars": len(notes_md),
+        "llm_confidence": llm_conf or "unset",
+    }
+    if (cos >= cos_confirm and has_substance and not block_confirm
+            and payload.get("retry_count", 0) <= 1):
         payload["confidence"] = "confirmed"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_confirmed", logger, metrics={"cosine": cos, "rules": len(rules)})
-    elif cos >= 0.50 and len(rules) >= 1:
+        _set_record(payload, "reviewed_confirmed", logger, metrics=metrics)
+    elif cos >= cos_inferred and has_substance:
         payload["confidence"] = "inferred"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_inferred", logger, metrics={"cosine": cos})
+        _set_record(payload, "reviewed_inferred", logger, metrics=metrics)
     else:
         payload["confidence"] = "unverified"
         payload["reviewer"] = "auto"
-        _set_record(payload, "reviewed_unverified", logger, metrics={"cosine": cos})
+        _set_record(payload, "reviewed_unverified", logger, metrics=metrics)
     _set_stage(payload, "review", "completed", logger)
     return payload
 

@@ -78,6 +78,14 @@ def new_payload(
         "summary": "",
         "rules": [],
         "tags": [],
+        "notes_md": "",
+        # extract_generic_v2 schema fields
+        "content_type": "",
+        "knowledge": [],
+        "examples": [],
+        "claims": [],
+        "unclear": [],
+        "llm_confidence": "",
         "history": [],
     }
 
