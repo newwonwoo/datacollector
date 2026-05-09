@@ -454,13 +454,15 @@
     .coh-legend .muted-r { margin-left:auto; color:#a8a29e; }
 
     .coh-grid {
-      display:grid; gap:8px;
+      display:grid; gap:0;
       grid-template-columns: repeat(2, 1fr);
       transition: opacity .5s;
+      position:relative;
+      padding:8px 4px 4px;
     }
     .coh-grid.resetting { opacity:0; }
     /* 사용자 요구: 단계 카드를 항상 가로 한 줄(7개)로. */
-    @media (min-width:640px)  { .coh-grid { grid-template-columns: repeat(7, 1fr); } }
+    @media (min-width:640px)  { .coh-grid { grid-template-columns: repeat(7, 1fr); gap:0; } }
 
     /* 작은 실패/상태 한 줄 — 큰 배너 대체 */
     .mini-fail-strip {
@@ -480,24 +482,40 @@
                        font-size:16px; cursor:pointer; padding:2px 6px; border-radius:4px; }
     .mini-fail-x:hover { opacity:1; background:rgba(0,0,0,.05); }
 
+    /* 사용자 요구: 단계 7개를 단일 카드 안의 인디케이터로 통합. 박스 외곽 제거. */
     .coh-card {
-      position:relative; display:flex; background:#fff;
-      border:1px solid #e7e5e0; border-radius:6px; overflow:hidden;
-      box-shadow:0 1px 2px rgba(0,0,0,.03);
-      animation: cohFadeIn .5s ease-out;
-      transition: transform .2s, box-shadow .2s, border-color .2s;
+      position:relative; display:flex; flex-direction:column;
+      background:transparent; border:0; border-radius:0; overflow:visible;
+      box-shadow:none; padding:6px 8px;
+      animation: cohFadeIn .4s ease-out;
+      transition: transform .2s, filter .2s;
     }
-    /* 사용자 요구: 진행중 단계에 불빛(glow) 효과 */
+    /* 단계 사이 connector 점선 — 단일 카드 느낌 강화 */
+    .coh-card::after {
+      content:""; position:absolute; top:18px; right:-1px;
+      width:2px; height:14px; background:#e7e5e4; border-radius:1px;
+    }
+    .coh-card:last-child::after { display:none; }
+    .coh-strip { display:none; }  /* 좌측 색띠 제거 — 단일 카드 안의 인디케이터 */
+    .coh-body  { flex:1; padding:0; min-width:0; text-align:center; }
+
+    /* 진행중 단계 = 핵심 불빛 표시 */
     .coh-card.has-flight {
-      border-color:#f59e0b;
-      box-shadow:0 0 0 3px rgba(245,158,11,.18), 0 0 22px rgba(245,158,11,.45);
-      transform:translateY(-2px);
-      animation: cohGlow 1.4s ease-in-out infinite;
+      filter: drop-shadow(0 0 14px rgba(245,158,11,.55));
+      transform: translateY(-1px);
+      animation: cohGlow 1.3s ease-in-out infinite;
     }
     @keyframes cohGlow {
-      0%,100% { box-shadow:0 0 0 3px rgba(245,158,11,.18), 0 0 18px rgba(245,158,11,.40); }
-      50%     { box-shadow:0 0 0 5px rgba(245,158,11,.28), 0 0 28px rgba(245,158,11,.65); }
+      0%,100% { filter: drop-shadow(0 0 10px rgba(245,158,11,.45)); }
+      50%     { filter: drop-shadow(0 0 22px rgba(245,158,11,.85)); }
     }
+    /* 통과(완료) 단계는 부드러운 초록빛 */
+    .coh-card.has-pass .coh-progress { color:#047857; }
+    /* 실패만 있는 단계는 빨간색 */
+    .coh-card.has-fail .coh-progress { color:#be123c; }
+    /* 진행중 단계 텍스트 강조 */
+    .coh-card.has-flight .coh-progress { color:#b45309; }
+    .coh-card.has-flight .coh-stage-label { color:#b45309; }
     @keyframes cohFadeIn {
       from { opacity:0; transform:translateY(2px); }
       to   { opacity:1; transform:translateY(0); }
@@ -2167,43 +2185,31 @@ function cohRenderCard(card){
   const compPct = total ? (card.completed/total)*100 : 0;
   const inflPct = total ? (card.in_flight/total)*100 : 0;
   const failPct = total ? (card.failed/total)*100 : 0;
-  // 사용자 요구: "n건 중 m건 완료 (xx%)" — 진행률 한 줄
+  // 사용자 요구: "n건 중 m건 완료 (xx%)" — 진행률 한 줄, 큰 글씨
   const progressPct = total ? Math.round((card.completed / total) * 100) : 0;
   const progressTxt = total
-    ? `${card.completed}/${total} (${progressPct}%)`
-    : '대기';
+    ? `${card.completed}/${total}<span style="font-size:11px;font-weight:500;color:#78716c;margin-left:4px">(${progressPct}%)</span>`
+    : '<span style="color:#a8a29e">대기</span>';
   let cls = 'coh-card';
-  if (card.failed > 0 && card.in_flight === 0 && card.completed === 0) cls += ' has-fail';
-  else if (card.in_flight > 0)                                          cls += ' has-flight';
-  else if (card.completed > 0 && card.failed > 0)                       cls += ' has-flight'; // mixed → 진행 표현
-  else if (card.completed > 0)                                          cls += ' has-pass';
-  else if (card.failed > 0)                                             cls += ' has-fail';
-  const reasons = Object.entries(card.reasons).sort((a,b) => b[1]-a[1]);
-  const reasonHtml = reasons.length
-    ? `<div class="coh-reasons">${reasons.map(([code,n]) =>
-         `<div><span class="code" title="${code}">${cohReasonKo(code)}</span><span class="cnt">×${n}</span></div>`
-       ).join('')}</div>`
+  if (card.in_flight > 0)                                  cls += ' has-flight';
+  else if (card.completed > 0 && card.failed === 0)        cls += ' has-pass';
+  else if (card.failed > 0 && card.completed === 0)        cls += ' has-fail';
+  else if (card.completed > 0 && card.failed > 0)          cls += ' has-flight'; // 혼합 = 작업중 표현
+  // 진행중 표시 (✺ 빛나는 별)
+  const flightMarker = card.in_flight > 0
+    ? `<span style="display:inline-block;color:#f59e0b;animation:cohGlow 1.3s ease-in-out infinite;font-size:11px;margin-right:3px" title="진행중 ${card.in_flight}건">●</span>`
     : '';
   return `<div class="${cls}" data-stage="${card.stage}">
-    <div class="coh-strip"></div>
     <div class="coh-body">
-      <div class="coh-stage-label">${card.stage.toUpperCase()}</div>
-      <div class="coh-progress" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#0f172a;margin-top:4px;letter-spacing:-.01em;">
+      <div class="coh-stage-label">${flightMarker}${card.stage.toUpperCase()}</div>
+      <div class="coh-progress" style="font-family:ui-monospace,monospace;font-size:18px;font-weight:700;color:#0f172a;margin-top:6px;letter-spacing:-.02em;line-height:1.1">
         ${progressTxt}
       </div>
-      <div class="coh-counts">
-        <span class="pass" title="완료">${card.completed}</span>
-        <span class="sep">·</span>
-        <span class="flight ${card.in_flight ? '' : 'zero'}" title="진행중">${card.in_flight}</span>
-        <span class="sep">·</span>
-        <span class="fail ${card.failed ? '' : 'zero'}" title="드랍">${card.failed}</span>
-      </div>
-      <div class="coh-bar">
+      <div class="coh-bar" style="margin-top:8px">
         <i class="b-pass"   style="width:${compPct}%"></i>
         <i class="b-flight" style="width:${inflPct}%"></i>
         <i class="b-fail"   style="width:${failPct}%"></i>
       </div>
-      ${reasonHtml}
     </div>
   </div>`;
 }
@@ -2430,34 +2436,52 @@ function updatePipelineFromStatus(detail, activeGARun){
     document.querySelectorAll('.stage-bar i.shimmer').forEach(el => el.classList.remove('shimmer'));
   }
 
-  // Run label
+  // Run label — 사용자 요구: 한글화 + 실시간성 heartbeat
+  const STATUS_KO = {
+    completed:'완료',
+    partially_completed:'부분 완료',
+    failed:'실패',
+    running:'실행 중',
+  };
+  const STAGE_KO = {
+    discover:'탐색', collect:'수집', extract:'추출', normalize:'정규화',
+    review:'검수', promote:'승급', package:'산출',
+  };
   const pill = activeGARun
-    ? `<span class="pill run"><span class="dot"></span>실행 중 (GA)</span>`
+    ? `<span class="pill run"><span class="dot"></span>실행 중 (GitHub Actions)</span>`
     : (detail.run_status === 'completed'
         ? `<span class="pill ok">✓ 완료</span>`
         : (detail.run_status === 'failed'
             ? `<span class="pill err">✗ 실패</span>`
-            : `<span class="pill warn">${detail.run_status || '?'}</span>`));
+            : `<span class="pill warn">${STATUS_KO[detail.run_status] || detail.run_status || '?'}</span>`));
   const rid = detail.run_id ? detail.run_id : '—';
   const started = detail.started_at ? fmtTime(detail.started_at) : '';
   const ended = detail.ended_at ? fmtTime(detail.ended_at) : '';
   const timeInfo = started && ended ? `${started} → ${ended}` : (started || '—');
 
-  // Build headline failure digest if any stage failed
+  // 실패 항목 한글화: "수집:자막 없음 ×16" 형태
   const failDigest = [];
+  const failTitle = [];
   for (const st of STAGE_ORDER){
     const info = ps[st] || {};
     if ((info.failed || 0) > 0 && info.failure_reasons){
       for (const [code, n] of Object.entries(info.failure_reasons)){
-        failDigest.push(`${st}:${code}×${n}`);
+        const stKo = STAGE_KO[st] || st;
+        const codeKo = cohReasonKo(code);
+        failDigest.push(`${stKo}: ${codeKo} ${n}건`);
+        failTitle.push(`${st}:${code}×${n}`);
       }
     }
   }
   const failLine = failDigest.length
-    ? ` <span class="pill err" title="${failDigest.join(' | ')}">실패 ${failDigest.slice(0,2).join(', ')}${failDigest.length>2?'…':''}</span>`
+    ? ` <span class="pill err" title="${failTitle.join(' | ')}">실패 ${failDigest.slice(0,2).join(', ')}${failDigest.length>2?'…':''}</span>`
     : '';
 
-  runLabel.innerHTML = `${pill} <span>run_id: ${rid}</span> <span>${timeInfo}</span>${failLine}`;
+  // 실시간 heartbeat — 폴링이 살아있음을 시각화 (사용자 #3)
+  const hb = new Date().toLocaleTimeString('ko-KR', {hour12:false});
+  const liveDot = `<span class="pill" style="background:#dcfce7;color:#166534;font-size:11px"><span class="dot" style="background:#16a34a"></span>LIVE ${hb}</span>`;
+
+  runLabel.innerHTML = `${pill} ${liveDot} <span>run_id: ${rid}</span> <span>${timeInfo}</span>${failLine}`;
 }
 
 function openModal(encodedSk){

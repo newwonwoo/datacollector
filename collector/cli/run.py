@@ -461,11 +461,37 @@ def run_query(
 
     per_video_status = []
     processed_payloads: list = []
-    for payload in payloads:
+    total = len(payloads)
+    if total:
+        # 사용자 요구: PowerShell/콘솔에서 진행 상황을 숫자로 보여줌.
+        # collector app 으로 띄운 cmd 창에도 그대로 나타남 (stdout).
+        print(f"[run] discovered ({total}/{total}, 100%) — 파이프라인 시작",
+              flush=True)
+    for idx, payload in enumerate(payloads, 1):
+        pct = int(idx * 100 / total) if total else 0
+        ttl = (payload.get("title") or "")[:50]
+        print(f"[run] collecting ({idx}/{total}, {pct}%) {payload['video_id']}  {ttl}",
+              flush=True)
         run_pipeline(
             payload, services, store, logger,
             fast_track=bool(q_obj.target_channel_id and payload.get("channel_id") == q_obj.target_channel_id),
         )
+        rs = payload.get("record_status", "?")
+        code = payload.get("failure_reason_code")
+        STAGE_KO_RUN = {
+            "promoted":"승급 완료","reviewed_confirmed":"검수 확정",
+            "reviewed_inferred":"검수 추론","reviewed_unverified":"검수 미확정",
+            "reviewed_rejected":"검수 거절","invalid":"무효","collected":"수집",
+        }
+        REASON_KO_RUN = {
+            "YT_NO_TRANSCRIPT":"자막 없음","YT_SHORTS_DROP":"쇼츠(4분 미만)",
+            "YT_STREAM_DROP":"장시간 라이브","HTTP_429":"API 한도 초과",
+            "HTTP_5XX":"서버 일시 오류","LLM_HTTP_429":"LLM 한도 초과",
+        }
+        rs_ko = STAGE_KO_RUN.get(rs, rs)
+        tail = f" ✗ {REASON_KO_RUN.get(code, code)}" if code else f" → {rs_ko}"
+        print(f"[run] done       ({idx}/{total}, {pct}%) {payload['video_id']}{tail}",
+              flush=True)
         processed_payloads.append(payload)
         per_video_status.append({
             "video_id": payload["video_id"],

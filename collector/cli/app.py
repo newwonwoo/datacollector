@@ -139,11 +139,22 @@ def main(argv: list[str] | None = None) -> int:
 
 # Kept for backwards-compat with tests that patched this helper.
 def _make_handler(root: Path):
+    # 진행상태 폴링 endpoint들은 매초 호출되어 콘솔을 잠식한다.
+    # 그것들만 access log를 끔으로써 collector run 의 진행 메시지가
+    # 묻히지 않게 한다 (사용자 요구: "파워쉘 로그에 설명 없음").
+    QUIET_PATHS = ("/api/run/status", "/api/events", "/api/watches",
+                   "/status.json", "/api/health")
     class _Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(root), **kw)
 
-        def log_message(self, fmt, *args):  # quiet
+        def log_message(self, fmt, *args):
+            try:
+                first = (args[0] if args else "")
+                if any(q in str(first) for q in QUIET_PATHS):
+                    return
+            except Exception:
+                pass
             sys.stderr.write(f"[app] {self.address_string()} - {fmt % args}\n")
 
     return _Handler
