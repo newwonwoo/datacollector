@@ -2,11 +2,25 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
 from ..services import MockError
+
+
+_ISO_DUR = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def _iso8601_duration_to_sec(s: str) -> int | None:
+    if not s:
+        return None
+    m = _ISO_DUR.match(s)
+    if not m:
+        return None
+    h, mi, se = (int(x) if x else 0 for x in m.groups())
+    return h * 3600 + mi * 60 + se
 
 
 def _default_http(method: str, url: str, *, headers: dict | None = None, data: bytes | None = None) -> dict:
@@ -67,7 +81,43 @@ class YouTubeAdapter:
             page_token = body.get("nextPageToken")
             if not page_token or not items:
                 break
-        return results[:max_results]
+        results = results[:max_results]
+        # Enrich with duration_sec via videos.list (1 unit/call, batched 50).
+        # Required for stage_collect's shorts/long-stream filters (Master_02 §2.3).
+        self._enrich_durations(results)
+        return results
+
+    def _enrich_durations(self, items: list[dict[str, Any]]) -> None:
+        ids = [it["video_id"] for it in items if it.get("video_id")]
+        if not ids:
+            return
+        by_id: dict[str, int] = {}
+        for i in range(0, len(ids), 50):
+            batch = ids[i:i + 50]
+            params = {
+                "key": self.api_key,
+                "part": "contentDetails",
+                "id": ",".join(batch),
+                "maxResults": str(len(batch)),
+            }
+            url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+            try:
+                resp = self.http("GET", url)
+                if resp["status"] != 200:
+                    continue
+                body = json.loads(resp["body"])
+            except Exception:
+                continue
+            for v in body.get("items", []):
+                vid = v.get("id")
+                iso = (v.get("contentDetails") or {}).get("duration", "")
+                sec = _iso8601_duration_to_sec(iso)
+                if vid and sec is not None:
+                    by_id[vid] = sec
+        for it in items:
+            sec = by_id.get(it.get("video_id", ""))
+            if sec is not None:
+                it["duration_sec"] = sec
 
     def captions(self, video_id: str) -> dict[str, Any]:
         """Multi-path captions fetch with per-path error capture.

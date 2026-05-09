@@ -41,7 +41,7 @@
       -webkit-font-smoothing: antialiased;
       line-height: 1.5; min-height: 100vh;
     }
-    .wrap { max-width: 1000px; margin: 0 auto; padding: 28px 20px 80px; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
 
     /* Header */
     header {
@@ -358,33 +358,46 @@
 
     /* Pipeline diagram */
     .pipeline-stages {
-      display: flex; align-items: center; gap: 4px; margin-top: 8px;
-      overflow-x: auto; padding: 6px 2px 10px;
+      display: flex; align-items: stretch; gap: 6px; margin-top: 8px;
+      padding: 8px 2px 12px;
     }
     .stage {
-      flex: 1; min-width: 100px; padding: 10px 8px 8px; border-radius: 8px;
+      flex: 1; min-width: 0; padding: 12px 10px 10px; border-radius: 10px;
       background: var(--subtle); border: 1px solid var(--border);
       text-align: center; font-size: 11.5px; font-weight: 700;
       color: var(--text-2); position: relative;
+      transition: transform .2s, box-shadow .2s, border-color .2s;
     }
     .stage .stage-count {
-      display: block; font-family: var(--mono); font-size: 16px;
-      font-weight: 700; color: var(--text); margin-top: 4px; letter-spacing: -0.02em;
+      display: block; font-family: var(--mono); font-size: 18px;
+      font-weight: 700; color: var(--text); margin-top: 6px; letter-spacing: -0.02em;
+    }
+    .stage .stage-pct {
+      display: block; font-family: var(--mono); font-size: 12px;
+      font-weight: 600; color: var(--text-2); margin-top: 2px;
     }
     .stage .stage-sub {
       display: block; font-size: 10.5px; font-weight: 500; color: var(--text-2);
-      margin-top: 2px; font-family: var(--mono);
+      margin-top: 4px; font-family: var(--mono);
     }
     .stage .stage-bar {
-      display: block; height: 3px; background: var(--border); border-radius: 2px;
-      margin-top: 6px; overflow: hidden; position: relative;
+      display: block; height: 4px; background: var(--border); border-radius: 2px;
+      margin-top: 8px; overflow: hidden; position: relative;
     }
     .stage .stage-bar i {
       display: block; height: 100%; width: 0%; background: var(--text-dim);
       transition: width .3s;
     }
-    .stage.in_progress { background: var(--info-bg); border-color: var(--accent); color: var(--accent);
-                          animation: stagePulse 1.4s ease-in-out infinite; }
+    /* Active stage: bright glow ring + bold pulse */
+    .stage.in_progress {
+      background: var(--info-bg); border-color: var(--accent); color: var(--accent);
+      animation: stageGlow 1.4s ease-in-out infinite;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, .14), 0 0 22px rgba(37, 99, 235, .35);
+      transform: translateY(-2px);
+      z-index: 1;
+    }
+    .stage.in_progress .stage-count { color: var(--accent); }
+    .stage.in_progress .stage-pct   { color: var(--accent); }
     .stage.in_progress .stage-bar i { background: var(--accent); }
     .stage.hot         { background: var(--ok-bg);   border-color: var(--ok); color: var(--ok); }
     .stage.hot .stage-bar i { background: var(--ok); }
@@ -400,6 +413,10 @@
     @keyframes stagePulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%      { opacity: 0.65; transform: scale(0.97); }
+    }
+    @keyframes stageGlow {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(37, 99, 235, .14), 0 0 18px rgba(37, 99, 235, .30); }
+      50%      { box-shadow: 0 0 0 6px rgba(37, 99, 235, .22), 0 0 28px rgba(37, 99, 235, .55); }
     }
     @keyframes barShimmer {
       0%   { width: 5%; }
@@ -478,6 +495,50 @@
     </div>
   </div>
 
+  <!-- 🚦 파이프라인 진행 카드 — 최상단(가장 먼저 보여야 할 것) -->
+  <div class="card">
+    <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준 · 진행중 단계가 빛납니다</span></div>
+
+    <!-- 수집 상태 요약 -->
+    <div id="health" class="health unk" style="margin: 0 0 14px;">
+      <div class="icon" id="health-icon">⏳</div>
+      <div class="body">
+        <div class="title" id="health-title">상태 확인 중…</div>
+        <div class="sub" id="health-sub">status.json 로드 중</div>
+        <div class="hint" id="health-hint"></div>
+      </div>
+      <span class="age" id="health-age"></span>
+      <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
+    </div>
+
+    <div class="pipeline-stages" id="pipeline-stages">
+      <div class="stage" data-stage="discover">DISCOVER
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="collect">COLLECT
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="extract">EXTRACT
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="normalize">NORMALIZE
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="review">REVIEW
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="promote">PROMOTE
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+      <div class="stage" data-stage="package">PACKAGE
+        <span class="stage-count">—</span><span class="stage-pct">0%</span><span class="stage-sub">대기</span>
+        <span class="stage-bar"><i></i></span></div>
+    </div>
+    <div class="run-label" id="run-label">
+      <span>최근 run: —</span>
+    </div>
+  </div>
+
   <!-- 실행 카드 -->
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
@@ -505,56 +566,6 @@
       <input id="search" type="text" placeholder="🔍 제목·요약·규칙·태그 검색" style="width:100%" />
     </div>
     <div id="knowledge"><div class="empty">아직 처리된 내용이 없습니다 — 위에서 검색어를 실행하세요</div></div>
-  </div>
-
-  <!-- 파이프라인 흐름 다이어그램 + 수집 상태 요약 -->
-  <div class="card">
-    <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
-
-    <!-- 🎯 수집 상태 요약 — 파이프라인 카드 내부 (맥락 일관성) -->
-    <div id="health" class="health unk" style="margin: 0 0 14px;">
-      <div class="icon" id="health-icon">⏳</div>
-      <div class="body">
-        <div class="title" id="health-title">상태 확인 중…</div>
-        <div class="sub" id="health-sub">status.json 로드 중</div>
-        <div class="hint" id="health-hint"></div>
-      </div>
-      <span class="age" id="health-age"></span>
-      <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
-    </div>
-
-    <div class="pipeline-stages" id="pipeline-stages">
-      <div class="stage" data-stage="discover">DISCOVER
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="discover">›</div>
-      <div class="stage" data-stage="collect">COLLECT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="collect">›</div>
-      <div class="stage" data-stage="extract">EXTRACT
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="extract">›</div>
-      <div class="stage" data-stage="normalize">NORMALIZE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="normalize">›</div>
-      <div class="stage" data-stage="review">REVIEW
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="review">›</div>
-      <div class="stage" data-stage="promote">PROMOTE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-      <div class="stage-arrow" data-arrow="promote">›</div>
-      <div class="stage" data-stage="package">PACKAGE
-        <span class="stage-count">—</span><span class="stage-sub">대기</span>
-        <span class="stage-bar"><i></i></span></div>
-    </div>
-    <div class="run-label" id="run-label">
-      <span>최근 run: —</span>
-    </div>
   </div>
 
   <!-- 요약 KPI -->
@@ -1145,17 +1156,21 @@ function updatePipelineFromStatus(detail, activeGARun){
     let mainText;
     let subText;
     let pct = 0;
+    let pctText = '0%';
     if (status === 'not_started') {
       mainText = '—';
       subText = '대기';
       pct = 0;
+      pctText = '—';
     } else if (status === 'skipped') {
       mainText = '—';
       subText = `skipped ×${skipped}`;
       pct = 0;
+      pctText = 'skip';
     } else {
       mainText = `${completed}/${effAttempts}`;
       pct = effAttempts > 0 ? (completed / effAttempts) * 100 : 0;
+      pctText = `${Math.round(pct)}%`;
       const parts = [];
       if (inProgress > 0) parts.push(`⋯${inProgress}`);
       if (failed > 0)     parts.push(`✗${failed}`);
@@ -1168,6 +1183,8 @@ function updatePipelineFromStatus(detail, activeGARun){
 
     countEl.textContent = mainText;
     subEl.textContent = subText;
+    const pctEl = node.querySelector('.stage-pct');
+    if (pctEl) pctEl.textContent = pctText;
     if (barEl) barEl.style.width = pct + '%';
 
     // Class

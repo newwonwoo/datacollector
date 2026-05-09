@@ -230,6 +230,7 @@ def run_query(
             video_id=c["video_id"], run_id=run_id,
             channel_id=c.get("channel_id", ""), title=c.get("title", ""),
             published_at=c.get("published_at", ""), source_query=query,
+            duration_sec=c.get("duration_sec"),
         )
         p["priority_score"] = compute_priority(
             p, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
@@ -239,13 +240,27 @@ def run_query(
         payloads, target_channel_ids={q_obj.target_channel_id} if q_obj.target_channel_id else None
     )
 
+    total = len(payloads)
+    # Pre-loop progress line (G-08: visible feedback in PowerShell etc.)
+    if total:
+        print(f"\ndiscovered ({total}/{total}, 100%) — starting pipeline", flush=True)
+
     per_video_status = []
     processed_payloads: list = []
-    for payload in payloads:
+    for idx, payload in enumerate(payloads, 1):
+        pct = int(idx * 100 / total) if total else 0
+        title_short = (payload.get("title") or "")[:40]
+        print(f"  collecting ({idx}/{total}, {pct}%) {payload['video_id']}  {title_short}",
+              flush=True)
         run_pipeline(
             payload, services, store, logger,
             fast_track=bool(q_obj.target_channel_id and payload.get("channel_id") == q_obj.target_channel_id),
         )
+        rs = payload.get("record_status", "?")
+        code = payload.get("failure_reason_code")
+        tail = f" ✗ {code}" if code else f" → {rs}"
+        print(f"  done       ({idx}/{total}, {pct}%) {payload['video_id']}{tail}",
+              flush=True)
         processed_payloads.append(payload)
         per_video_status.append({
             "video_id": payload["video_id"],

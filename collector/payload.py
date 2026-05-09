@@ -35,6 +35,7 @@ def new_payload(
     published_at: str = "",
     source_query: str = "",
     language: str = "ko",
+    duration_sec: int | None = None,
 ) -> dict[str, Any]:
     source_key = f"youtube:{video_id}"
     return {
@@ -47,6 +48,7 @@ def new_payload(
         "collected_at": utcnow_iso(),
         "source_query": source_query,
         "language": language,
+        "duration_sec": duration_sec,
         "caption_source": "none",
         "transcript": "",
         "transcript_hash": "",
