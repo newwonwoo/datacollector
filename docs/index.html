@@ -2033,11 +2033,17 @@ function updatePipelineDiagram(valid){
 const STAGE_ORDER = ['discover','collect','extract','normalize','review','promote','package'];
 
 function resetPipelineDiagram(){
-  // Wipe every stage card back to the '대기' (idle) look. Called on
-  // (a) initial dashboard load — so a refresh after a finished run
-  //     doesn't show the previous progress as if it were live, and
-  // (b) the moment the user clicks 실행 — so a new run replaces the
-  //     last one's badges immediately instead of after the first poll.
+  // 사용자가 실행 ▶ 누르는 순간, 또는 페이지 첫 로드 시:
+  // 이전 run 의 모든 흔적을 즉시 비워 stale 데이터가 새 run 처럼 보이지 않게.
+
+  // (a) 코호트 단계 카드 — '대기' 상태로 빈 카드 7개 다시 그림
+  const grid = document.getElementById('cohort-stages');
+  if (grid){
+    grid.innerHTML = COH_STAGES.map(stage =>
+      cohRenderCard({stage, completed:0, in_flight:0, failed:0, reasons:{}})
+    ).join('');
+  }
+  // (b) 옛 .stage 마크업 호환 (혹시 남아있는 환경 대비)
   for (const st of STAGE_ORDER){
     const node = document.querySelector(`.stage[data-stage="${st}"]`);
     if (!node) continue;
@@ -2051,8 +2057,17 @@ function resetPipelineDiagram(){
     const a = document.querySelector(`.stage-arrow[data-arrow="${st}"]`);
     if (a) a.className = 'stage-arrow';
   }
+  // (c) run-label 한글 "새 run 준비 중…"
   const lbl = document.getElementById('run-label');
-  if (lbl) lbl.innerHTML = '<span>최근 run: —</span>';
+  if (lbl) lbl.innerHTML = '<span class="pill warn"><span class="dot"></span>새 run 준비 중…</span>';
+  // (d) mini-fail-strip — 이전 run 의 빨간 실패 라인 즉시 숨김
+  const strip = document.getElementById('mini-fail-strip');
+  if (strip) strip.style.display = 'none';
+  // (e) cohort-banner / health element 안의 텍스트도 비움 (호환)
+  const inv = document.getElementById('coh-invariant');
+  if (inv) inv.innerHTML = '';
+  // (f) 코호트 polling 의 lastRunId 캐시를 깨서 새 run 감지를 강제
+  if (typeof __cohLastRunId !== 'undefined'){ __cohLastRunId = null; }
 }
 
 // ====== 코호트 진행 대시보드 (events.jsonl deterministic replay) ======
