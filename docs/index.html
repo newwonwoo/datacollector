@@ -454,19 +454,49 @@
     .coh-legend .muted-r { margin-left:auto; color:#a8a29e; }
 
     .coh-grid {
-      display:grid; gap:6px;
+      display:grid; gap:8px;
       grid-template-columns: repeat(2, 1fr);
       transition: opacity .5s;
     }
     .coh-grid.resetting { opacity:0; }
-    @media (min-width:640px){ .coh-grid { grid-template-columns: repeat(4, 1fr); } }
-    @media (min-width:1024px){ .coh-grid { grid-template-columns: repeat(7, 1fr); } }
+    /* 사용자 요구: 단계 카드를 항상 가로 한 줄(7개)로. */
+    @media (min-width:640px)  { .coh-grid { grid-template-columns: repeat(7, 1fr); } }
+
+    /* 작은 실패/상태 한 줄 — 큰 배너 대체 */
+    .mini-fail-strip {
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:8px 12px; margin:0 0 12px;
+      border:1px solid #fca5a5; background:#fef2f2; border-radius:8px;
+      font-size:12.5px; color:#7f1d1d;
+    }
+    .mini-fail-strip.warn { border-color:#fcd34d; background:#fffbeb; color:#78350f; }
+    .mini-fail-strip.ok   { border-color:#86efac; background:#f0fdf4; color:#14532d; }
+    .mini-fail-strip.stale{ border-color:#e7e5e4; background:#fafaf9; color:#57534e; }
+    .mini-fail-icon  { font-size:14px; }
+    .mini-fail-title { font-weight:700; }
+    .mini-fail-detail{ color:inherit; opacity:.75; font-family:ui-monospace,monospace; font-size:11.5px; }
+    .mini-fail-age   { margin-left:auto; opacity:.55; font-size:11px; font-family:ui-monospace,monospace; }
+    .mini-fail-x     { background:transparent; border:0; color:inherit; opacity:.55;
+                       font-size:16px; cursor:pointer; padding:2px 6px; border-radius:4px; }
+    .mini-fail-x:hover { opacity:1; background:rgba(0,0,0,.05); }
 
     .coh-card {
       position:relative; display:flex; background:#fff;
       border:1px solid #e7e5e0; border-radius:6px; overflow:hidden;
       box-shadow:0 1px 2px rgba(0,0,0,.03);
       animation: cohFadeIn .5s ease-out;
+      transition: transform .2s, box-shadow .2s, border-color .2s;
+    }
+    /* 사용자 요구: 진행중 단계에 불빛(glow) 효과 */
+    .coh-card.has-flight {
+      border-color:#f59e0b;
+      box-shadow:0 0 0 3px rgba(245,158,11,.18), 0 0 22px rgba(245,158,11,.45);
+      transform:translateY(-2px);
+      animation: cohGlow 1.4s ease-in-out infinite;
+    }
+    @keyframes cohGlow {
+      0%,100% { box-shadow:0 0 0 3px rgba(245,158,11,.18), 0 0 18px rgba(245,158,11,.40); }
+      50%     { box-shadow:0 0 0 5px rgba(245,158,11,.28), 0 0 28px rgba(245,158,11,.65); }
     }
     @keyframes cohFadeIn {
       from { opacity:0; transform:translateY(2px); }
@@ -654,6 +684,51 @@
     </div>
   </div>
 
+  <!-- 🚦 파이프라인 진행 카드 — 최상단(가장 먼저 보여야 할 것) -->
+  <div class="card" id="pipeline-progress-card">
+    <div class="section-title">파이프라인 진행 상황
+      <span class="muted" style="font-weight:400;font-size:11px">진행 중인 단계가 빛납니다 · 단계별 n/total xx%</span>
+    </div>
+
+    <!-- 작은 실패/상태 한 줄 — 큰 배너 대신 -->
+    <div id="mini-fail-strip" class="mini-fail-strip" style="display:none">
+      <span class="mini-fail-icon" id="mini-fail-icon">❌</span>
+      <span class="mini-fail-title" id="mini-fail-title">—</span>
+      <span class="mini-fail-detail" id="mini-fail-detail"></span>
+      <span class="mini-fail-age" id="mini-fail-age"></span>
+      <button class="mini-fail-x" onclick="dismissHealth()" title="닫기">×</button>
+    </div>
+
+    <!-- 단계 카드 7개 (가로 1행) -->
+    <div id="cohort-stages" class="coh-grid"></div>
+
+    <!-- 작은 run 라벨 (partially_completed pill 등 — 작게 한 줄) -->
+    <div class="run-label" id="run-label">
+      <span>최근 run: —</span>
+    </div>
+
+    <!-- 호환 유지: 기존 JS가 채우는 요소들은 화면에선 숨김 -->
+    <div id="health" class="health unk" style="display:none">
+      <div class="icon" id="health-icon">⏳</div>
+      <div class="body">
+        <div class="title" id="health-title">상태 확인 중…</div>
+        <div class="sub" id="health-sub">status.json 로드 중</div>
+        <div class="hint" id="health-hint"></div>
+      </div>
+      <span class="age" id="health-age"></span>
+    </div>
+    <div id="cohort-banner" class="coh-banner" style="display:none">
+      <div class="coh-banner-row">
+        <span class="coh-stat coh-stat-big"><b>요청</b><span id="coh-N">—</span></span>
+        <span class="coh-stat amber"><b>진행중</b><span id="coh-flight">0</span></span>
+        <span class="coh-stat emerald"><b>완료</b><span id="coh-done">0</span></span>
+        <span class="coh-stat rose"><b>드랍</b><span id="coh-drop">0</span></span>
+        <span class="coh-runid" id="coh-runid">run_id: —</span>
+      </div>
+      <div id="coh-invariant" class="coh-invariant"></div>
+    </div>
+  </div>
+
   <!-- 실행 카드 -->
   <div class="card">
     <div class="section-title">새 파이프라인 실행</div>
@@ -787,47 +862,7 @@
     </p>
   </div>
 
-  <!-- 파이프라인 흐름 다이어그램 + 수집 상태 요약 (감시 중인 도메인 바로 아래) -->
-  <div class="card">
-    <div class="section-title">파이프라인 진행 상황 <span class="muted" style="font-weight:400;font-size:11px">최근 run 기준</span></div>
-
-    <!-- 🎯 수집 상태 요약 — 파이프라인 카드 내부 (맥락 일관성) -->
-    <div id="health" class="health unk" style="margin: 0 0 14px;">
-      <div class="icon" id="health-icon">⏳</div>
-      <div class="body">
-        <div class="title" id="health-title">상태 확인 중…</div>
-        <div class="sub" id="health-sub">status.json 로드 중</div>
-        <div class="hint" id="health-hint"></div>
-      </div>
-      <span class="age" id="health-age"></span>
-      <button class="close" onclick="dismissHealth()" title="닫기 (이번 세션만)">×</button>
-    </div>
-
-    <!-- 🎯 코호트 진행 대시보드 (events.jsonl 결정론적 replay) -->
-    <div id="cohort-banner" class="coh-banner">
-      <div class="coh-banner-row">
-        <span class="coh-stat coh-stat-big"><b>요청</b><span id="coh-N">—</span></span>
-        <span class="coh-stat amber"><b>진행중</b><span id="coh-flight">0</span></span>
-        <span class="coh-stat emerald"><b>완료</b><span id="coh-done">0</span></span>
-        <span class="coh-stat rose"><b>드랍</b><span id="coh-drop">0</span></span>
-        <span class="coh-runid" id="coh-runid">run_id: —</span>
-      </div>
-      <div id="coh-invariant" class="coh-invariant">검산 — = — (완료) + — (드랍) + — (진행중) = —</div>
-    </div>
-
-    <div class="coh-legend">
-      <span><span class="dot emerald"></span>통과</span>
-      <span><span class="dot amber"></span>진행중</span>
-      <span><span class="dot rose"></span>드랍</span>
-      <span class="muted-r">통과 · 진행중 · 드랍</span>
-    </div>
-
-    <div id="cohort-stages" class="coh-grid"></div>
-
-    <div class="run-label" id="run-label">
-      <span>최근 run: —</span>
-    </div>
-  </div>
+  <!-- 진행 카드는 이제 페이지 최상단(op-strip 직후)에 위치 -->
 
   <!-- 최종 산출물: 가공된 지식 내용물 -->
   <div class="card">
@@ -2010,7 +2045,7 @@ const COH_REASON_KO = {
   HTTP_429:'API 한도 초과',
   HTTP_5XX:'서버 일시 오류',
   YT_NO_TRANSCRIPT:'자막 없음',
-  YT_SHORTS_DROP:'쇼츠 제외',
+  YT_SHORTS_DROP:'쇼츠(4분 미만) 제외',
   YT_STREAM_DROP:'장시간 라이브 제외',
   LLM_HTTP_400:'LLM 요청 거부',
   LLM_HTTP_401:'LLM 인증 실패',
@@ -2025,6 +2060,32 @@ const COH_REASON_KO = {
   unknown:'원인 불명',
 };
 const cohReasonKo = (code) => COH_REASON_KO[code] || code;
+
+// adapter detail 문자열(예: "ytdlp:not_installed | ytapi:not_installed | timedtext:all-empty | description:too_short(35c)")
+// 을 사람이 읽기 좋은 한글로 변환. 알려진 토큰만 치환하고 나머지는 그대로.
+const COH_DETAIL_KO = {
+  'ytdlp:not_installed': 'yt-dlp 미설치',
+  'ytapi:not_installed': 'youtube-transcript-api 미설치',
+  'timedtext:all-empty': 'timedtext 자막 비어있음',
+  'description:too_short': '설명 너무 짧음',
+  'description:empty': '설명 비어있음',
+  'no_matching_lang': '한국어/영어 자막 없음',
+  'all_clients_failed': '모든 클라이언트 차단',
+  'RequestBlocked': '요청 차단',
+  'DownloadError': '다운로드 실패',
+  'TooManyRequests': 'API 호출 한도 초과',
+};
+function cohDetailKo(detail){
+  if (!detail) return '';
+  return detail.split('|').map(part => {
+    const trimmed = part.trim();
+    // "key:value(meta)" 형태에서 메타 부분 보존, key:value만 매핑
+    const m = trimmed.match(/^([^()]+)(\(.*\))?$/);
+    const head = m ? m[1].trim() : trimmed;
+    const tail = m && m[2] ? ' ' + m[2] : '';
+    return (COH_DETAIL_KO[head] || head) + tail;
+  }).join(' · ');
+}
 
 let __cohRunEpoch = 0;
 let __cohLastRunId = null;
@@ -2106,10 +2167,17 @@ function cohRenderCard(card){
   const compPct = total ? (card.completed/total)*100 : 0;
   const inflPct = total ? (card.in_flight/total)*100 : 0;
   const failPct = total ? (card.failed/total)*100 : 0;
+  // 사용자 요구: "n건 중 m건 완료 (xx%)" — 진행률 한 줄
+  const progressPct = total ? Math.round((card.completed / total) * 100) : 0;
+  const progressTxt = total
+    ? `${card.completed}/${total} (${progressPct}%)`
+    : '대기';
   let cls = 'coh-card';
-  if (card.failed > 0)      cls += ' has-fail';
-  else if (card.in_flight)  cls += ' has-flight';
-  else if (card.completed)  cls += ' has-pass';
+  if (card.failed > 0 && card.in_flight === 0 && card.completed === 0) cls += ' has-fail';
+  else if (card.in_flight > 0)                                          cls += ' has-flight';
+  else if (card.completed > 0 && card.failed > 0)                       cls += ' has-flight'; // mixed → 진행 표현
+  else if (card.completed > 0)                                          cls += ' has-pass';
+  else if (card.failed > 0)                                             cls += ' has-fail';
   const reasons = Object.entries(card.reasons).sort((a,b) => b[1]-a[1]);
   const reasonHtml = reasons.length
     ? `<div class="coh-reasons">${reasons.map(([code,n]) =>
@@ -2120,12 +2188,15 @@ function cohRenderCard(card){
     <div class="coh-strip"></div>
     <div class="coh-body">
       <div class="coh-stage-label">${card.stage.toUpperCase()}</div>
+      <div class="coh-progress" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#0f172a;margin-top:4px;letter-spacing:-.01em;">
+        ${progressTxt}
+      </div>
       <div class="coh-counts">
-        <span class="pass">${card.completed}</span>
+        <span class="pass" title="완료">${card.completed}</span>
         <span class="sep">·</span>
-        <span class="flight ${card.in_flight ? '' : 'zero'}">${card.in_flight}</span>
+        <span class="flight ${card.in_flight ? '' : 'zero'}" title="진행중">${card.in_flight}</span>
         <span class="sep">·</span>
-        <span class="fail ${card.failed ? '' : 'zero'}">${card.failed}</span>
+        <span class="fail ${card.failed ? '' : 'zero'}" title="드랍">${card.failed}</span>
       </div>
       <div class="coh-bar">
         <i class="b-pass"   style="width:${compPct}%"></i>
@@ -2445,7 +2516,10 @@ let __healthDismissed = false;
 
 function dismissHealth(){
   __healthDismissed = true;
-  document.getElementById('health').classList.add('hidden');
+  const h = document.getElementById('health');
+  if (h) h.classList.add('hidden');
+  const s = document.getElementById('mini-fail-strip');
+  if (s) s.style.display = 'none';
 }
 
 function updateHealth(s){
@@ -2552,6 +2626,27 @@ function updateHealth(s){
   hint.textContent = hintTxt;
   hint.style.display = hintTxt ? 'block' : 'none';
   age.textContent = ageLabel ? (ageMin < 1 ? '방금' : ageMin < 60 ? `${Math.round(ageMin)}분 전` : ageLabel) : '';
+
+  // 사용자 요구: 큰 배너 대신 작은 한 줄 strip — 같은 정보를 한글화해서 응축.
+  const strip   = document.getElementById('mini-fail-strip');
+  const sIcon   = document.getElementById('mini-fail-icon');
+  const sTitle  = document.getElementById('mini-fail-title');
+  const sDetail = document.getElementById('mini-fail-detail');
+  const sAge    = document.getElementById('mini-fail-age');
+  if (strip){
+    if (cls === 'unk' || __healthDismissed){
+      strip.style.display = 'none';
+    } else {
+      strip.style.display = 'flex';
+      strip.className = 'mini-fail-strip ' + (toneDown ? 'stale' : displayCls);
+      sIcon.textContent  = iconCh;
+      sTitle.textContent = titleTxt;
+      // collect 단계 detail 우선(가장 정보량 큼) → 없으면 hintTxt → 없으면 subTxt
+      const rawDetail = (c && c.failure_detail) || hintTxt || subTxt || '';
+      sDetail.textContent = cohDetailKo(rawDetail);
+      sAge.textContent = ageLabel ? (ageMin < 1 ? '방금' : ageMin < 60 ? `${Math.round(ageMin)}분 전` : ageLabel) : '';
+    }
+  }
 
   // Header mini-pill — compact at-a-glance indicator next to connection pill
   const mini = document.getElementById('mini-health');
