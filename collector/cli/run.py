@@ -459,6 +459,19 @@ def run_query(
         )
     payloads = deduped
 
+    # P1 — events.jsonl 에 run 시작 이벤트를 무조건 기록.
+    # 이전엔 candidates 가 0 이면 run_pipeline 이 호출되지 않아 events.jsonl
+    # 에 새 run 의 흔적이 전혀 안 남았고, 결과적으로 status_cli._latest_run_detail
+    # 이 옛 run 을 가리켜 화면이 stale 한 옛 데이터로 그려졌음.
+    logger.log(
+        entity_type="run",
+        entity_id=run_id,
+        from_status=None,
+        to_status="running",
+        run_id=run_id,
+        reason=f"q={query!r} candidates={len(candidates)} new={len(payloads)} skipped={skipped_duplicates}",
+    )
+
     per_video_status = []
     processed_payloads: list = []
     total = len(payloads)
@@ -467,6 +480,25 @@ def run_query(
         # collector app 으로 띄운 cmd 창에도 그대로 나타남 (stdout).
         print(f"[run] discovered ({total}/{total}, 100%) — 파이프라인 시작",
               flush=True)
+    else:
+        # candidates 가 0 인 케이스(검색 결과 없음 또는 dedup 으로 전부 스킵)
+        # 도 사용자에게 명확히 알려준다 — 이전엔 cmd 창이 침묵해서 사용자가
+        # "왜 화면이 안 바뀌지?" 로 답답해함.
+        if skipped_duplicates and len(candidates) == skipped_duplicates:
+            print(f"[run] 신규 후보 0건 — 이미 처리된 영상 {skipped_duplicates}건 (Rule C dedup)",
+                  flush=True)
+        elif len(candidates) == 0:
+            print(f"[run] 검색 결과 0건 — 검색어/채널 조건 확인 필요",
+                  flush=True)
+        else:
+            print(f"[run] 신규 후보 0건 (후보 {len(candidates)} · 이미 처리됨 {skipped_duplicates})",
+                  flush=True)
+        # run-end 이벤트도 emit — 화면이 새 run 으로 갱신되도록.
+        logger.log(
+            entity_type="run", entity_id=run_id,
+            from_status="running", to_status="completed",
+            run_id=run_id, reason="no_new_candidates",
+        )
     for idx, payload in enumerate(payloads, 1):
         pct = int(idx * 100 / total) if total else 0
         ttl = (payload.get("title") or "")[:50]
