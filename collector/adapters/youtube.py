@@ -234,13 +234,20 @@ class YouTubeAdapter:
         (default 25). Fetches up to ceil(max_results/50) pages.
 
         If `query['channel_id']` is set, results are restricted to that
-        channel (YouTube Data API `channelId` parameter)."""
+        channel (YouTube Data API `channelId` parameter).
+
+        Optional `query['video_duration']`: 'short' | 'medium' | 'long' |
+        'any'. Maps to YouTube's `videoDuration` parameter — 'short' is
+        <4min (Shorts), 'medium' is 4-20min, 'long' is >20min. Useful for
+        excluding Shorts at the search step rather than client-side filter
+        (sample more longform per quota unit)."""
         q = query.get("topic", "")
         excludes = " ".join(f"-{w}" for w in query.get("exclude_terms", []))
         max_results = int(query.get("max_results", 25))
         # QueryObject.to_dict() spells it `target_channel_id`; keep an
         # alias so callers can pass either.
         channel_id = (query.get("target_channel_id") or query.get("channel_id") or "").strip()
+        video_duration = (query.get("video_duration") or "").strip().lower()
         results: list[dict[str, Any]] = []
         page_token: str | None = None
         while len(results) < max_results:
@@ -252,6 +259,8 @@ class YouTubeAdapter:
                 "maxResults": str(batch),
                 "relevanceLanguage": "ko",
             }
+            if video_duration in ("short", "medium", "long"):
+                params["videoDuration"] = video_duration
             q_combined = f"{q} {excludes}".strip()
             if q_combined:
                 params["q"] = q_combined

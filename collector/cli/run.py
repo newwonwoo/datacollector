@@ -336,26 +336,52 @@ def run_query(
         # common case of "most top results already in store" without
         # blowing through 10k daily units.
         q_dict = q_obj.to_dict()
-        q_dict["max_results"] = max(count * 3, count)
-        try:
-            candidates = services.youtube_search(q_dict)
-        except Exception:
-            candidates = []
+        # 사용자 요구: "쇼츠를 애초에 요청건수에서 빼는 방법을 찾아라."
+        # YouTube search.list 의 videoDuration 파라미터로 search 단계에서
+        # Shorts 를 제외하고 longform 만 회수한다. 단일 값만 받으므로
+        # medium(4~20분) + long(>20분) 두 번 호출 후 합친다.
+        # 같은 search.list 1 unit 코스트는 같지만, 사용자가 요청한 N건의
+        # oversample(N×3)이 모두 longform 으로 채워져 dedup 후에도 살아남을
+        # 가능성이 훨씬 높음.
+        per_dur = max(count * 2, count)  # medium / long 각각의 max
+        candidates = []
+        seen_ids = set()
+        for dur in ("medium", "long"):
+            sub_q = dict(q_dict)
+            sub_q["max_results"] = per_dur
+            sub_q["video_duration"] = dur
+            try:
+                items = services.youtube_search(sub_q)
+            except Exception:
+                items = []
+            for it in items:
+                vid = it.get("video_id", "")
+                if vid and vid not in seen_ids:
+                    seen_ids.add(vid)
+                    candidates.append(it)
         # P4-5: fallback query on empty result (Master_02 §1)
         if not candidates:
             fb = fallback_query(query, target_channel_id=target_channel_id)
-            fb_dict = fb.to_dict()
-            fb_dict["max_results"] = max(count * 3, count)
-            try:
-                candidates = services.youtube_search(fb_dict)
-            except Exception:
-                candidates = []
+            for dur in ("medium", "long"):
+                fb_dict = fb.to_dict()
+                fb_dict["max_results"] = per_dur
+                fb_dict["video_duration"] = dur
+                try:
+                    items = services.youtube_search(fb_dict)
+                except Exception:
+                    items = []
+                for it in items:
+                    vid = it.get("video_id", "")
+                    if vid and vid not in seen_ids:
+                        seen_ids.add(vid)
+                        candidates.append(it)
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
-        # 사용자 의문 해결: "10건 요청했는데 왜 discover 2개?"
-        # search 는 oversample(요청×3)로 회수하고, 그 후 단계별 필터링이
-        # 들어간다. 각 단계 후 카운트를 콘솔에 보여줘 어디서 빠졌는지가 보이게.
+        # 사용자 의문 해결: "10건 요청했는데 왜 discover 가 N개냐?"
+        # search 는 (medium + long) × per_dur 로 oversample 회수하고, 그
+        # 후 단계별 필터링이 들어간다. 각 단계 후 카운트를 콘솔에 보여줘
+        # 어디서 빠졌는지가 보이게 한다.
         print(f"[run] search 결과: {len(candidates)}건 회수 "
-              f"(요청 {count}건 × 3배 oversample = max {q_dict['max_results']})",
+              f"(요청 {count}건 · medium+long 각 {per_dur}건 · Shorts 제외)",
               flush=True)
 
         # Quality filter: enrich with view/subscriber counts and drop
