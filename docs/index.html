@@ -2064,12 +2064,10 @@ function resetPipelineDiagram(){
   // 사용자가 실행 ▶ 누르는 순간, 또는 페이지 첫 로드 시:
   // 이전 run 의 모든 흔적을 즉시 비워 stale 데이터가 새 run 처럼 보이지 않게.
 
-  // (a) 코호트 단계 카드 — '대기' 상태로 빈 카드 7개 다시 그림
+  // (a) 진행 영역 — 새 run 시작 전 '대기' 상태로 초기화
   const grid = document.getElementById('cohort-stages');
   if (grid){
-    grid.innerHTML = COH_STAGES.map(stage =>
-      cohRenderCard({stage, completed:0, in_flight:0, failed:0, reasons:{}})
-    ).join('');
+    grid.innerHTML = '<span style="font-size:22px;font-weight:800;font-family:ui-monospace,monospace;color:#a8a29e">대기</span>';
   }
   // (b) 옛 .stage 마크업 호환 (혹시 남아있는 환경 대비)
   for (const st of STAGE_ORDER){
@@ -2270,29 +2268,119 @@ function cohRenderCard(card, batchN){
   </div>`;
 }
 
-function cohRender(snapshot, runId, requestedN){
+const COH_STAGE_KO = {
+  discover:'탐색', collect:'수집', extract:'추출',
+  normalize:'정규화', review:'검수', promote:'최종확인', package:'저장',
+};
+
+function cohRender(snapshot, runId, requestedN, events){
   const grid = document.getElementById('cohort-stages');
-  if (grid) grid.innerHTML = snapshot.cards.map(c => cohRenderCard(c, requestedN)).join('');
-  document.getElementById('coh-N').textContent = (requestedN ?? '—');
-  document.getElementById('coh-flight').textContent = snapshot.totalInFlight;
-  document.getElementById('coh-done').textContent = snapshot.finished;
-  document.getElementById('coh-drop').textContent = snapshot.totalFailed;
-  // Show the run id AND a heartbeat so the user can confirm the
-  // dashboard is actually polling (was the #1 complaint: cards looked
-  // frozen even though backend was working).
-  const now = new Date();
-  const hb = now.toLocaleTimeString('ko-KR', {hour12: false});
-  document.getElementById('coh-runid').textContent =
-    `run_id: ${runId || '—'} · 갱신 ${hb}`;
-  const inv = document.getElementById('coh-invariant');
+  const N = (typeof requestedN === 'number' && requestedN > 0) ? requestedN : null;
+
+  // 현재 처리 중인 영상 찾기 — events 에서 마지막 'started' 이벤트 기준
+  let currentStage = null, currentOrdinal = null;
+  if (events && events.length) {
+    const vidOrder = [], vidSeen = new Set();
+    const latestStage = {};
+    for (const ev of events) {
+      if (!ev.entity_id) continue;
+      const lc = ev.entity_id.lastIndexOf(':');
+      const vid = ev.entity_id.slice(0, lc);
+      const st  = ev.entity_id.slice(lc + 1);
+      if (!COH_STAGES.includes(st)) continue;
+      if (!vidSeen.has(vid)) { vidOrder.push(vid); vidSeen.add(vid); }
+      if (ev.to_status === 'started') {
+        latestStage[vid] = st;
+      } else if (['completed','failed','skipped'].includes(ev.to_status)) {
+        delete latestStage[vid];
+      }
+    }
+    const inFlight = Object.keys(latestStage);
+    if (inFlight.length) {
+      const vid = inFlight[0];
+      currentStage   = latestStage[vid];
+      currentOrdinal = vidOrder.indexOf(vid) + 1;
+    }
+  }
+
+  // 완료 = 성공(finished) + 실패(totalFailed) — "처리가 끝난" 영상 수
+  const doneCount    = snapshot.finished + snapshot.totalFailed;
+  const successCount = snapshot.finished;
+  const failCount    = snapshot.totalFailed;
+  const pct          = N ? Math.round(doneCount / N * 100) : 0;
+  const succPct      = N ? Math.round(successCount / N * 100) : 0;
+  const failPct      = N ? Math.round(failCount    / N * 100) : 0;
+
+  // 실패 이유 취합
+  const failReasons = {};
+  for (const card of snapshot.cards) {
+    for (const [r, n] of Object.entries(card.reasons || {})) {
+      failReasons[r] = (failReasons[r] || 0) + n;
+    }
+  }
+  const reasonTxt = Object.entries(failReasons)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([r,n]) => `${cohReasonKo(r)} ${n}건`)
+    .join(' · ');
+
+  let html = '';
+
+  // ── 1행: 대형 숫자 + 성공/실패 카운트 ──
+  const bigNum = N
+    ? `<span style="font-size:26px;font-weight:800;font-family:ui-monospace,monospace;color:#0f172a">${doneCount}/${N}</span>
+       <span style="font-size:13px;color:#78716c;margin-left:4px">(${pct}%)</span>`
+    : `<span style="font-size:26px;font-weight:800;font-family:ui-monospace,monospace;color:#a8a29e">대기</span>`;
+  const badges = N ? `
+    <span style="margin-left:14px;font-size:13px;font-weight:600;color:#16a34a">✓ 수집 완료 ${successCount}</span>
+    ${failCount ? `<span style="margin-left:8px;font-size:13px;font-weight:600;color:#dc2626">✗ 실패 ${failCount}</span>` : ''}` : '';
+
+  html += `<div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px">
+    ${bigNum}${badges}
+  </div>`;
+
+  // ── 진행 바 ──
+  if (N) {
+    html += `<div style="background:#e7e5e4;border-radius:4px;height:5px;margin:7px 0 5px">
+      <div style="display:inline-block;background:#16a34a;width:${succPct}%;height:100%;border-radius:4px 0 0 4px"></div><div style="display:inline-block;background:#ef4444;width:${failPct}%;height:100%;border-radius:0 4px 4px 0"></div>
+    </div>`;
+  }
+
+  // ── 2행: 현재 처리 중 영상 ──
+  if (snapshot.totalInFlight > 0 && currentStage) {
+    const stKo = COH_STAGE_KO[currentStage] || currentStage;
+    html += `<div style="font-size:13px;color:#92400e;margin-top:2px">
+      <span style="color:#f59e0b;animation:cohGlow 1.3s ease-in-out infinite;display:inline-block">●</span>
+      <b>${currentOrdinal || '?'}번째 영상</b> — ${stKo} 단계 처리 중
+    </div>`;
+  } else if (doneCount > 0 && doneCount === N) {
+    html += `<div style="font-size:13px;color:#16a34a;margin-top:2px">✓ 모든 영상 처리 완료</div>`;
+  }
+
+  // ── 3행: 실패 이유 (실패 있을 때만) ──
+  if (failCount > 0) {
+    html += `<div style="font-size:12px;color:#dc2626;margin-top:6px;padding:4px 10px;background:#fef2f2;border-radius:4px;border-left:3px solid #ef4444">
+      ✗ ${reasonTxt}
+    </div>`;
+  }
+
+  if (grid) grid.innerHTML = html;
+
+  // 메타 정보 업데이트 (숨겨진 banner 호환)
+  const el = id => document.getElementById(id);
+  if (el('coh-N'))      el('coh-N').textContent      = requestedN ?? '—';
+  if (el('coh-flight')) el('coh-flight').textContent = snapshot.totalInFlight;
+  if (el('coh-done'))   el('coh-done').textContent   = snapshot.finished;
+  if (el('coh-drop'))   el('coh-drop').textContent   = snapshot.totalFailed;
+  const hb = new Date().toLocaleTimeString('ko-KR', {hour12:false});
+  if (el('coh-runid'))  el('coh-runid').textContent  = `run_id: ${runId||'—'} · 갱신 ${hb}`;
+  const inv = el('coh-invariant');
   if (inv){
     inv.classList.toggle('bad', !snapshot.invariantOk);
-    const ok = snapshot.invariantOk ? '✓' : '✗ INVARIANT 위배';
-    inv.innerHTML = `검산 <b>${requestedN ?? '—'}</b> = `
+    inv.innerHTML = `검산 <b>${requestedN??'—'}</b> = `
       + `<span class="emerald">${snapshot.finished}</span> (완료) + `
       + `<span class="rose">${snapshot.totalFailed}</span> (드랍) + `
       + `<span class="amber">${snapshot.totalInFlight}</span> (진행중) = `
-      + `<b>${snapshot.sumCheck}</b> ${ok}`;
+      + `<b>${snapshot.sumCheck}</b> ${snapshot.invariantOk?'✓':'✗ INVARIANT 위배'}`;
   }
 }
 
@@ -2339,7 +2427,7 @@ async function cohPollOnce(){
     __cohRunEpoch++;
   }
   const snap = cohReplay(events, runId, requestedN);
-  cohRender(snap, runId, requestedN);
+  cohRender(snap, runId, requestedN, events);
 }
 
 // Replaced — old funnel banner is no longer rendered; cohPollOnce
@@ -2501,7 +2589,7 @@ function updatePipelineFromStatus(detail, activeGARun){
   };
   const STAGE_KO = {
     discover:'탐색', collect:'수집', extract:'추출', normalize:'정규화',
-    review:'검수', promote:'승급', package:'산출',
+    review:'검수', promote:'수집 완료', package:'산출',
   };
   const pill = activeGARun
     ? `<span class="pill run"><span class="dot"></span>실행 중 (GitHub Actions)</span>`

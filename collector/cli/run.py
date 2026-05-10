@@ -581,7 +581,7 @@ def run_query(
         rs = payload.get("record_status", "?")
         code = payload.get("failure_reason_code")
         STAGE_KO_RUN = {
-            "promoted":"승급 완료","reviewed_confirmed":"검수 확정",
+            "promoted":"수집 완료","reviewed_confirmed":"검수 확정",
             "reviewed_inferred":"검수 추론","reviewed_unverified":"검수 미확정",
             "reviewed_rejected":"검수 거절","invalid":"무효","collected":"수집",
         }
