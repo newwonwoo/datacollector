@@ -2170,7 +2170,14 @@ function cohReplay(events, runId, requestedN){
     if (ev.run_id !== runId) continue;
     const eid = ev.entity_id || '';
     if (!eid.includes(':')) continue;
-    const [videoId, stage] = eid.split(':');
+    // entity_id 형식: "<source_key>:<stage>" 인데 source_key 자체가
+    // "youtube:VIDEO_ID" 처럼 콜론을 포함한다. 따라서 마지막 ':' 뒤를
+    // stage 로, 그 앞 전체를 videoId 로 분해해야 한다 (이전엔 split[0]/[1]
+    // 만 써서 stage="VIDEO_ID" 가 되어 모든 이벤트가 필터링됨 → 카드가
+    // 영원히 '대기'로 남던 버그의 원인).
+    const lastColon = eid.lastIndexOf(':');
+    const videoId = eid.slice(0, lastColon);
+    const stage = eid.slice(lastColon + 1);
     const st = (stage || '').toLowerCase();
     if (!COH_STAGES.includes(st)) continue;
     if (!map.has(videoId)) map.set(videoId, {});
