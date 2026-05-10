@@ -162,6 +162,13 @@ def make_handler(
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?", 1)[0]
             try:
+                # 브라우저가 모든 페이지에서 자동으로 보내는 favicon 요청.
+                # 404 두 줄이 cmd 콘솔에 떠서 사용자가 혼란스러워하던 노이즈를
+                # 차단. 빈 204(No Content)로 빠르게 응답.
+                if path == "/favicon.ico":
+                    self.send_response(204)
+                    self.end_headers()
+                    return
                 if path == "/api/config":
                     return self._handle_config_get()
                 if path == "/api/workflow/status":
