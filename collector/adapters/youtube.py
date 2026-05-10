@@ -1,32 +1,139 @@
 """YouTube Data API v3 + timedtext captions adapter."""
 from __future__ import annotations
 
+import http.cookiejar
 import json
+import os
+import random
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
 from ..services import MockError
 
+# A real desktop Chrome UA. Without this, urllib defaults to
+# `Python-urllib/3.x` which YouTube's anti-bot tier flags instantly.
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
-_ISO_DUR = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+# Process-cached opener loaded with the user's cookies.txt jar (when present).
+# Caching avoids reparsing the file on every video. Cleared if mtime changes.
+_OPENER_CACHE: dict[str, Any] = {"path": None, "mtime": None, "opener": None}
 
 
-def _iso8601_duration_to_sec(s: str) -> int | None:
-    if not s:
-        return None
-    m = _ISO_DUR.match(s)
-    if not m:
-        return None
-    h, mi, se = (int(x) if x else 0 for x in m.groups())
-    return h * 3600 + mi * 60 + se
+def _build_opener_with_cookies() -> urllib.request.OpenerDirector:
+    cookies_path = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
+    if not cookies_path or not os.path.exists(cookies_path):
+        return urllib.request.build_opener()
+    mtime = os.path.getmtime(cookies_path)
+    if (
+        _OPENER_CACHE["path"] == cookies_path
+        and _OPENER_CACHE["mtime"] == mtime
+        and _OPENER_CACHE["opener"] is not None
+    ):
+        return _OPENER_CACHE["opener"]
+    jar = http.cookiejar.MozillaCookieJar()
+    try:
+        jar.load(cookies_path, ignore_discard=True, ignore_expires=True)
+    except Exception:  # noqa: BLE001
+        return urllib.request.build_opener()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    _OPENER_CACHE.update({"path": cookies_path, "mtime": mtime, "opener": opener})
+    return opener
+
+
+def _captions_to_plain_text(body: str, ext: str) -> str:
+    """Convert a caption-track payload to plain text suitable for the LLM.
+
+    Without this, transcripts hit the LLM as raw json3/vtt/ttml — multi-KB
+    of structural fluff that inflates token cost 5–10× and burns daily
+    quota fast (G-16 root cause).
+    """
+    if not body:
+        return ""
+    ext = (ext or "").lower()
+    body_strip = body.lstrip()
+    # json3 / heuristic JSON
+    if ext == "json3" or body_strip.startswith("{"):
+        try:
+            obj = json.loads(body)
+            parts: list[str] = []
+            for ev in obj.get("events") or []:
+                segs = ev.get("segs") or []
+                line = "".join(s.get("utf8", "") for s in segs)
+                if line and line != "\n":
+                    parts.append(line.strip())
+            txt = " ".join(p for p in parts if p)
+            if txt:
+                return txt
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+    # vtt / srt
+    if ext in {"vtt", "srt"} or "-->" in body[:200]:
+        out: list[str] = []
+        for raw in body.splitlines():
+            ln = raw.strip()
+            if not ln:
+                continue
+            if ln.startswith("WEBVTT") or ln.startswith("NOTE") or "-->" in ln:
+                continue
+            if ln.isdigit():
+                continue
+            # strip simple HTML/VTT cue tags like <c> <00:00:00.000>
+            import re as _re
+            ln = _re.sub(r"<[^>]+>", "", ln)
+            if ln:
+                out.append(ln)
+        if out:
+            return " ".join(out)
+    # srv1/srv2/srv3/ttml — XML-ish; pull text between tags
+    if ext.startswith("srv") or ext == "ttml" or body_strip.startswith("<"):
+        import re as _re
+        # decode common entities and strip tags
+        cleaned = _re.sub(r"<[^>]+>", " ", body)
+        cleaned = (cleaned.replace("&amp;", "&")
+                   .replace("&lt;", "<").replace("&gt;", ">")
+                   .replace("&quot;", '"').replace("&#39;", "'"))
+        cleaned = _re.sub(r"\s+", " ", cleaned).strip()
+        if cleaned:
+            return cleaned
+    # Last resort: return whatever we got, callers can decide.
+    return body.strip()
+
+
+def _is_youtube(url: str) -> bool:
+    try:
+        host = urllib.parse.urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    return host.endswith("youtube.com") or host.endswith("ytimg.com") or host.endswith("googlevideo.com")
 
 
 def _default_http(method: str, url: str, *, headers: dict | None = None, data: bytes | None = None) -> dict:
-    req = urllib.request.Request(url, method=method, headers=headers or {}, data=data)
+    """HTTP call with browser-like headers and (when available) the cookies jar.
+
+    Anti-bot mitigation per GOTCHAS G-15: bare `Python-urllib/3.x` requests
+    against `youtube.com`/`googlevideo.com` get IP-throttled within ~50 calls.
+    We always send a real Chrome UA, and on YouTube hosts we add Referer +
+    Accept-Language and attach the user's cookies.txt session if exported.
+    """
+    h: dict[str, str] = {"User-Agent": _DEFAULT_UA}
+    if _is_youtube(url):
+        h.setdefault("Referer", "https://www.youtube.com/")
+        h.setdefault("Accept-Language", "ko-KR,ko;q=0.9,en;q=0.8")
+    if headers:
+        h.update(headers)
+
+    req = urllib.request.Request(url, method=method, headers=h, data=data)
+    opener = _build_opener_with_cookies() if _is_youtube(url) else urllib.request.build_opener()
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with opener.open(req, timeout=15) as resp:
             body = resp.read().decode("utf-8")
             return {"status": resp.status, "body": body}
     except urllib.error.HTTPError as e:
@@ -36,20 +143,112 @@ def _default_http(method: str, url: str, *, headers: dict | None = None, data: b
 class YouTubeAdapter:
     SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
     VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
+    CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
     TIMEDTEXT_URL = "https://video.google.com/timedtext"
 
     def __init__(self, api_key: str, http: Callable = _default_http):
         self.api_key = api_key
         self.http = http
 
+    # ---------- Channel ID resolution ----------
+    # Accepted inputs:
+    #   UC...22-chars                        → returned as-is (no API call)
+    #   https://youtube.com/channel/UCxxx    → extract UC...
+    #   https://youtube.com/@handle  /  @h   → channels.list?forHandle=
+    #   https://youtube.com/c/customname     → channels.list?forUsername= (best-effort)
+    #   https://youtube.com/user/legacyname  → channels.list?forUsername=
+    #   https://youtube.com/watch?v=VIDEOID  → videos.list → snippet.channelId
+    _UC_RX = __import__("re").compile(r"\b(UC[0-9A-Za-z_\-]{22})\b")
+    # YouTube handles allow ASCII letters/digits + Korean (Hangul syllables)
+    # + a small punctuation set. Just accept "anything that isn't a URL
+    # delimiter" so we don't reject Korean / Japanese / emoji handles.
+    _HANDLE_RX = __import__("re").compile(r"@([^\s/?#&=]{2,30})")
+    _CUSTOM_RX = __import__("re").compile(r"youtube\.com/(?:c|user)/([^\s/?#&=]+)")
+    _VIDEO_RX = __import__("re").compile(
+        r"(?:youtube\.com/watch\?[^ ]*v=|youtu\.be/)([A-Za-z0-9_\-]{11})"
+    )
+
+    def resolve_channel(self, raw: str) -> str | None:
+        """Best-effort: turn a user-pasted YouTube URL / @handle / UC...
+        into a `UC…` channel ID. Returns None if unresolvable.
+
+        At most one API call (1 unit) per resolution. Results are not
+        cached — caller is expected to call this once per run."""
+        s = (raw or "").strip()
+        if not s:
+            return None
+        m = self._UC_RX.search(s)
+        if m:
+            return m.group(1)
+        # Handle: @xxx (with or without youtube.com/ prefix)
+        m = self._HANDLE_RX.search(s)
+        if m:
+            return self._channels_lookup({"forHandle": "@" + m.group(1)})
+        # Custom URL (/c/foo or /user/foo)
+        m = self._CUSTOM_RX.search(s)
+        if m:
+            return self._channels_lookup({"forUsername": m.group(1)})
+        # Video URL → channel of that video
+        m = self._VIDEO_RX.search(s)
+        if m:
+            return self._video_channel_lookup(m.group(1))
+        return None
+
+    def _channels_lookup(self, extra_params: dict[str, str]) -> str | None:
+        params = {"key": self.api_key, "part": "id"}
+        params.update(extra_params)
+        try:
+            resp = self.http(
+                "GET",
+                f"{self.CHANNELS_URL}?{urllib.parse.urlencode(params)}",
+            )
+            self._raise_for(resp)
+            body = json.loads(resp["body"])
+        except Exception:
+            return None
+        items = body.get("items") or []
+        if not items:
+            return None
+        cid = items[0].get("id") or ""
+        return cid if cid.startswith("UC") else None
+
+    def _video_channel_lookup(self, video_id: str) -> str | None:
+        params = {"key": self.api_key, "part": "snippet", "id": video_id}
+        try:
+            resp = self.http(
+                "GET", f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+            )
+            self._raise_for(resp)
+            body = json.loads(resp["body"])
+        except Exception:
+            return None
+        items = body.get("items") or []
+        if not items:
+            return None
+        cid = (items[0].get("snippet") or {}).get("channelId", "")
+        return cid if cid.startswith("UC") else None
+
     # ---------- Services interface ----------
 
     def search(self, query: dict[str, Any]) -> list[dict[str, Any]]:
         """Search with pagination. query['max_results'] caps the result count
-        (default 25). Fetches up to ceil(max_results/50) pages."""
+        (default 25). Fetches up to ceil(max_results/50) pages.
+
+        If `query['channel_id']` is set, results are restricted to that
+        channel (YouTube Data API `channelId` parameter).
+
+        Optional `query['video_duration']`: 'short' | 'medium' | 'long' |
+        'any'. Maps to YouTube's `videoDuration` parameter — 'short' is
+        <4min (Shorts), 'medium' is 4-20min, 'long' is >20min. Useful for
+        excluding Shorts at the search step rather than client-side filter
+        (sample more longform per quota unit)."""
         q = query.get("topic", "")
         excludes = " ".join(f"-{w}" for w in query.get("exclude_terms", []))
         max_results = int(query.get("max_results", 25))
+        # QueryObject.to_dict() spells it `target_channel_id`; keep an
+        # alias so callers can pass either.
+        channel_id = (query.get("target_channel_id") or query.get("channel_id") or "").strip()
+        video_duration = (query.get("video_duration") or "").strip().lower()
         results: list[dict[str, Any]] = []
         page_token: str | None = None
         while len(results) < max_results:
@@ -59,9 +258,20 @@ class YouTubeAdapter:
                 "part": "snippet",
                 "type": "video",
                 "maxResults": str(batch),
-                "q": f"{q} {excludes}".strip(),
                 "relevanceLanguage": "ko",
             }
+            if video_duration in ("short", "medium", "long"):
+                params["videoDuration"] = video_duration
+            q_combined = f"{q} {excludes}".strip()
+            if q_combined:
+                params["q"] = q_combined
+            if channel_id:
+                params["channelId"] = channel_id
+                # Channel-only browse: order by date so we get the
+                # newest uploads first instead of YouTube's relevance
+                # default (which is meaningless without a query).
+                if not q_combined:
+                    params["order"] = "date"
             if page_token:
                 params["pageToken"] = page_token
             url = f"{self.SEARCH_URL}?{urllib.parse.urlencode(params)}"
@@ -72,52 +282,117 @@ class YouTubeAdapter:
             for it in items:
                 if not it.get("id", {}).get("videoId"):
                     continue
+                snippet = it.get("snippet") or {}
+                # Skip livestreams / premieres / upcoming. They don't have
+                # transcripts available (or auto-captions until they end +
+                # YouTube transcribes), so they'd fail YT_NO_TRANSCRIPT
+                # 100% of the time — wasting yt-dlp calls and confusing
+                # the dashboard with all-failed runs.
+                live_state = snippet.get("liveBroadcastContent", "none")
+                if live_state and live_state != "none":
+                    continue
                 results.append({
                     "video_id": it["id"]["videoId"],
-                    "channel_id": it["snippet"].get("channelId", ""),
-                    "title": it["snippet"].get("title", ""),
-                    "published_at": it["snippet"].get("publishedAt", ""),
+                    "channel_id": snippet.get("channelId", ""),
+                    "title": snippet.get("title", ""),
+                    "published_at": snippet.get("publishedAt", ""),
                 })
             page_token = body.get("nextPageToken")
             if not page_token or not items:
                 break
-        results = results[:max_results]
-        # Enrich with duration_sec via videos.list (1 unit/call, batched 50).
-        # Required for stage_collect's shorts/long-stream filters (Master_02 §2.3).
-        self._enrich_durations(results)
-        return results
+        return results[:max_results]
 
-    def _enrich_durations(self, items: list[dict[str, Any]]) -> None:
-        ids = [it["video_id"] for it in items if it.get("video_id")]
-        if not ids:
-            return
-        by_id: dict[str, int] = {}
-        for i in range(0, len(ids), 50):
-            batch = ids[i:i + 50]
+    @staticmethod
+    def _parse_iso8601_duration(s: str) -> int:
+        """PT1H2M3S → 3723 seconds. Returns 0 on parse failure."""
+        if not s or not s.startswith("PT"):
+            return 0
+        import re
+        h = re.search(r"(\d+)H", s)
+        m = re.search(r"(\d+)M", s)
+        sec = re.search(r"(\d+)S", s)
+        return ((int(h.group(1)) if h else 0) * 3600 +
+                (int(m.group(1)) if m else 0) * 60 +
+                (int(sec.group(1)) if sec else 0))
+
+    def enrich_stats(
+        self,
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add `view_count`, `subscriber_count`, and `duration_sec` to
+        each candidate.
+
+        Two batched API calls (1 unit each per 50 IDs):
+          - videos.list?part=statistics,contentDetails →
+                viewCount + ISO8601 duration per video_id
+          - channels.list?part=statistics → subscriberCount per channel_id
+
+        Candidates are mutated in place AND returned. Missing/private
+        stats become 0 (not None) so callers can filter with `>=`.
+        """
+        if not candidates:
+            return candidates
+        # Dedupe ids; YouTube takes up to 50 per call.
+        video_ids = list({c.get("video_id") for c in candidates if c.get("video_id")})
+        channel_ids = list({c.get("channel_id") for c in candidates if c.get("channel_id")})
+
+        video_stats: dict[str, int] = {}
+        video_duration: dict[str, int] = {}
+        for i in range(0, len(video_ids), 50):
+            chunk = video_ids[i:i + 50]
             params = {
                 "key": self.api_key,
-                "part": "contentDetails",
-                "id": ",".join(batch),
-                "maxResults": str(len(batch)),
+                "part": "statistics,contentDetails",
+                "id": ",".join(chunk),
             }
             url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+            resp = self.http("GET", url)
             try:
-                resp = self.http("GET", url)
-                if resp["status"] != 200:
-                    continue
-                body = json.loads(resp["body"])
+                self._raise_for(resp)
             except Exception:
                 continue
-            for v in body.get("items", []):
-                vid = v.get("id")
-                iso = (v.get("contentDetails") or {}).get("duration", "")
-                sec = _iso8601_duration_to_sec(iso)
-                if vid and sec is not None:
-                    by_id[vid] = sec
-        for it in items:
-            sec = by_id.get(it.get("video_id", ""))
-            if sec is not None:
-                it["duration_sec"] = sec
+            body = json.loads(resp["body"])
+            for it in body.get("items", []):
+                vid = it.get("id", "")
+                vc = (it.get("statistics") or {}).get("viewCount")
+                if vid and vc is not None:
+                    try:
+                        video_stats[vid] = int(vc)
+                    except (TypeError, ValueError):
+                        video_stats[vid] = 0
+                dur_iso = (it.get("contentDetails") or {}).get("duration", "")
+                if vid and dur_iso:
+                    video_duration[vid] = self._parse_iso8601_duration(dur_iso)
+
+        channel_stats: dict[str, int] = {}
+        for i in range(0, len(channel_ids), 50):
+            chunk = channel_ids[i:i + 50]
+            params = {
+                "key": self.api_key,
+                "part": "statistics",
+                "id": ",".join(chunk),
+            }
+            url = f"https://www.googleapis.com/youtube/v3/channels?{urllib.parse.urlencode(params)}"
+            resp = self.http("GET", url)
+            try:
+                self._raise_for(resp)
+            except Exception:
+                continue
+            body = json.loads(resp["body"])
+            for it in body.get("items", []):
+                cid = it.get("id", "")
+                sc = (it.get("statistics") or {}).get("subscriberCount")
+                if cid and sc is not None:
+                    try:
+                        channel_stats[cid] = int(sc)
+                    except (TypeError, ValueError):
+                        channel_stats[cid] = 0
+
+        for c in candidates:
+            c["view_count"] = video_stats.get(c.get("video_id", ""), 0)
+            c["subscriber_count"] = channel_stats.get(c.get("channel_id", ""), 0)
+            c["duration_sec"] = video_duration.get(c.get("video_id", ""), 0)
+        return candidates
 
     def captions(self, video_id: str) -> dict[str, Any]:
         """Multi-path captions fetch with per-path error capture.
@@ -126,6 +401,12 @@ class YouTubeAdapter:
         (full User-Agent, cookies, Innertube). youtube-transcript-api is
         secondary (gets blocked with 403 more often). timedtext is last resort.
         """
+        # G-15: jitter between videos so the request stream doesn't look
+        # mechanically uniform (5 hits in 5 seconds = bot pattern).
+        # COLLECTOR_YT_NO_JITTER=1 disables this for tests / scripted services.
+        if not os.environ.get("COLLECTOR_YT_NO_JITTER"):
+            time.sleep(random.uniform(0.25, 0.6))
+
         errors: list[str] = []
 
         # 1st: yt-dlp Python library
@@ -142,21 +423,54 @@ class YouTubeAdapter:
         if res.get("error"):
             errors.append(f"ytapi:{res['error']}")
 
-        # 3rd: timedtext direct
+        # 3rd: timedtext direct (use json3 for trivial plain-text conversion)
         for lang in ("ko", "en"):
             for kind in ("", "asr"):
-                params = {"v": video_id, "lang": lang, "fmt": "srv3"}
+                params = {"v": video_id, "lang": lang, "fmt": "json3"}
                 if kind:
                     params["kind"] = kind
                 url = f"{self.TIMEDTEXT_URL}?{urllib.parse.urlencode(params)}"
                 resp = self.http("GET", url)
                 if resp["status"] == 200 and resp["body"].strip():
-                    return {
-                        "source": "asr" if kind == "asr" else "manual",
-                        "text": resp["body"],
-                    }
+                    text = _captions_to_plain_text(resp["body"], "json3")
+                    if text.strip():
+                        return {
+                            "source": "asr" if kind == "asr" else "manual",
+                            "text": text,
+                        }
         errors.append("timedtext:all-empty")
+
+        # 4th: video DESCRIPTION as transcript. Many Korean creators
+        # (esp. lecture / 사주 / 풍수 channels) skip captions entirely
+        # but paste a long timeline + summary into the description box.
+        # We only accept descriptions that look like real content
+        # (≥500 chars) — promo-only blurbs are useless and noisy.
+        try:
+            desc = self._description_for(video_id)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"description:{type(e).__name__}")
+            desc = ""
+        if desc and len(desc) >= 500:
+            return {"source": "description", "text": desc}
+        if desc:
+            errors.append(f"description:too_short({len(desc)}c)")
+        else:
+            errors.append("description:empty")
+
         return {"source": "none", "text": "", "error": " | ".join(errors)}
+
+    def _description_for(self, video_id: str) -> str:
+        """Fetch the YouTube video description via Data API. 1 quota
+        unit. Used as a last-resort transcript when no captions exist."""
+        params = {"key": self.api_key, "part": "snippet", "id": video_id}
+        url = f"{self.VIDEOS_URL}?{urllib.parse.urlencode(params)}"
+        resp = self.http("GET", url)
+        self._raise_for(resp)
+        body = json.loads(resp["body"])
+        items = body.get("items") or []
+        if not items:
+            return ""
+        return ((items[0].get("snippet") or {}).get("description") or "").strip()
 
     def _captions_via_yt_transcript(self, video_id: str) -> dict[str, Any]:
         """youtube-transcript-api 1.x — uses list()/fetch() (not list_transcripts)."""
@@ -202,7 +516,6 @@ class YouTubeAdapter:
         cookies file via env COLLECTOR_YT_COOKIES_FILE (path to cookies.txt
         exported from a real browser).
         """
-        import os
         try:
             from yt_dlp import YoutubeDL  # type: ignore
         except ImportError:
@@ -210,50 +523,71 @@ class YouTubeAdapter:
 
         cookies = os.environ.get("COLLECTOR_YT_COOKIES_FILE", "")
 
-        # Try multiple player clients — newer yt-dlp supports many fallbacks
-        client_sets = [
+        # Try a small, conservative set of YouTube player_clients (G-15:
+        # high attempt counts compound bot signals on a single IP). The
+        # first entry == None lets yt-dlp pick its own default progression
+        # (currently includes `android_vr`, which works without a JS runtime).
+        # Two cookie-friendly fallbacks follow.
+        client_sets: list[list[str] | None] = [
+            None,
+            ["android_vr"],
             ["ios", "tv_embedded"],
-            ["android"],
-            ["web", "web_creator"],
-            ["mweb"],
         ]
         last_err = ""
         for clients in client_sets:
-            opts = {
+            # IMPORTANT: do NOT pass writesubtitles / writeautomaticsub /
+            # subtitleslangs here. With recent yt-dlp (≥2026.3) those flags
+            # trigger format selection that fails with "Requested format is
+            # not available" / "Please sign in" even when extract_info
+            # succeeds. We only need the metadata to read the caption
+            # track URLs out of info["automatic_captions"] / ["subtitles"]
+            # and fetch them via self.http() ourselves.
+            opts: dict[str, Any] = {
                 "skip_download": True,
-                "writesubtitles": True,
-                "writeautomaticsub": True,
-                "subtitleslangs": ["ko", "en"],
                 "quiet": True,
                 "no_warnings": True,
-                "extractor_args": {"youtube": {"player_client": clients}},
             }
+            if clients is not None:
+                opts["extractor_args"] = {"youtube": {"player_client": clients}}
             if cookies and os.path.exists(cookies):
                 opts["cookiefile"] = cookies
 
+            tag = ",".join(clients) if clients else "default"
             try:
                 with YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(
                         f"https://www.youtube.com/watch?v={video_id}", download=False
                     )
             except Exception as e:  # noqa: BLE001
-                last_err = f"{','.join(clients)}:{type(e).__name__}"
+                last_err = f"{tag}:{type(e).__name__}"
                 continue
 
-            # Look for any caption tracks
+            # Look for any caption tracks. Prefer the json3 format because
+            # it's trivially convertible to plain text (G-16); other formats
+            # like vtt/ttml work but get parsed less precisely. Whatever is
+            # returned, we coerce it to plain text before handing back —
+            # otherwise the LLM stage gets multi-KB of structural fluff
+            # that inflates token cost ~5–10× and exhausts the daily quota.
             for source_name, key in (("manual", "subtitles"), ("asr", "automatic_captions")):
                 tracks_by_lang = (info or {}).get(key) or {}
                 for lang in ("ko", "en"):
                     tracks = tracks_by_lang.get(lang) or []
-                    for t in tracks:
+                    # json3 first; everything else after.
+                    tracks_sorted = sorted(
+                        tracks, key=lambda t: 0 if t.get("ext") == "json3" else 1
+                    )
+                    for t in tracks_sorted:
                         url = t.get("url")
                         if not url:
                             continue
                         resp = self.http("GET", url)
-                        if resp["status"] == 200 and resp["body"].strip():
-                            return {"source": source_name, "text": resp["body"]}
+                        if resp["status"] != 200 or not resp["body"].strip():
+                            continue
+                        text = _captions_to_plain_text(resp["body"], t.get("ext", ""))
+                        if text.strip():
+                            return {"source": source_name, "text": text}
             # info ok but no tracks — try next client
-            last_err = f"{','.join(clients)}:no_tracks"
+            last_err = f"{tag}:no_tracks"
         return {"source": "none", "text": "", "error": last_err or "all_clients_failed"}
 
     def _captions_via_ytdlp(self, video_id: str) -> dict[str, Any]:

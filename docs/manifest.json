@@ -1,0 +1,25 @@
+{
+  "name": "Collector — YouTube 지식 파이프라인",
+  "short_name": "Collector",
+  "description": "YouTube 자막 → 요약·규칙·태그 로컬 파이프라인",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#2563eb",
+  "background_color": "#f7f8fa",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%232563eb'/><text x='50%25' y='58%25' text-anchor='middle' font-family='system-ui,sans-serif' font-size='96' font-weight='700' fill='white'>C</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%232563eb'/><text x='50%25' y='58%25' text-anchor='middle' font-family='system-ui,sans-serif' font-size='256' font-weight='700' fill='white'>C</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

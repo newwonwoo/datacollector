@@ -67,12 +67,15 @@ def build_query(
     )
 
 
-def fallback_query(raw: str) -> QueryObject:
-    """Template 생성 실패 시 허용되는 1회 fallback (Master_02 §1)."""
+def fallback_query(raw: str, *, target_channel_id: str | None = None) -> QueryObject:
+    """Template 생성 실패 시 허용되는 1회 fallback (Master_02 §1).
+
+    `target_channel_id` is preserved so a channel-restricted run never
+    accidentally degrades into a whole-YouTube search on retry."""
     return QueryObject(
         topic=raw.strip(),
         synonyms=[],
         exclude_terms=list(_DEFAULT_EXCLUDE),
         period="this_month",
-        target_channel_id=None,
+        target_channel_id=target_channel_id,
     )
