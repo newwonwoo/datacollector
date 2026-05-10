@@ -2233,15 +2233,18 @@ function cohReplay(events, runId, requestedN){
   };
 }
 
-function cohRenderCard(card){
-  const total = card.completed + card.in_flight + card.failed;
-  const compPct = total ? (card.completed/total)*100 : 0;
-  const inflPct = total ? (card.in_flight/total)*100 : 0;
-  const failPct = total ? (card.failed/total)*100 : 0;
-  // 사용자 요구: "n건 중 m건 완료 (xx%)" — 진행률 한 줄, 큰 글씨
-  const progressPct = total ? Math.round((card.completed / total) * 100) : 0;
-  const progressTxt = total
-    ? `${card.completed}/${total}<span style="font-size:11px;font-weight:500;color:#78716c;margin-left:4px">(${progressPct}%)</span>`
+function cohRenderCard(card, batchN){
+  // 분모 통일 — 모든 단계 카드가 "요청 N 건 중 m 건 통과" 형태로 같은 분모를
+  // 갖게 한다. 이전엔 단계별로 (completed+in_flight+failed) 를 분모로 써서
+  // 뒤 단계가 5/5(100%) 처럼 보여 사용자가 "벌써 다 됐나?" 로 헷갈렸음.
+  const N = (typeof batchN === 'number' && batchN > 0) ? batchN : null;
+  const denom = N || (card.completed + card.in_flight + card.failed);
+  const compPct = denom ? (card.completed/denom)*100 : 0;
+  const inflPct = denom ? (card.in_flight/denom)*100 : 0;
+  const failPct = denom ? (card.failed/denom)*100 : 0;
+  const progressPct = denom ? Math.round((card.completed / denom) * 100) : 0;
+  const progressTxt = denom
+    ? `${card.completed}/${denom}<span style="font-size:11px;font-weight:500;color:#78716c;margin-left:4px">(${progressPct}%)</span>`
     : '<span style="color:#a8a29e">대기</span>';
   let cls = 'coh-card';
   if (card.in_flight > 0)                                  cls += ' has-flight';
@@ -2269,7 +2272,7 @@ function cohRenderCard(card){
 
 function cohRender(snapshot, runId, requestedN){
   const grid = document.getElementById('cohort-stages');
-  if (grid) grid.innerHTML = snapshot.cards.map(cohRenderCard).join('');
+  if (grid) grid.innerHTML = snapshot.cards.map(c => cohRenderCard(c, requestedN)).join('');
   document.getElementById('coh-N').textContent = (requestedN ?? '—');
   document.getElementById('coh-flight').textContent = snapshot.totalInFlight;
   document.getElementById('coh-done').textContent = snapshot.finished;
