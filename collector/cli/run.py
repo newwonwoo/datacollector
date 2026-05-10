@@ -351,6 +351,12 @@ def run_query(
             except Exception:
                 candidates = []
         mode = f"real:{llm_choice or os.environ.get('COLLECTOR_LLM', 'gemini')}"
+        # 사용자 의문 해결: "10건 요청했는데 왜 discover 2개?"
+        # search 는 oversample(요청×3)로 회수하고, 그 후 단계별 필터링이
+        # 들어간다. 각 단계 후 카운트를 콘솔에 보여줘 어디서 빠졌는지가 보이게.
+        print(f"[run] search 결과: {len(candidates)}건 회수 "
+              f"(요청 {count}건 × 3배 oversample = max {q_dict['max_results']})",
+              flush=True)
 
         # Quality filter: enrich with view/subscriber counts and drop
         # anything below user-supplied thresholds. Cheap (1 unit per 50
@@ -374,6 +380,9 @@ def run_query(
                         reason=f"min_views={min_views} min_subs={min_subscribers}",
                         metrics={"before": before, "after": len(candidates)},
                     )
+                    print(f"[run] 품질 필터 (조회수≥{min_views} · 구독≥{min_subscribers}): "
+                          f"{before}→{len(candidates)}건 통과",
+                          flush=True)
             except Exception as e:  # noqa: BLE001
                 sys.stderr.write(f"[run] quality filter skipped: {e}\n")
 
@@ -393,6 +402,9 @@ def run_query(
                     reason="duration_sec < 240",
                     metrics={"before": shorts_before, "after": len(candidates)},
                 )
+                print(f"[run] Shorts 제외 (4분 미만): "
+                      f"{shorts_before}→{len(candidates)}건 통과",
+                      flush=True)
     else:
         candidates = _scripted_candidates(query, count)
         services, _ = _scripted_services(query, candidates)
@@ -457,6 +469,9 @@ def run_query(
             reason=f"{skipped_duplicates} already-processed",
             metrics={"skipped": skipped_duplicates, "kept": len(deduped)},
         )
+        print(f"[run] dedup (Rule C): {pre_dedup}→{len(deduped)}건 신규 "
+              f"(이미 처리 {skipped_duplicates}건 스킵)",
+              flush=True)
     payloads = deduped
 
     # P1 — events.jsonl 에 run 시작 이벤트를 무조건 기록.
