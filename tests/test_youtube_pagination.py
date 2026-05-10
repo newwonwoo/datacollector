@@ -20,6 +20,11 @@ def _mk_resp(videos: list[dict], next_page_token: str | None = None) -> dict:
     return {"status": 200, "body": json.dumps(body)}
 
 
+def _videos_resp(empty: bool = True) -> dict:
+    """videos.list 응답 stub — duration 보강 호출용."""
+    return {"status": 200, "body": json.dumps({"items": []})}
+
+
 def test_search_paginates_when_count_exceeds_page_size():
     pages = [
         _mk_resp([{"id": f"vid_{i}"} for i in range(50)], next_page_token="page2"),
@@ -28,12 +33,15 @@ def test_search_paginates_when_count_exceeds_page_size():
     calls = []
     def fake_http(method, url, **kw):
         calls.append(url)
+        if "/videos" in url:
+            return _videos_resp()
         return pages.pop(0)
     yt = YouTubeAdapter("KEY", http=fake_http)
     results = yt.search({"topic": "단타", "max_results": 100})
     assert len(results) == 100
-    assert len(calls) == 2
-    assert "pageToken=page2" in calls[1]
+    search_calls = [c for c in calls if "/search" in c]
+    assert len(search_calls) == 2
+    assert "pageToken=page2" in search_calls[1]
 
 
 def test_search_respects_max_results_cap():
@@ -42,6 +50,8 @@ def test_search_respects_max_results_cap():
         _mk_resp([{"id": f"vid_{i}"} for i in range(50, 100)], next_page_token=None),
     ]
     def fake_http(method, url, **kw):
+        if "/videos" in url:
+            return _videos_resp()
         return pages.pop(0)
     yt = YouTubeAdapter("KEY", http=fake_http)
     out = yt.search({"topic": "x", "max_results": 60})
@@ -51,6 +61,8 @@ def test_search_respects_max_results_cap():
 def test_search_stops_when_no_next_page():
     only_page = _mk_resp([{"id": f"v{i}"} for i in range(20)], next_page_token=None)
     def fake_http(method, url, **kw):
+        if "/videos" in url:
+            return _videos_resp()
         return only_page
     yt = YouTubeAdapter("KEY", http=fake_http)
     out = yt.search({"topic": "x", "max_results": 100})
@@ -58,11 +70,13 @@ def test_search_stops_when_no_next_page():
 
 
 def test_search_default_max_results_25():
-    called = {"n": 0}
+    called = {"search": 0}
     def fake_http(method, url, **kw):
-        called["n"] += 1
+        if "/videos" in url:
+            return _videos_resp()
+        called["search"] += 1
         assert "maxResults=25" in url
         return _mk_resp([{"id": f"v{i}"} for i in range(25)], next_page_token=None)
     yt = YouTubeAdapter("KEY", http=fake_http)
     yt.search({"topic": "x"})  # no max_results → default 25
-    assert called["n"] == 1
+    assert called["search"] == 1

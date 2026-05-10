@@ -5,6 +5,7 @@ import http.cookiejar
 import json
 import os
 import random
+import re
 import time
 import urllib.error
 import urllib.parse
