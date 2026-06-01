@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-05-31T22:08:43Z",
+  "updated_at": "2026-06-01T23:05:38Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_e76911bba76f",
-    "run_id": "run_1fc2d198",
+    "event_id": "evt_4a84b57d1e7f",
+    "run_id": "run_9fb45057",
     "entity_type": "run",
-    "entity_id": "run_1fc2d198",
+    "entity_id": "run_9fb45057",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_1fc2d198.json",
+    "reason": "runs/run_9fb45057.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-05-31T22:08:43Z"
+    "recorded_at": "2026-06-01T23:05:37Z"
   },
   "latest_run_detail": {
-    "run_id": "run_1fc2d198",
-    "started_at": "2026-05-31T22:08:20Z",
-    "ended_at": "2026-05-31T22:08:43Z",
+    "run_id": "run_9fb45057",
+    "started_at": "2026-06-01T23:05:19Z",
+    "ended_at": "2026-06-01T23:05:37Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-05-31T22:08:20Z",
-        "ended_at": "2026-05-31T22:08:37Z"
+        "started_at": "2026-06-01T23:05:19Z",
+        "ended_at": "2026-06-01T23:05:37Z"
       },
       "collect": {
         "status": "failed",
@@ -65,19 +65,19 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_SHORTS_DROP": 1,
-          "YT_NO_TRANSCRIPT": 4
+          "YT_NO_TRANSCRIPT": 3,
+          "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-05-31T22:08:20Z",
-        "ended_at": "2026-05-31T22:08:43Z",
-        "reason": "YT_NO_TRANSCRIPT",
-        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+        "started_at": "2026-06-01T23:05:19Z",
+        "ended_at": "2026-06-01T23:05:37Z",
+        "reason": "YT_SHORTS_DROP",
+        "failure_detail": "duration 59s < 4min",
         "failure_details": [
-          "duration 6s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "duration 9s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
+          "duration 59s < 4min"
         ]
       },
       "extract": {
@@ -134,7 +134,31 @@
   },
   "top_channels": [
     {
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
       "channel_id": "UCuPe_chkvkEqMX98qvuQKwg",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UCArMoa6lEdcDIsT7srY8YsA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -159,30 +183,6 @@
     },
     {
       "channel_id": "UCW1fmUAZKeJcR6E5qjNWi9g",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCeZhMe07YK1-aFF_TOP7REA",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UC9OdxrtKsOxQCXpjNmaRMsw",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -196,6 +196,18 @@
   ],
   "bottom_channels": [
     {
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
       "channel_id": "UCuPe_chkvkEqMX98qvuQKwg",
       "total": 1,
       "promoted": 0,
@@ -208,19 +220,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC7YLvjJf3lDJUQ-TsbWyBjg",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCW1fmUAZKeJcR6E5qjNWi9g",
+      "channel_id": "UCArMoa6lEdcDIsT7srY8YsA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
