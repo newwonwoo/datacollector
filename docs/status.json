@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-01T23:05:38Z",
+  "updated_at": "2026-06-02T23:06:07Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_4a84b57d1e7f",
-    "run_id": "run_9fb45057",
+    "event_id": "evt_274c7c5b5fcd",
+    "run_id": "run_321a0526",
     "entity_type": "run",
-    "entity_id": "run_9fb45057",
+    "entity_id": "run_321a0526",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_9fb45057.json",
+    "reason": "runs/run_321a0526.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-06-01T23:05:37Z"
+    "recorded_at": "2026-06-02T23:06:06Z"
   },
   "latest_run_detail": {
-    "run_id": "run_9fb45057",
-    "started_at": "2026-06-01T23:05:19Z",
-    "ended_at": "2026-06-01T23:05:37Z",
+    "run_id": "run_321a0526",
+    "started_at": "2026-06-02T23:05:50Z",
+    "ended_at": "2026-06-02T23:06:06Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-06-01T23:05:19Z",
-        "ended_at": "2026-06-01T23:05:37Z"
+        "started_at": "2026-06-02T23:05:50Z",
+        "ended_at": "2026-06-02T23:06:06Z"
       },
       "collect": {
         "status": "failed",
@@ -68,8 +68,8 @@
           "YT_NO_TRANSCRIPT": 3,
           "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-06-01T23:05:19Z",
-        "ended_at": "2026-06-01T23:05:37Z",
+        "started_at": "2026-06-02T23:05:50Z",
+        "ended_at": "2026-06-02T23:06:06Z",
         "reason": "YT_SHORTS_DROP",
         "failure_detail": "duration 59s < 4min",
         "failure_details": [
