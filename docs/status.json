@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-05T22:21:26Z",
+  "updated_at": "2026-06-06T22:12:05Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_b43568c3ae3a",
-    "run_id": "run_5164cfa6",
+    "event_id": "evt_1d1b4ea8907c",
+    "run_id": "run_6c0c12d0",
     "entity_type": "run",
-    "entity_id": "run_5164cfa6",
+    "entity_id": "run_6c0c12d0",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_5164cfa6.json",
+    "reason": "runs/run_6c0c12d0.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-06-05T22:21:25Z"
+    "recorded_at": "2026-06-06T22:12:05Z"
   },
   "latest_run_detail": {
-    "run_id": "run_5164cfa6",
-    "started_at": "2026-06-05T22:21:03Z",
-    "ended_at": "2026-06-05T22:21:25Z",
+    "run_id": "run_6c0c12d0",
+    "started_at": "2026-06-06T22:11:48Z",
+    "ended_at": "2026-06-06T22:12:05Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-06-05T22:21:03Z",
-        "ended_at": "2026-06-05T22:21:20Z"
+        "started_at": "2026-06-06T22:11:48Z",
+        "ended_at": "2026-06-06T22:11:59Z"
       },
       "collect": {
         "status": "failed",
@@ -65,18 +65,18 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_NO_TRANSCRIPT": 4,
-          "YT_SHORTS_DROP": 1
+          "YT_NO_TRANSCRIPT": 3,
+          "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-06-05T22:21:03Z",
-        "ended_at": "2026-06-05T22:21:25Z",
+        "started_at": "2026-06-06T22:11:48Z",
+        "ended_at": "2026-06-06T22:12:05Z",
         "reason": "YT_NO_TRANSCRIPT",
         "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 9s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "duration 59s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
         ]
       },
@@ -147,6 +147,18 @@
     },
     {
       "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
+      "total": 2,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 2,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UCArMoa6lEdcDIsT7srY8YsA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -159,30 +171,6 @@
     },
     {
       "channel_id": "UC7YLvjJf3lDJUQ-TsbWyBjg",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCW1fmUAZKeJcR6E5qjNWi9g",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -209,10 +197,10 @@
     },
     {
       "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
-      "total": 1,
+      "total": 2,
       "promoted": 0,
       "inferred": 0,
-      "unverified": 1,
+      "unverified": 2,
       "rejected": 0,
       "invalid": 0,
       "clickbait_flags": 0,
@@ -220,7 +208,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC7YLvjJf3lDJUQ-TsbWyBjg",
+      "channel_id": "UCArMoa6lEdcDIsT7srY8YsA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
