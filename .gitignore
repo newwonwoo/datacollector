@@ -17,3 +17,6 @@ build/
 dist/
 *.egg-info/
 .venv/
+# fablize multi-story runtime state (vendored plugin lives in .claude/fablize/)
+/.fablize/
+.claude/settings.local.json
