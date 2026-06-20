@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-19T22:11:25Z",
+  "updated_at": "2026-06-20T22:18:17Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_8470bdda67f4",
-    "run_id": "run_c3e8147f",
+    "event_id": "evt_44d4907cb976",
+    "run_id": "run_789548a5",
     "entity_type": "run",
-    "entity_id": "run_c3e8147f",
+    "entity_id": "run_789548a5",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_c3e8147f.json",
+    "reason": "runs/run_789548a5.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-06-19T22:11:25Z"
+    "recorded_at": "2026-06-20T22:18:16Z"
   },
   "latest_run_detail": {
-    "run_id": "run_c3e8147f",
-    "started_at": "2026-06-19T22:11:05Z",
-    "ended_at": "2026-06-19T22:11:25Z",
+    "run_id": "run_789548a5",
+    "started_at": "2026-06-20T22:17:49Z",
+    "ended_at": "2026-06-20T22:18:16Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-06-19T22:11:05Z",
-        "ended_at": "2026-06-19T22:11:18Z"
+        "started_at": "2026-06-20T22:17:49Z",
+        "ended_at": "2026-06-20T22:18:11Z"
       },
       "collect": {
         "status": "failed",
@@ -65,19 +65,19 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_NO_TRANSCRIPT": 3,
-          "YT_SHORTS_DROP": 2
+          "YT_NO_TRANSCRIPT": 4,
+          "YT_SHORTS_DROP": 1
         },
-        "started_at": "2026-06-19T22:11:05Z",
-        "ended_at": "2026-06-19T22:11:25Z",
+        "started_at": "2026-06-20T22:17:49Z",
+        "ended_at": "2026-06-20T22:18:16Z",
         "reason": "YT_NO_TRANSCRIPT",
-        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
+        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 9s < 4min",
-          "duration 59s < 4min",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:IpBlocked | timedtext:all-empty"
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
         ]
       },
       "extract": {
@@ -182,7 +182,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCArMoa6lEdcDIsT7srY8YsA",
+      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
