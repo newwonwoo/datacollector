@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-17T22:00:37Z",
+  "updated_at": "2026-07-18T21:57:23Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_c2187af819f5",
-    "run_id": "run_c1393350",
+    "event_id": "evt_a2573a4f4d2c",
+    "run_id": "run_6820302c",
     "entity_type": "run",
-    "entity_id": "run_c1393350",
+    "entity_id": "run_6820302c",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_c1393350.json",
+    "reason": "runs/run_6820302c.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-07-17T22:00:36Z"
+    "recorded_at": "2026-07-18T21:57:23Z"
   },
   "latest_run_detail": {
-    "run_id": "run_c1393350",
-    "started_at": "2026-07-17T22:00:18Z",
-    "ended_at": "2026-07-17T22:00:36Z",
+    "run_id": "run_6820302c",
+    "started_at": "2026-07-18T21:57:07Z",
+    "ended_at": "2026-07-18T21:57:23Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-07-17T22:00:18Z",
-        "ended_at": "2026-07-17T22:00:30Z"
+        "started_at": "2026-07-18T21:57:07Z",
+        "ended_at": "2026-07-18T21:57:23Z"
       },
       "collect": {
         "status": "failed",
@@ -68,16 +68,16 @@
           "YT_NO_TRANSCRIPT": 3,
           "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-07-17T22:00:18Z",
-        "ended_at": "2026-07-17T22:00:36Z",
-        "reason": "YT_NO_TRANSCRIPT",
-        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+        "started_at": "2026-07-18T21:57:07Z",
+        "ended_at": "2026-07-18T21:57:23Z",
+        "reason": "YT_SHORTS_DROP",
+        "failure_detail": "duration 9s < 4min",
         "failure_details": [
-          "ytdlp:mweb:DownloadError | ytapi:ConnectionError | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 123s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
-          "duration 9s < 4min",
-          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
+          "duration 9s < 4min"
         ]
       },
       "extract": {
@@ -134,6 +134,18 @@
   },
   "top_channels": [
     {
+      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
       "channel_id": "UCjNKuCKVBIQsrRdqJBWpkqA",
       "total": 1,
       "promoted": 0,
@@ -147,10 +159,10 @@
     },
     {
       "channel_id": "UC5v-h_ftAt4wpur6Avt0GAg",
-      "total": 2,
+      "total": 1,
       "promoted": 0,
       "inferred": 0,
-      "unverified": 2,
+      "unverified": 1,
       "rejected": 0,
       "invalid": 0,
       "clickbait_flags": 0,
@@ -184,6 +196,18 @@
   ],
   "bottom_channels": [
     {
+      "channel_id": "UCv-spDeZBGYVUI9eGXGaLSg",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
       "channel_id": "UCjNKuCKVBIQsrRdqJBWpkqA",
       "total": 1,
       "promoted": 0,
@@ -197,18 +221,6 @@
     },
     {
       "channel_id": "UC5v-h_ftAt4wpur6Avt0GAg",
-      "total": 2,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 2,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCytaissvSerlA7-R_74CsWQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
