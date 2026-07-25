@@ -1,60 +1,60 @@
 {
-  "timestamp": "2026-07-24T22:12:20Z",
+  "timestamp": "2026-07-25T22:01:55Z",
   "results": [
     {
       "name": "YouTube Data API v3",
       "ok": true,
       "detail": "search returned 3 items",
-      "duration_ms": 402,
+      "duration_ms": 319,
       "skip": false
     },
     {
       "name": "youtube-transcript-api",
       "ok": true,
       "detail": "dQw4w9WgXcQ: 6 transcript(s) available",
-      "duration_ms": 1557,
+      "duration_ms": 1610,
       "skip": false
     },
     {
       "name": "yt-dlp (ios,tv_embedded)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2660,
+      "duration_ms": 2477,
       "skip": false
     },
     {
       "name": "yt-dlp (android)",
       "ok": true,
       "detail": "dQw4w9WgXcQ: auto=937 manual=5",
-      "duration_ms": 1937,
+      "duration_ms": 1749,
       "skip": false
     },
     {
       "name": "yt-dlp (web,web_creator)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Please sign in. Use --cookies-from-browser or --cookies for the authentication. See  https",
-      "duration_ms": 3130,
+      "duration_ms": 2466,
       "skip": false
     },
     {
       "name": "yt-dlp (mweb)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2413,
+      "duration_ms": 2271,
       "skip": false
     },
     {
       "name": "timedtext direct",
       "ok": false,
       "detail": "all empty",
-      "duration_ms": 131,
+      "duration_ms": 125,
       "skip": false
     },
     {
       "name": "Gemini 1.5 Flash",
       "ok": false,
       "detail": "HTTP 400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl",
-      "duration_ms": 114,
+      "duration_ms": 126,
       "skip": false
     },
     {
