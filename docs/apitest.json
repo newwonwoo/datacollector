@@ -1,60 +1,60 @@
 {
-  "timestamp": "2026-08-02T22:02:04Z",
+  "timestamp": "2026-08-03T22:13:25Z",
   "results": [
     {
       "name": "YouTube Data API v3",
       "ok": true,
       "detail": "search returned 3 items",
-      "duration_ms": 368,
+      "duration_ms": 421,
       "skip": false
     },
     {
       "name": "youtube-transcript-api",
       "ok": true,
       "detail": "dQw4w9WgXcQ: 6 transcript(s) available",
-      "duration_ms": 1970,
+      "duration_ms": 2225,
       "skip": false
     },
     {
       "name": "yt-dlp (ios,tv_embedded)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2548,
+      "duration_ms": 1799,
       "skip": false
     },
     {
       "name": "yt-dlp (android)",
       "ok": true,
       "detail": "dQw4w9WgXcQ: auto=937 manual=5",
-      "duration_ms": 2016,
+      "duration_ms": 1936,
       "skip": false
     },
     {
       "name": "yt-dlp (web,web_creator)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Please sign in. Use --cookies-from-browser or --cookies for the authentication. See  https",
-      "duration_ms": 3288,
+      "duration_ms": 2846,
       "skip": false
     },
     {
       "name": "yt-dlp (mweb)",
       "ok": false,
       "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
-      "duration_ms": 2136,
+      "duration_ms": 2476,
       "skip": false
     },
     {
       "name": "timedtext direct",
       "ok": false,
       "detail": "all empty",
-      "duration_ms": 102,
+      "duration_ms": 94,
       "skip": false
     },
     {
       "name": "Gemini 1.5 Flash",
       "ok": false,
       "detail": "HTTP 400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl",
-      "duration_ms": 118,
+      "duration_ms": 99,
       "skip": false
     },
     {
