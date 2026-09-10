@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-09T23:08:38Z",
+  "updated_at": "2026-09-10T23:04:16Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_8f4eac2399ac",
-    "run_id": "run_7c944fcc",
+    "event_id": "evt_ed3fde7c6937",
+    "run_id": "run_59544d81",
     "entity_type": "run",
-    "entity_id": "run_7c944fcc",
+    "entity_id": "run_59544d81",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_7c944fcc.json",
+    "reason": "runs/run_59544d81.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-09-09T23:08:37Z"
+    "recorded_at": "2026-09-10T23:04:15Z"
   },
   "latest_run_detail": {
-    "run_id": "run_7c944fcc",
-    "started_at": "2026-09-09T23:08:20Z",
-    "ended_at": "2026-09-09T23:08:37Z",
+    "run_id": "run_59544d81",
+    "started_at": "2026-09-10T23:03:59Z",
+    "ended_at": "2026-09-10T23:04:15Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-09-09T23:08:20Z",
-        "ended_at": "2026-09-09T23:08:37Z"
+        "started_at": "2026-09-10T23:03:59Z",
+        "ended_at": "2026-09-10T23:04:10Z"
       },
       "collect": {
         "status": "failed",
@@ -68,16 +68,16 @@
           "YT_NO_TRANSCRIPT": 3,
           "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-09-09T23:08:20Z",
-        "ended_at": "2026-09-09T23:08:37Z",
-        "reason": "YT_SHORTS_DROP",
-        "failure_detail": "duration 9s < 4min",
+        "started_at": "2026-09-10T23:03:59Z",
+        "ended_at": "2026-09-10T23:04:15Z",
+        "reason": "YT_NO_TRANSCRIPT",
+        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 123s < 4min",
-          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
-          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
-          "duration 9s < 4min"
+          "duration 9s < 4min",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
         ]
       },
       "extract": {
@@ -146,31 +146,19 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCytaissvSerlA7-R_74CsWQ",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
       "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "total": 2,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 2,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -208,11 +196,11 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
-      "total": 1,
+      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "total": 2,
       "promoted": 0,
       "inferred": 0,
-      "unverified": 1,
+      "unverified": 2,
       "rejected": 0,
       "invalid": 0,
       "clickbait_flags": 0,
@@ -220,7 +208,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCytaissvSerlA7-R_74CsWQ",
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
