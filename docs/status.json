@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-09-12T22:56:52Z",
+  "updated_at": "2026-09-13T23:04:47Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_d61a0f7be09e",
-    "run_id": "run_b053cfaa",
+    "event_id": "evt_4118a57a1d1f",
+    "run_id": "run_a47e6fbb",
     "entity_type": "run",
-    "entity_id": "run_b053cfaa",
+    "entity_id": "run_a47e6fbb",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_b053cfaa.json",
+    "reason": "runs/run_a47e6fbb.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-09-12T22:56:51Z"
+    "recorded_at": "2026-09-13T23:04:47Z"
   },
   "latest_run_detail": {
-    "run_id": "run_b053cfaa",
-    "started_at": "2026-09-12T22:56:34Z",
-    "ended_at": "2026-09-12T22:56:51Z",
+    "run_id": "run_a47e6fbb",
+    "started_at": "2026-09-13T23:04:29Z",
+    "ended_at": "2026-09-13T23:04:47Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-09-12T22:56:34Z",
-        "ended_at": "2026-09-12T22:56:51Z"
+        "started_at": "2026-09-13T23:04:29Z",
+        "ended_at": "2026-09-13T23:04:47Z"
       },
       "collect": {
         "status": "failed",
@@ -68,8 +68,8 @@
           "YT_NO_TRANSCRIPT": 3,
           "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-09-12T22:56:34Z",
-        "ended_at": "2026-09-12T22:56:51Z",
+        "started_at": "2026-09-13T23:04:29Z",
+        "ended_at": "2026-09-13T23:04:47Z",
         "reason": "YT_SHORTS_DROP",
         "failure_detail": "duration 9s < 4min",
         "failure_details": [
@@ -146,7 +146,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -158,7 +158,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -208,7 +208,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -220,7 +220,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCI9oLnJOXVgcvtvsmzl04gQ",
+      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
