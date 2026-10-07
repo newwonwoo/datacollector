@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-06T01:43:28Z",
+  "updated_at": "2026-10-07T00:34:41Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_79a31f6357a2",
-    "run_id": "run_a1e5a869",
+    "event_id": "evt_3ce798b9ff1d",
+    "run_id": "run_3198538d",
     "entity_type": "run",
-    "entity_id": "run_a1e5a869",
+    "entity_id": "run_3198538d",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_a1e5a869.json",
+    "reason": "runs/run_3198538d.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-10-06T01:43:28Z"
+    "recorded_at": "2026-10-07T00:34:40Z"
   },
   "latest_run_detail": {
-    "run_id": "run_a1e5a869",
-    "started_at": "2026-10-06T01:43:06Z",
-    "ended_at": "2026-10-06T01:43:28Z",
+    "run_id": "run_3198538d",
+    "started_at": "2026-10-07T00:34:17Z",
+    "ended_at": "2026-10-07T00:34:40Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-10-06T01:43:06Z",
-        "ended_at": "2026-10-06T01:43:22Z"
+        "started_at": "2026-10-07T00:34:17Z",
+        "ended_at": "2026-10-07T00:34:34Z"
       },
       "collect": {
         "status": "failed",
@@ -68,8 +68,8 @@
           "YT_NO_TRANSCRIPT": 4,
           "YT_SHORTS_DROP": 1
         },
-        "started_at": "2026-10-06T01:43:06Z",
-        "ended_at": "2026-10-06T01:43:28Z",
+        "started_at": "2026-10-07T00:34:17Z",
+        "ended_at": "2026-10-07T00:34:40Z",
         "reason": "YT_NO_TRANSCRIPT",
         "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
@@ -170,7 +170,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC5v-h_ftAt4wpur6Avt0GAg",
+      "channel_id": "UC2f10-Z_LcwAH9QiTzAeplA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
