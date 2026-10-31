@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-30T00:46:16Z",
+  "updated_at": "2026-10-31T00:37:41Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -24,24 +24,24 @@
     "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_6fa890b0ab88",
-    "run_id": "run_b6d87cb6",
+    "event_id": "evt_8e0978a09a6b",
+    "run_id": "run_45ea1255",
     "entity_type": "run",
-    "entity_id": "run_b6d87cb6",
+    "entity_id": "run_45ea1255",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_b6d87cb6.json",
+    "reason": "runs/run_45ea1255.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-10-30T00:46:16Z"
+    "recorded_at": "2026-10-31T00:37:40Z"
   },
   "latest_run_detail": {
-    "run_id": "run_b6d87cb6",
-    "started_at": "2026-10-30T00:46:09Z",
-    "ended_at": "2026-10-30T00:46:16Z",
+    "run_id": "run_45ea1255",
+    "started_at": "2026-10-31T00:37:24Z",
+    "ended_at": "2026-10-31T00:37:40Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,8 +53,8 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-10-30T00:46:09Z",
-        "ended_at": "2026-10-30T00:46:16Z"
+        "started_at": "2026-10-31T00:37:24Z",
+        "ended_at": "2026-10-31T00:37:35Z"
       },
       "collect": {
         "status": "failed",
@@ -65,19 +65,19 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_SHORTS_DROP": 4,
-          "YT_NO_TRANSCRIPT": 1
+          "YT_NO_TRANSCRIPT": 3,
+          "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-10-30T00:46:09Z",
-        "ended_at": "2026-10-30T00:46:16Z",
-        "reason": "YT_SHORTS_DROP",
-        "failure_detail": "duration 26s < 4min",
+        "started_at": "2026-10-31T00:37:24Z",
+        "ended_at": "2026-10-31T00:37:40Z",
+        "reason": "YT_NO_TRANSCRIPT",
+        "failure_detail": "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
         "failure_details": [
-          "duration 13s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "duration 26s < 4min",
           "duration 84s < 4min",
-          "duration 123s < 4min",
-          "duration 26s < 4min"
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty"
         ]
       },
       "extract": {
@@ -147,6 +147,18 @@
     },
     {
       "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
+      "total": 2,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 2,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UC3p-0EWA8OXko2EUDUXAy5w",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -158,31 +170,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCjNKuCKVBIQsrRdqJBWpkqA",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UChoDn1sBZIDdgUsqtFfCyuw",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 1,
-      "rejected": 0,
-      "invalid": 0,
-      "clickbait_flags": 0,
-      "score": -0.3,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCa-mVoWdRkrnHimtZvsAb2w",
+      "channel_id": "UClPMxhjK_shyu0zRbhHlFuw",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -209,10 +197,10 @@
     },
     {
       "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
-      "total": 1,
+      "total": 2,
       "promoted": 0,
       "inferred": 0,
-      "unverified": 1,
+      "unverified": 2,
       "rejected": 0,
       "invalid": 0,
       "clickbait_flags": 0,
@@ -220,7 +208,7 @@
       "tier": "red"
     },
     {
-      "channel_id": "UCjNKuCKVBIQsrRdqJBWpkqA",
+      "channel_id": "UC3p-0EWA8OXko2EUDUXAy5w",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
