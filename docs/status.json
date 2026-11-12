@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-11T01:10:35Z",
+  "updated_at": "2026-11-12T02:12:11Z",
   "kill_switch": false,
   "dlq_count": 0,
   "review_queue_count": 0,
@@ -21,27 +21,27 @@
   "records": {
     "total": 5,
     "promoted": 0,
-    "invalid": 2
+    "invalid": 0
   },
   "latest_run": {
-    "event_id": "evt_1bd343f51763",
-    "run_id": "run_170a79c5",
+    "event_id": "evt_a44517c3679d",
+    "run_id": "run_5db6c9e5",
     "entity_type": "run",
-    "entity_id": "run_170a79c5",
+    "entity_id": "run_5db6c9e5",
     "from_status": null,
     "to_status": "snapshot_written",
-    "reason": "runs/run_170a79c5.json",
+    "reason": "runs/run_5db6c9e5.json",
     "metrics": {
       "videos": 5,
       "cost_usd": 0.0
     },
     "actor": "worker-test",
-    "recorded_at": "2026-11-11T01:10:34Z"
+    "recorded_at": "2026-11-12T02:12:11Z"
   },
   "latest_run_detail": {
-    "run_id": "run_170a79c5",
-    "started_at": "2026-11-11T01:10:19Z",
-    "ended_at": "2026-11-11T01:10:34Z",
+    "run_id": "run_5db6c9e5",
+    "started_at": "2026-11-12T02:11:49Z",
+    "ended_at": "2026-11-12T02:12:11Z",
     "run_status": "partially_completed",
     "per_stage": {
       "discover": {
@@ -53,50 +53,42 @@
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {},
-        "started_at": "2026-11-11T01:10:19Z",
-        "ended_at": "2026-11-11T01:10:34Z"
+        "started_at": "2026-11-12T02:11:49Z",
+        "ended_at": "2026-11-12T02:12:11Z"
       },
       "collect": {
-        "status": "partial",
-        "count": 2,
+        "status": "failed",
+        "count": 0,
         "attempts": 5,
-        "completed": 2,
-        "failed": 3,
+        "completed": 0,
+        "failed": 5,
         "skipped": 0,
         "in_progress": 0,
         "failure_reasons": {
-          "YT_SHORTS_DROP": 2,
-          "YT_NO_TRANSCRIPT": 1
+          "YT_NO_TRANSCRIPT": 3,
+          "YT_SHORTS_DROP": 2
         },
-        "started_at": "2026-11-11T01:10:19Z",
-        "ended_at": "2026-11-11T01:10:34Z",
+        "started_at": "2026-11-12T02:11:49Z",
+        "ended_at": "2026-11-12T02:12:11Z",
         "reason": "YT_SHORTS_DROP",
         "failure_detail": "duration 84s < 4min",
         "failure_details": [
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
+          "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 26s < 4min",
           "ytdlp:mweb:DownloadError | ytapi:RequestBlocked | timedtext:all-empty",
           "duration 84s < 4min"
         ]
       },
       "extract": {
-        "status": "failed",
+        "status": "not_started",
         "count": 0,
-        "attempts": 2,
+        "attempts": 0,
         "completed": 0,
-        "failed": 2,
+        "failed": 0,
         "skipped": 0,
         "in_progress": 0,
-        "failure_reasons": {
-          "LLM_HTTP_400": 2
-        },
-        "started_at": "2026-11-11T01:10:24Z",
-        "ended_at": "2026-11-11T01:10:29Z",
-        "reason": "LLM_HTTP_400",
-        "failure_detail": "LLM_HTTP_400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl",
-        "failure_details": [
-          "LLM_HTTP_400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl",
-          "LLM_HTTP_400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl"
-        ]
+        "failure_reasons": {}
       },
       "normalize": {
         "status": "not_started",
@@ -154,7 +146,31 @@
       "tier": "red"
     },
     {
-      "channel_id": "UC3p-0EWA8OXko2EUDUXAy5w",
+      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UClPMxhjK_shyu0zRbhHlFuw",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UCWXMWO6UTvjQQa_VealK1BA",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
@@ -176,59 +192,35 @@
       "clickbait_flags": 0,
       "score": -0.3,
       "tier": "red"
-    },
-    {
-      "channel_id": "UCwdly2S1YIYdDI9algaX0hw",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 0,
-      "rejected": 0,
-      "invalid": 1,
-      "clickbait_flags": 1,
-      "score": -1.0,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UClPMxhjK_shyu0zRbhHlFuw",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 0,
-      "rejected": 0,
-      "invalid": 1,
-      "clickbait_flags": 1,
-      "score": -1.0,
-      "tier": "red"
     }
   ],
   "bottom_channels": [
     {
-      "channel_id": "UCwdly2S1YIYdDI9algaX0hw",
+      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
-      "unverified": 0,
+      "unverified": 1,
       "rejected": 0,
-      "invalid": 1,
-      "clickbait_flags": 1,
-      "score": -1.0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
+      "tier": "red"
+    },
+    {
+      "channel_id": "UC1lTdaINKPGOz6B93Ri4b6g",
+      "total": 1,
+      "promoted": 0,
+      "inferred": 0,
+      "unverified": 1,
+      "rejected": 0,
+      "invalid": 0,
+      "clickbait_flags": 0,
+      "score": -0.3,
       "tier": "red"
     },
     {
       "channel_id": "UClPMxhjK_shyu0zRbhHlFuw",
-      "total": 1,
-      "promoted": 0,
-      "inferred": 0,
-      "unverified": 0,
-      "rejected": 0,
-      "invalid": 1,
-      "clickbait_flags": 1,
-      "score": -1.0,
-      "tier": "red"
-    },
-    {
-      "channel_id": "UCHKRLOqgrKhIgoCKJ3UkNhg",
       "total": 1,
       "promoted": 0,
       "inferred": 0,
