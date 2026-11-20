@@ -1,60 +1,60 @@
 {
-  "timestamp": "2026-11-19T02:30:02Z",
+  "timestamp": "2026-11-20T02:12:05Z",
   "results": [
     {
       "name": "YouTube Data API v3",
       "ok": true,
       "detail": "search returned 3 items",
-      "duration_ms": 323,
+      "duration_ms": 398,
       "skip": false
     },
     {
       "name": "youtube-transcript-api",
-      "ok": false,
-      "detail": "IpBlocked: \nCould not retrieve a transcript for the video https://www.youtube.com/watch?v=dQw4w9WgXcQ! This is ",
-      "duration_ms": 974,
+      "ok": true,
+      "detail": "dQw4w9WgXcQ: 6 transcript(s) available",
+      "duration_ms": 1420,
       "skip": false
     },
     {
       "name": "yt-dlp (ios,tv_embedded)",
       "ok": false,
-      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Failed to extract any player response; please report this issue on  https://github.com/yt-",
-      "duration_ms": 34158,
+      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
+      "duration_ms": 1628,
       "skip": false
     },
     {
       "name": "yt-dlp (android)",
-      "ok": false,
-      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Failed to extract any player response; please report this issue on  https://github.com/yt-",
-      "duration_ms": 32877,
+      "ok": true,
+      "detail": "dQw4w9WgXcQ: auto=937 manual=5",
+      "duration_ms": 1559,
       "skip": false
     },
     {
       "name": "yt-dlp (web,web_creator)",
       "ok": false,
-      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Failed to extract any player response; please report this issue on  https://github.com/yt-",
-      "duration_ms": 46246,
+      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Please sign in. Use --cookies-from-browser or --cookies for the authentication. See  https",
+      "duration_ms": 1730,
       "skip": false
     },
     {
       "name": "yt-dlp (mweb)",
       "ok": false,
-      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Failed to extract any player response; please report this issue on  https://github.com/yt-",
-      "duration_ms": 33616,
+      "detail": "DownloadError: ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats",
+      "duration_ms": 3258,
       "skip": false
     },
     {
       "name": "timedtext direct",
       "ok": false,
       "detail": "all empty",
-      "duration_ms": 207,
+      "duration_ms": 169,
       "skip": false
     },
     {
       "name": "Gemini 1.5 Flash",
       "ok": false,
       "detail": "HTTP 400: {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/googl",
-      "duration_ms": 70,
+      "duration_ms": 49,
       "skip": false
     },
     {
@@ -65,11 +65,11 @@
       "skip": true
     }
   ],
-  "captions_ok": false,
+  "captions_ok": true,
   "summary": {
     "total": 9,
-    "passed": 1,
-    "failed": 7,
+    "passed": 3,
+    "failed": 5,
     "skipped": 1
   }
 }
